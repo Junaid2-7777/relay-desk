@@ -1,22 +1,25 @@
-# Solo build plan
+# Building the first case
 
-Target a tested local demo by 3 December. Homingo submissions open 4 December at 00:00 IST and close 6 December 2026 at 23:59 IST. [Edition timeline](https://hackathon.homingo.co.in/hackathons/edition-01#timeline) · [FAQ](https://hackathon.homingo.co.in/faq)
+Start with a judge at a terminal, looking at the same two calendar events before and after the 31 October notice. Give the judge a separate way to inspect who issued each case event. Once these observations work from a fresh reset, the student interface has something trustworthy to show.
 
-## First vertical slice
+## Smallest useful setup
 
-Create one previously submitted synthetic case and place the two institute and district reminders in a separate CalDAV calendar. Replay the 1 and 31 October notices. The two appointments must keep their UIDs and move to the approved new dates. Trigger an institute return, a student correction, and a correction acknowledgement. The last event must leave the handoff open. Finish by emitting the two independent authority records in order. Do this first with a deterministic driver so the core can be verified without a model key.
+| Part | Proposed implementation | What a builder can inspect directly |
+| --- | --- | --- |
+| Historical inputs | Four versioned Ministry schedules, one dated portal capture and a fixed IST clock. Keep the original field, a short passage or row, URL, issuer date and capture identity together. | Which evidence was available on the simulated day and which field justified each deadline. [Source register](sources.md) |
+| Case and outbox simulator | A loopback FastAPI service with role-specific fixture controls. Keep the case timeline and local outbox in separate SQLite tables, so queuing against the current case sequence can be atomic. | The authority, stage, case and correction request for each event. The exact payload and receipt for each queued request. |
+| Personal agent | A separate process and SQLite journal. Validate model proposals with Pydantic and run the same state transitions in fixture mode. Start with Python 3.12 and pin tested dependencies when the build lands. | The input that woke the agent, decision, pending effect, and corresponding provider readback. |
+| Calendar | One isolated Radicale calendar on loopback. Seed one unrelated event. Give each managed stage a stable event UID and resource path. | Calendar data obtained from the provider, including the UID, date and revision of each changed event. [Radicale](https://radicale.org/) |
 
-## Milestones
+## Walk it through from a clean reset
 
-1. **21–23 November** — Build the source fixture, synthetic case event service, and local calendar setup. Land the vertical slice through independent reads. Capture the exact date values, revisions and record IDs for witnesses. If the separate CalDAV startup is the blocker, use a second loopback HTTP calendar service with SQLite and stable event IDs, then state the changed integration clearly in the demo and documentation.
-2. **24–26 November** — Add validated source resolution, the durable event loop, exact approval and local outbox. Test stale draft, same-event replay, late/out-of-order case event, provider conflict, and a crash after writing. Gate on no skipped verification stage and zero duplicate writes.
-3. **27–29 November** — Add the model-backed planner, one case-focused UI and the judge controls. Show the notice evidence, who owns the next action, chronological case events and native state readback. Gate on the model completing the happy path and adapting to at least one unseen source or case variation with no manual edit to the agent’s database.
-4. **30 November–2 December** — Freeze fixtures and run the [evaluation protocol](evaluation.md), including matched baseline, model failure and scope traps. Check a fresh clone with the pinned setup, reset and a no-key mode. Save reproducible results and shorten any unsupported demo claim.
-5. **3 December** — Freeze the demo and record the live run. Verify that the recording shows the acknowledgements and authority records from independent services. Update the README with exact setup, runtime and model disclosures. [Demo script](demo.md)
-6. **4–6 December** — Check signed-out access to the GitHub repository and video. Submit through the dashboard and confirm the saved links. [Submission checklist](hackathon.md)
+1. **Start on 1 October.** Seed one filed NMMSS case for AY 2026–27, both verifications pending, one unrelated calendar event and an empty outbox. Release the 1 October notice. Save provider readbacks for the two new reminders and the unrelated event.
+2. **Advance to 31 October.** Release the revised notice. Compare the same two resources by UID. School moves from 15 to 30 November. District moves from 30 November to 15 December. Replay the release and check the effect history for zero additional writes. [Published dates](sources.md#nmmss-timeline)
+3. **Advance to 29 November.** Have the school request a legible copy. Record the student's correction against that return. Exercise both orders after taking a fresh reset for each run. Approval first queues one local message. Acknowledgement first retires the draft without queuing it. The school owns verification at the end of both runs.
+4. **Withhold the final receipt.** Issue school verification and inspect the district handoff. Leave the case there through a restart. Supply a matching district verification and inspect both authority records before displaying completion. [State and effect contracts](architecture.md)
 
-## Stack and scope
+## Make the setup reproducible
 
-- Use Python 3.12, FastAPI, Pydantic, SQLite, and one tool-capable model. Separate the synthetic authority event store from the agent journal. Start Radicale as a local service for the calendar and keep mail in a local outbox. Pin versions at implementation. [Radicale documentation](https://radicale.org/)
-- Show one synthetic case at a time. Include one primary flow, one mismatched-notice branch, one conflicting-evidence or status-gap test, and restart recovery in the evaluation. Additional schemes, languages, broad scraping and deployment can wait. Preserve the two independently witnessed handoffs and an explicit abstention path.
-- Provide documented PowerShell and macOS/Linux launch steps. Use a reset command that restores only the dedicated demo fixtures. Keep cached public evidence free of sign-in links, identifiers and unrelated page content. Label live-model and prerecorded planner modes, and distinguish the historical public notices from synthetic case events.
+Ship one documented path to start, inspect and reset the isolated services on PowerShell and on macOS/Linux. A reset restores only the dedicated fixture data, clock and calendar. Keep dated public excerpts available offline. Label the actual planner mode in both the UI and run record. A fresh-clone check must exercise the fixture-driven path without a model key and declare the configuration needed for live inference.
+
+If Radicale blocks progress, keep the provider boundary and use a separate loopback SQLite calendar service with stable event IDs. Show that service's native records and label the CalDAV check outstanding. If inference is unavailable, replay the typed case with actual local writes and label it **Fixture-driven demo**. Claim model performance only for scored live runs. [Evaluation protocol](evaluation.md)
