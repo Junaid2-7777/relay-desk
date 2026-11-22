@@ -1,4 +1,9 @@
-# Deadline Relay
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/wordmark-reversed.svg">
+    <img src="docs/brand/wordmark.svg" width="320" alt="Deadline Relay">
+  </picture>
+</h1>
 
 **Your school received the correction. Does that mean your application is verified?**
 
@@ -21,9 +26,10 @@ The notices are public government records. Every student, status change, corresp
 ## Read the proposal
 
 - **For the family’s experience**, read the worked correction, proposed student sheet and plan to test them with families. [Product brief](docs/problem.md) · [Student experience](docs/experience.md)
+- **For the visual identity**, use the folded-receipt logo, the Paper and Carbon themes, and the two-page specimen. [Identity guide](DESIGN.md) · [Identity sheets (PDF)](docs/brand/identity.pdf)
 - **For the evidence**, follow the four historical schedules, their scope and the reasons for selecting this problem. [Source register](docs/sources.md) · [Decision record](docs/decision.md)
 - **For the build**, start with the next milestone, then follow one case from a clean reset. [Roadmap](roadmap.md) · [Build notes](docs/build.md) · [Agent guide](agents.md)
 - **For the release decision**, inspect the authority rules, fault cases and matched model comparison. [Architecture](docs/architecture.md) · [Evaluation](docs/evaluation.md)
 - **For a judge walkthrough**, use the historical replay, live challenge and recording sequence. [Demo runbook](docs/demo.md) · [Event and submission checklist](docs/hackathon.md)
 
-Codex assisted with research, drafting and the visual study. The runnable agent, evaluation results and demo recording are planned deliverables.
+Codex assisted with research, drafting and identity design. The identity sheets also have an editable Canva edition. The runnable agent, evaluation results and demo recording are planned deliverables.

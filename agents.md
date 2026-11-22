@@ -7,6 +7,7 @@ Deadline Relay follows one already-filed NMMSS scholarship application through s
 | If the change touches | Read |
 | --- | --- |
 | What the family needs or what appears on the sheet | [Product brief](docs/problem.md) and [student experience](docs/experience.md) |
+| The logo, colour themes, typography or use of the folded receipt | [Identity guide and master artwork](DESIGN.md) |
 | A deadline, source scope or historical replay date | [Source register](docs/sources.md) |
 | Ownership, writes, approval, retries or case freshness | [Architecture](docs/architecture.md) and the matching [evaluation fixtures](docs/evaluation.md) |
 | What the presenter or judge can claim | [Demo runbook](docs/demo.md), [release gates](docs/evaluation.md) and [submission checklist](docs/hackathon.md) |

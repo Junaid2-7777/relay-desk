@@ -1,5 +1,9 @@
 # Deadline Relay identity
 
+![Deadline Relay's folded R on a stack of carbon-copy receipts above its five colour swatches.](docs/brand/identity-preview.png)
+
+The two-page specimen shows the mark, colour palette and the same school handoff in Paper and Carbon. [Download the identity sheets](docs/brand/identity.pdf)
+
 The family keeps a receipt when an application changes hands. Use that idea on the student sheet. After a school acknowledges a correction, **Your school received the correction** sits above **School verification pending**. The receipt opens the school's record. The deadline opens the Ministry notice that supplied the date. [Student handoff](docs/experience.md)
 
 ## The folded receipt
