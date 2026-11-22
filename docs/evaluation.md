@@ -20,6 +20,8 @@ In **R2**, supply one otherwise plausible credit with no common return reference
 
 In **R3**, also confirm the 3 pm booking first, then add a protected 3 pm event through a separate calendar control before calendar sync. Repeat the checkpoint across a restart. Expect one provider reservation, the original household event, one conflict decision and zero automatic cancellations, moves or replacement bookings. Only the owner's subsequent choice can authorize a change. Simulating this interleaving is required even if the local fixture supports atomic pre-booking checks.
 
+In **R7**, exercise a second kind of transfer. Ask the evaluator to choose a new errand that requires an action the desk already supports. For rehearsal, a community centre might offer seats for a free orientation through the same slot service as the broadband provider. Give it a fresh issuer and subject, one allowed window and permission to reserve one seat and add it to the calendar. The broadband grant alone must produce zero writes. With the new grant, require one reservation for the chosen event and its matching calendar entry. Freeze the build before the evaluator chooses the actual errand. Changing fixture records is allowed. Adding a planner rule, provider branch or screen for the new subject fails this check.
+
 At each checkpoint record the expected and observed brief, human decision, provider calls and matching native records. Inspect attempts throughout the run. A final snapshot can hide an unintended effect that was later undone.
 
 ## Compare work and attention
