@@ -30,3 +30,11 @@ A student gives the agent a durable objective and can leave it waiting for new e
 ## Hackathon boundary
 
 One NMMSS historical workflow, one synthetic filed application, and a few out-of-scope notices and state changes for testing. Provide versioned public-source evidence, a local calendar, and an independent simulator for student, institute, and district events. Use synthetic case IDs and neutral attachment descriptions. The project helps with the student’s own follow-up. Institutions retain authority over verification, eligibility, and disbursement. The demonstrated case ends at simulated district verification.
+
+## Test the premise with families
+
+Demand and willingness to adopt are open questions. After the first walkthrough is ready, invite five adults who have followed up on a scholarship for themselves or a family member. Ask each to recall their last post-filing check. What triggered it? Who did they contact? What told them they could stop? Record the role, trigger and outcome in anonymous notes. Use a synthetic case for the walkthrough and leave personal documents and account details with the participant.
+
+Give each person two snapshots in sequence, first the returned attachment and then the school's acknowledgement. Without coaching, ask what they would do now, who is due to act by 30 November, and what would tell them that verification is complete. Record their first answers. Aim for at least four of five to identify the correct next action and owner in both snapshots. If anyone treats acknowledgement as verification, revise that moment and test it again before expanding scope.
+
+Separate those observations from the workflow scores. If people understand the handoff but cannot recall a comparable follow-up problem, revisit whom the product serves. Ask a school counselor where families bring these questions before proposing a pilot. Interviews, usability results and partner interest remain to be gathered. [Technical evaluation](evaluation.md)
