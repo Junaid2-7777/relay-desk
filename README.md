@@ -13,7 +13,7 @@
 
 That’s enough to start. In the proposed first build, Relay would keep the note and the day you want to check. When you come back on Friday, you’d see what the shop promised and that the money is still unconfirmed. You could ask for a draft message to the shop. Saving the note would give Relay no access to your inbox or bank account.
 
-**Current stage · Proposal and design.** The next build is this single-errand flow. The roadmap moves forward when each result works. [Current milestone](roadmap.md#current-stage) · [Five-slide pitch](docs/relay-desk-pitch.pptx)
+**Current stage · Proposal and design.** Saving and revisiting this first errand is the next build. [Current milestone](roadmap.md#current-stage) · [Five-slide pitch](docs/relay-desk-pitch.pptx)
 
 ## When you want Relay to take more off your hands
 

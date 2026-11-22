@@ -8,7 +8,7 @@ Show what Relay understood in ordinary language. If Friday is ambiguous, ask whi
 
 > **Check for my refund on Friday**
 >
-> The shop says the refund is on its way. You’ll need to check whether the credit has arrived.
+> You wrote that the shop promised a refund. When you come back on Friday, check whether the money has arrived.
 >
 > **Save this errand** · Edit
 
