@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="mark-title">
+  <title id="mark-title">Deadline Relay folded-receipt R</title>
+  <g fill="#321D3D">
+    <path id="face" fill-rule="evenodd" d="M6 4H37L50 17V26L35 41H20V60H6Z M20 16V29H32L37 24V20L33 16Z"/>
+    <path id="fold" d="M26 46H36L44 38L62 60H40Z"/>
+  </g>
+</svg>
