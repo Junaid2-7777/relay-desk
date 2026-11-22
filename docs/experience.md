@@ -39,11 +39,11 @@ The published date belongs to the school. Only show a personal correction deadli
 | Filed application | **Your school has the next step** | “Your school needs to verify your application by 30 Nov.” Open the filing receipt or the deadline source. |
 | School return | **Your school needs a clearer copy** | Show the school’s reason verbatim and offer **Open student simulator**. Pause routine verification nudges. |
 | Student correction receipt | **Your correction is back with your school** | Offer **Review follow-up** for the prepared draft. Show the case, local recipient, subject and full message. **Approve and queue locally** or **Skip follow-up** returns to the same handoff. |
-| School acknowledgement | **Your school received the correction** | “School verification is still pending. You have nothing to do today.” Keep the school active, with 30 Nov beside it. The receipt-confirmation draft is obsolete. |
+| School acknowledgement | **Your school received the correction** | “Verification is still pending. You have nothing to resend.” Keep the school active, with 30 Nov beside it. Retire the unqueued receipt request. A previously queued message stays in history. |
 | School verification | **Your district has the next step** | Show the school verification receipt, the district deadline of 15 Dec and the district verification record the case is waiting for. |
 | District verification after school verification | **Both verification steps are complete** | Show the school and district records side by side or stacked. The tracked case ends here. Scholarship award and payment are separate decisions. |
 
-These dates and “today” copy assume the example clock of 29 November and the accepted 31 October notice. Derive labels from the current case, date and source in the build. Display **Queued locally** only after reading the exact approved message from the outbox. If the draft or case changes during review, preserve the reviewed text for comparison, explain the change and require a fresh review of any still-relevant draft. [Source timeline](sources.md#nmmss-timeline) · [Case and write contracts](architecture.md)
+These examples assume the clock is set to 29 November and the 31 October notice is in effect. Derive labels from the current case, date and source in the build. Display **Queued locally** only after reading the exact approved message from the outbox. If the draft or case changes during review, preserve the reviewed text for comparison, explain the change and require a fresh review of any still-relevant draft. [Source timeline](sources.md#nmmss-timeline) · [Case and write contracts](architecture.md)
 
 ## Reading the route
 
