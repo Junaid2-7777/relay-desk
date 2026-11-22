@@ -1,32 +1,32 @@
-# Working on Deadline Relay
+# Working on Relay Desk
 
-Deadline Relay follows one already-filed NMMSS scholarship application through school and district verification. At this revision the repository holds the proposal, research, visual study and build plan. Start at the first unfinished milestone in [roadmap.md](roadmap.md). The [first-case walkthrough](docs/build.md) defines the fixture to build against.
+Relay Desk is a proposed personal chief of staff. One household delegates outcomes, grants specific powers and gets a brief when something needs a decision. The repository currently contains research, the design and build plan, and visual materials. Start at the first unfinished [roadmap milestone](roadmap.md). The [first build review](docs/build.md) specifies the common fixture.
 
-## Pick the right reference
+## Where decisions live
 
-| If the change touches | Read |
+| Change | Start here |
 | --- | --- |
-| What the family needs or what appears on the sheet | [Product brief](docs/problem.md) and [student experience](docs/experience.md) |
-| The logo, colour themes, typography or use of the folded receipt | [Identity guide and master artwork](DESIGN.md) |
-| A deadline, source scope or historical replay date | [Source register](docs/sources.md) |
-| Ownership, writes, approval, retries or case freshness | [Architecture](docs/architecture.md) and the matching [evaluation fixtures](docs/evaluation.md) |
-| What the presenter or judge can claim | [Demo runbook](docs/demo.md), [release gates](docs/evaluation.md) and [submission checklist](docs/hackathon.md) |
+| Who the product serves and why the scope changed | [Product brief](docs/problem.md) and [A3 audit](docs/decision.md) |
+| What the person may see, approve or revoke | [Household experience](docs/experience.md) and [delegation contract](docs/architecture.md) |
+| Tool writes, evidence, failures or claims about work saved | [Architecture](docs/architecture.md) and [evaluation fixtures](docs/evaluation.md) |
+| Public claims or a proposed integration | [Source register](docs/sources.md) |
+| A logo, the household study, presentation or Canva asset | [Identity guide](DESIGN.md) and [judge walkthrough](docs/demo.md) |
+| Submission status and deliverables | [Event checklist](docs/hackathon.md) |
 
-## Preserve the meaning of the handoff
+## Preserve the delegation
 
-- **Dates come from scoped public evidence.** Keep each stage, issuer revision and source together. Preserve date-only deadlines. Release historical inputs only when the simulated clock reaches their publication or, for an undated snapshot, its capture.
-- **Ownership comes from the case record.** A return gives the student a correction task. Resubmission hands it back to the school. Acknowledgement settles receipt. Require the school's verification to move to the district and the district's own verification to close. Label the 30 November date as a school deadline in the 29 November example.
-- **The student controls follow-up.** Review the exact local recipient, subject and body before queuing. Bind approval to the relevant case, return and draft versions. A changed case or draft can make an earlier approval obsolete. A queue receipt means “queued locally.”
-- **Read effects from their owners.** Inspect the calendar's event UID and date, the outbox row and the simulator's authority record. The agent journal records intent and recovery progress. After an ambiguous write, reconcile the original operation before retrying.
-- **Tell the family how fresh the answer is.** Track the last successful case read separately from the last event. If a check fails, show the last evidenced owner and what still needs checking. Keep examples, personal records and local recipients synthetic. Use only public scheme facts from real notices.
+- Start with the person's desired outcome, permitted actions and evidence that would settle the job. An unfamiliar tracking job should fit the existing intake when its proof is reachable. A missing adapter is a capability gap. Record it explicitly.
+- Separate the household's instructions from what a message says. Tie each grant to a subject, operation, destination, limit and lifetime. A one-time payment exception applies only to the displayed payee, amount, currency and invoice revision. Revoking a grant stops future work under it.
+- Read outcomes from their owners. A merchant promise leaves the refund open. A booked visit needs provider confirmation and its calendar readback. A payment initiation leaves settlement pending. After an ambiguous write, look up the original operation before retrying.
+- Preserve the original scholarship case as a specialist regression. Dates come from scoped public evidence. Only the school can verify its stage and only the district can verify the next one. [Historical source register](docs/scholarship-sources.md)
+- Keep all fixture households, communications, financial records and recipients synthetic. Use the smallest permitted read. Calendar availability needs an interval. It rarely needs a meeting title. Show the last successful check separately from the last event.
+- Score human attention honestly. Keep first-use consent, repeat decisions, interruptions, lookups and verified outcomes distinct. Label proposals, simulation runs and empirical observations accurately.
 
-## Work in small commits
+## Commit and verify
 
-For a behavior change, write down the input, expected owner and expected provider effect first. Use the closest existing fixture. Keep the change and its matching evidence small enough to inspect in one commit. Commit each coherent increment and stage only its intended paths.
+Before changing behavior, name the input, expected owner, authorized effect and required proof. Use the closest existing fixture. Commit each coherent increment and stage only its files. For proposal work, check source claims, relative links and heading anchors, inspect changed artwork at reading size, and run `git diff --check`. Once a runtime exists, document and exercise its actual start, reset and evaluation commands.
 
-For a proposal edit, check changed claims against the source register, follow relative links and heading anchors, inspect the visual at its normal reading size if it changed, and run `git diff --check` before committing. The editable [handoff drawing](docs/images/handoff-sheet.svg) and its [README preview](docs/images/handoff-sheet.png) depict the same synthetic case. Update both when that example changes.
-
-Once the runtime exists, use its documented setup and test commands. Record the planner mode, fixture version, provider readbacks and observed failures alongside results. Use future tense for planned work. Reserve measured claims for reproducible runs.
+Keep the editable [household brief](docs/images/relay-desk-briefing.svg) and its [README image](docs/images/relay-desk-briefing.png) aligned. When revising the identity sheets or pitch, update the relevant local master and inspect each page of its Canva edition. Keep private edit invitations out of the public repository.
 
 ## Writing for Junaid
 
