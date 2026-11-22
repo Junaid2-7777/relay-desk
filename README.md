@@ -9,6 +9,8 @@
 
 That is a handoff someone might give an assistant before leaving for work. **Relay Desk** is a proposed personal chief of staff for people who handle that work themselves. It follows each job across messages, calendars and provider records, acts within the permission the person gave it, and brings back the decisions that still need them.
 
+**Current stage · Proposal and design.** Review the five-slide pitch or start with the first planned build, a refund tracker that can distinguish a merchant’s promise from money returned to the account. [Pitch](docs/relay-desk-pitch.pptx) · [Current milestone](roadmap.md#current-stage)
+
 ## One decision on Monday morning
 
 In the proposed demonstration, three updates arrive for one synthetic household on **23 November 2026**.
@@ -31,9 +33,9 @@ A judge can supply a different goal and issuer after the build is frozen. A new 
 
 ## Project status and materials
 
-**Design proposal for Homingo A3.** The repository contains the audit, build roadmap, visual studies and evaluation protocol. The runnable agent, provider integrations, measured outcomes and submission video are planned. Household records and money in the studies are synthetic. Codex assisted with research, writing and design. The editable visual materials were prepared for Canva. [Official brief](https://hackathon.homingo.co.in/hackathons/edition-01/problem-statements#a3)
+Prepared for **Homingo Hack Days, Agents A3 · A personal staff for everyone**. The studies use synthetic household records and amounts. The runnable agent, provider integrations, measured outcomes and submission video are planned. Codex assisted with research, writing and design. The editable visual materials were prepared for Canva. [Official brief](https://hackathon.homingo.co.in/hackathons/edition-01/problem-statements#a3)
 
 - **Understand the problem and evidence.** [Product brief](docs/problem.md) · [Research and provider sources](docs/sources.md)
 - **Build the first release.** [Roadmap](roadmap.md) · [First build review](docs/build.md) · [Contributor guide](agents.md)
-- **Challenge the proposal.** [Five-slide judge pitch](docs/relay-desk-pitch.pptx) · [Evaluation and baselines](docs/evaluation.md) · [Judge walkthrough](docs/demo.md) · [Submission checklist](docs/hackathon.md)
+- **Challenge the proposal.** [Evaluation and baselines](docs/evaluation.md) · [Judge walkthrough](docs/demo.md) · [Submission checklist](docs/hackathon.md)
 - **Use the identity.** [Design guide and logos](DESIGN.md) · [Printable identity sheets](docs/brand/identity.pdf) · [Editable identity source](docs/brand/identity.pptx)

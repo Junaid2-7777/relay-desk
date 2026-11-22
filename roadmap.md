@@ -2,7 +2,13 @@
 
 **The first release should bring one decision back to the household.** In a single session, book an eligible service visit, keep watching a promised refund, and ask about the bill that exceeds the person's mandate. A judge should be able to change all three outcomes and introduce an unfamiliar fourth job.
 
-As of **23 November 2026**, the repository contains the proposal, A3 audit, source research, design studies and evaluation protocol. Implementation, user research, live results and the required working-demo video are ahead. Target a reproducible local build by **3 December**. The event submission window is **4–6 December**, closing **6 December at 23:59 IST**. [Official edition timeline and submission requirements](https://hackathon.homingo.co.in/hackathons/edition-01#timeline)
+## Current stage
+
+**23 November 2026 · Proposal and design complete.** The household brief, five-slide pitch and evaluation plan are ready for review. Implementation, user research and the working-demo video are ahead. [Household brief](docs/experience.md) · [Judge pitch](docs/relay-desk-pitch.pptx) · [Evaluation plan](docs/evaluation.md)
+
+**Next milestone · Delegation and evidence.** Build a resettable household fixture and a read-only refund tracker. Its first acceptance test is small enough to inspect by hand. A merchant’s promise and a same-value credit for a different order must both leave the refund open. Only a matching posted credit can close it. [First build specification](docs/build.md#seed-one-monday)
+
+Target a reproducible local build by **3 December**. The event submission window is **4–6 December**, closing **6 December at 23:59 IST**. [Official edition timeline and submission requirements](https://hackathon.homingo.co.in/hackathons/edition-01#timeline)
 
 ## Critical path for a solo build
 
