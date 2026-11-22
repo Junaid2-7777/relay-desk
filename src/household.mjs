@@ -18,6 +18,10 @@ export function makeGrant(operation, scope, choice, previous, now) {
 }
 
 export function scopes(record) {
+  if (record.receiptPlan?.available) {
+    const { issuer, subject } = record.receiptPlan;
+    return { receipt: { issuer, subject } };
+  }
   if (record.visit) {
     return { freeBusy: record.visit, slots: record.visit, reserve: record.visit, calendar: record.visit };
   }

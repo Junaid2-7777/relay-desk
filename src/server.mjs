@@ -5,6 +5,8 @@ import { pathToFileURL } from 'node:url';
 import { runBill } from './bill.mjs';
 import { openBillFixture } from './bill-fixture.mjs';
 import { DeskError, openDesk } from './desk.mjs';
+import { runReceipt, ReceiptPlanError } from './receipt.mjs';
+import { openReceiptFixture } from './receipt-fixture.mjs';
 import { openRefundFixture } from './refund-fixture.mjs';
 import { runVisit } from './visit.mjs';
 import { openVisitFixture } from './visit-fixture.mjs';
@@ -52,24 +54,17 @@ async function jsonBody(request) {
 }
 
 export function createDeskServer({
-  dataDir = resolve('.relay'), clock, fixtureMode = false, householdMode = false, reset = false, warm = true
+  dataDir, clock, fixtureMode = false, householdMode = false, reset = false, warm = true
 } = {}) {
   if (householdMode) fixtureMode = true;
+  dataDir ??= resolve(fixtureMode ? '.relay/demo' : '.relay');
   const refundFixture = fixtureMode ? openRefundFixture({ dataDir, clock }) : undefined;
   const household = householdMode ? {
     bill: { fixture: openBillFixture({ dataDir, clock }), run: runBill },
-    visit: { fixture: openVisitFixture({ dataDir, clock }), run: runVisit }
+    visit: { fixture: openVisitFixture({ dataDir, clock }), run: runVisit },
+    receipt: { fixture: openReceiptFixture({ dataDir, clock }), run: runReceipt }
   } : undefined;
   const desk = openDesk({ dataDir, clock, refundFixture, household });
-  if (reset && refundFixture) {
-    refundFixture.reset();
-    desk.resetRefund(householdMode && warm);
-    if (household) {
-      household.bill.fixture.reset();
-      household.visit.fixture.reset();
-      desk.resetHousehold(warm);
-    }
-  }
   const server = createServer(async (request, response) => {
     try {
       const { host, origin } = request.headers;
@@ -88,7 +83,7 @@ export function createDeskServer({
         return send(response, 200, refundFixture.inspect());
       }
       if (household && method === 'GET') {
-        const provider = /^\/api\/fixture\/(visit|bill)$/.exec(pathname);
+        const provider = /^\/api\/fixture\/(visit|bill|receipt)$/.exec(pathname);
         if (provider) return send(response, 200, household[provider[1]].fixture.inspect());
       }
       if (household && method === 'POST' && pathname === '/api/checkpoint') {
@@ -112,23 +107,43 @@ export function createDeskServer({
         const body = await jsonBody(request);
         return send(response, 200, action === 'refund-access' ? desk.refundAccess(id, body) : desk.checkRefund(id, body.checkpointId));
       }
-      const decision = /^\/api\/errands\/([\w-]+)\/(household-access|bill-choice)$/.exec(pathname);
+      const decision = /^\/api\/errands\/([\w-]+)\/(household-access|bill-choice|setup)$/.exec(pathname);
       if (household && decision && method === 'POST') {
         const [, id, action] = decision;
         const body = await jsonBody(request);
+        if (action === 'setup') return send(response, 200, desk.setup(id, body));
         return send(response, 200, action === 'bill-choice' ? desk.billChoice(id, body) : desk.householdAccess(id, body));
       }
       throw new DeskError('This page could not be found.', 404);
     } catch (error) {
-      if (!(error instanceof DeskError)) console.error(error);
-      send(response, error.status ?? 500, { error: error.status ? error.message : 'Relay Desk could not finish this request.' });
+      const status = error instanceof ReceiptPlanError ? 400 : error.status;
+      if (!status) console.error(error);
+      send(response, status ?? 500, { error: status ? error.message : 'Relay Desk could not finish this request.' });
     }
   });
+  if (reset && refundFixture) {
+    server.once('listening', () => {
+      try {
+        refundFixture.reset();
+        desk.resetRefund(householdMode && warm);
+        if (household) {
+          household.bill.fixture.reset();
+          household.visit.fixture.reset();
+          household.receipt.fixture.reset();
+          desk.resetHousehold(warm);
+        }
+      } catch (error) {
+        server.close();
+        server.emit('error', error);
+      }
+    });
+  }
   server.once('close', () => {
     desk.close();
     refundFixture?.close();
     household?.bill.fixture.close();
     household?.visit.fixture.close();
+    household?.receipt.fixture.close();
   });
   return server;
 }

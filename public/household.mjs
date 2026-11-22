@@ -44,7 +44,10 @@ const issues = {
   'bill-permission': 'Review access to check the bill and see which payments are covered.',
   'bill-deferred': 'You chose to leave this invoice unpaid.',
   'payment-unknown': 'Checking whether the payment went through.',
-  'payment-pending': 'The biller accepted the payment. Settlement is pending.'
+  'payment-pending': 'The biller accepted the payment. Settlement is pending.',
+  'receipt-permission': 'Allow a check of this exact record when you are ready.',
+  'receipt-pending': 'Waiting for the required receipt from the issuer.',
+  'evidence-needed': 'The practice desk has no source for this issuer. Keep the errand open and check with the issuer directly.'
 };
 
 export function statusLabel(record) {
@@ -61,17 +64,22 @@ export function statusLabel(record) {
     return record.issue === 'bill-deferred' ? 'Left unpaid' : 'Bill open';
   }
   if (record.kind === 'refund') return record.status === 'verified' ? 'Refund verified' : 'Waiting for credit';
+  if (record.kind === 'receipt') return record.status === 'verified' ? 'Receipt verified' : 'Waiting for evidence';
   return 'Open';
 }
 
 function permissions(record) {
+  if (record.receiptPlan) {
+    const { issuer, subject, available } = record.receiptPlan;
+    return available ? [['receipt', 'Issuer receipt', `Read receipt records for ${subject} from ${issuer}.`]] : [];
+  }
   if (record.visit) {
     const window = `${when(record.visit.windowStart)} to ${when(record.visit.windowEnd)} IST`;
     return [
       ['freeBusy', 'Calendar availability', `Read only busy intervals during ${window}.`],
-      ['slots', 'Provider availability', 'Read offered times for this broadband service.'],
-      ['reserve', 'Free booking', `Reserve one free visit during ${window}.`],
-      ['calendar', 'Calendar entry', 'Add and verify the calendar entry for that confirmed visit.']
+      ['slots', 'Provider availability', `Read offered times for ${record.visit.service} from ${record.owner}.`],
+      ['reserve', 'Free booking', `Reserve one free slot during ${window}.`],
+      ['calendar', 'Calendar entry', 'Add and verify the calendar entry for the confirmed reservation.']
     ];
   }
   return [
@@ -81,10 +89,12 @@ function permissions(record) {
 }
 
 function renderAccess(panel, record, run, deskTime) {
+  const entries = permissions(record);
+  if (!entries.length) return;
   const details = document.createElement('details');
   details.className = 'source evidence';
   addText(details, 'summary', 'Permissions');
-  for (const [operation, label, description] of permissions(record)) {
+  for (const [operation, label, description] of entries) {
     const grant = record.grants[operation];
     const active = grant?.status === 'allowed' && Date.parse(grant.expiresAt) > Date.parse(deskTime);
     const section = document.createElement('section');
@@ -150,5 +160,73 @@ export function renderHousehold(panel, list, record, run, deskTime) {
   if (record.conflict) fact(list, 'Calendar conflict', `${when(record.conflict.start)} IST`);
   if (record.status !== 'stopped' && record.issue && issues[record.issue]) addText(panel, 'p', issues[record.issue]);
   if (record.bill) renderBill(panel, list, record, run);
+  if (record.receiptPlan) {
+    const { issuer, subject, type, status } = record.receiptPlan;
+    fact(list, 'Issuer', issuer);
+    fact(list, 'Record reference', subject);
+    fact(list, 'Required proof', `${type} · ${status}`);
+    if (record.receiptProof) {
+      fact(list, 'Matching receipt', record.receiptProof.id);
+      fact(list, 'Issued', `${when(record.receiptProof.occurredAt)} IST`);
+    }
+    if (record.receiptCheck?.checkedAt) fact(list, 'Last successful check', `${when(record.receiptCheck.checkedAt)} IST`);
+  }
   if (record.status !== 'stopped') renderAccess(panel, record, run, deskTime);
+}
+
+export function renderPracticeSetup(panel, record, sources, run) {
+  const details = document.createElement('details');
+  details.className = 'source evidence';
+  addText(details, 'summary', 'Set up a practice check');
+  addText(details, 'p', 'Confirm the details. You can review each permission after saving.');
+  const form = document.createElement('form');
+  form.noValidate = true;
+  form.className = 'setup';
+  const typeLabel = addText(form, 'label', 'What should Relay do?');
+  const select = document.createElement('select');
+  select.id = `capability-${record.id}`;
+  typeLabel.htmlFor = select.id;
+  addText(select, 'option', 'Watch for a receipt').value = 'receipt';
+  addText(select, 'option', 'Reserve a free slot').value = 'visit';
+  select.value = record.practicePlan.capability;
+  const fields = document.createElement('div');
+  const submit = addText(form, 'button', 'Save agreed check');
+  submit.type = 'submit';
+  form.prepend(typeLabel, select, fields);
+  const common = [['issuer', 'Issuer identifier'], ['subject', 'Record reference']];
+  const variants = {
+    receipt: [['type', 'Record type'], ['status', 'Required status']],
+    visit: [['service', 'Service identifier'], ['windowStart', 'Earliest time (IST)', 'datetime-local'],
+      ['windowEnd', 'Latest time (IST)', 'datetime-local']]
+  };
+  function showFields() {
+    fields.replaceChildren();
+    if (select.value === 'receipt' && sources.length) {
+      addText(fields, 'p', sources.map(source => `${source.label} (${source.issuer})`).join(' · '));
+    }
+    for (const [name, label, type = 'text'] of [...common, ...variants[select.value]]) {
+      const tag = addText(fields, 'label', label);
+      const input = document.createElement('input');
+      input.id = `setup-${name}-${record.id}`;
+      input.name = name;
+      input.type = type;
+      input.maxLength = 100;
+      input.required = true;
+      input.value = record.practicePlan[name] ?? (name === 'type' ? 'receipt' : '');
+      tag.htmlFor = input.id;
+      fields.append(input);
+    }
+  }
+  select.addEventListener('change', showFields);
+  showFields();
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(form));
+    for (const name of ['windowStart', 'windowEnd']) {
+      if (values[name]) values[name] += values[name].length === 16 ? ':00+05:30' : '+05:30';
+    }
+    run('setup', { ...values, capability: select.value, revision: record.revision }, submit);
+  });
+  details.append(form);
+  panel.append(details);
 }

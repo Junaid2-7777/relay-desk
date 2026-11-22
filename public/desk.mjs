@@ -1,4 +1,4 @@
-import { action, addText, fact, renderHousehold, reviewNeeded, statusLabel } from './household.mjs';
+import { action, addText, fact, renderHousehold, renderPracticeSetup, reviewNeeded, statusLabel } from './household.mjs';
 
 const element = id => document.getElementById(id);
 const intake = element('intake');
@@ -22,6 +22,7 @@ let reviewedNote;
 let saveRequestId;
 let deskTime;
 let householdMode = false;
+let receiptSources = [];
 let checking = false;
 const openEdits = new Set();
 const localDrafts = new Map();
@@ -164,11 +165,13 @@ function renderErrand(record) {
       part('tracking').disabled = busy;
     });
   }
-  if (record.visit || record.bill) {
+  if (record.visit || record.bill || record.receiptPlan || (record.practicePlan && record.status === 'open')) {
     const panel = part('evidence');
     const source = part('note').closest('details');
-    source.open = false;
-    panel.after(source);
+    if (record.visit || record.bill) {
+      source.open = false;
+      panel.after(source);
+    }
     const run = async (endpoint, body, current, advance = false) => {
       part('error').textContent = '';
       panel.disabled = true;
@@ -188,7 +191,8 @@ function renderErrand(record) {
         current.focus();
       }
     };
-    renderHousehold(panel, part('facts'), record, run, deskTime);
+    if (record.practicePlan) renderPracticeSetup(panel, record, receiptSources, run);
+    else renderHousehold(panel, part('facts'), record, run, deskTime);
   }
   const trackingButton = part('tracking');
   trackingButton.hidden = record.status === 'verified';
@@ -338,8 +342,9 @@ function showErrands() {
   errands.replaceChildren(empty);
 }
 
-function showBrief({ today, now, errands: items, fixture, household }) {
+function showBrief({ today, now, errands: items, fixture, household, receiptSources: sources = [] }) {
   deskTime = now;
+  receiptSources = sources;
   element('today').dateTime = today;
   element('today').textContent = dateLabel(today);
   element('practice').hidden = !fixture;

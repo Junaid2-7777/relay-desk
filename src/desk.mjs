@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openActionJournal } from './action-journal.mjs';
 import { activeGrant, makeGrant, orderBrief, sameInvoice, scopes, seedHousehold } from './household.mjs';
-import { previewErrand } from './intake.mjs';
+import { previewErrand, suggestPracticePlan } from './intake.mjs';
+import { normalizeReceiptPlan } from './receipt.mjs';
+import { receiptIdentifier } from './receipt-fixture.mjs';
 import { checkRefund, refundGrant, refundSources } from './refund.mjs';
 
 export class DeskError extends Error {
@@ -40,6 +42,13 @@ function checkpointReference(value) {
   if (value === undefined) return undefined;
   if (typeof value === 'string' && /^[\w.-]{1,100}$/.test(value)) return value;
   throw new DeskError('Use a valid check reference.');
+}
+
+function visitTime(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/u.test(value) ||
+      !Number.isFinite(Date.parse(value))) throw new DeskError('Choose a valid start and end for the booking window.');
+  optionalDate(value.slice(0, 10));
+  return value;
 }
 
 const readErrand = row => row && JSON.parse(row.record);
@@ -111,7 +120,8 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     now: clock().toISOString(),
     errands: household ? orderBrief(list()) : list(),
     fixture: Boolean(refundFixture),
-    household: Boolean(household)
+    household: Boolean(household),
+    ...(household ? { receiptSources: household.receipt.fixture.sources(), plannerMode: 'fixed-rule' } : {})
   });
   const updateRefund = (id, reference) => {
     const checkpointId = checkpointReference(reference);
@@ -143,7 +153,8 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
         merchantDeadline: null,
         status: 'open',
         owner: proposal.kind === 'refund' ? 'Shop' : null,
-        evidence: []
+        evidence: [],
+        ...(household ? { practiceCase: true, practicePlan: suggestPracticePlan(note, household.receipt.fixture.sources()) } : {})
       };
       const saved = insert.run(record.id, record.revision, JSON.stringify(record));
       if (saved.changes) return record;
@@ -204,6 +215,45 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
         };
       });
     },
+    setup(id, { revision, capability, issuer, subject, service, owner, type, status, windowStart, windowEnd }) {
+      if (!household || !['receipt', 'visit'].includes(capability)) throw new DeskError('Choose a practice capability.');
+      return changeCase(id, record => {
+        requireRevision(record, revision);
+        if (!record.practicePlan || record.status !== 'open') throw new DeskError('This errand cannot change its agreed plan.', 409);
+        const { practicePlan, ...existing } = record;
+        if (capability === 'receipt') {
+          const sources = household.receipt.fixture.sources();
+          const receiptPlan = normalizeReceiptPlan({ issuer, subject, type, status }, sources);
+          return {
+            ...existing,
+            kind: 'receipt',
+            owner: sources.find(source => source.issuer === receiptPlan.issuer)?.label ?? receiptPlan.issuer,
+            receiptPlan,
+            issue: receiptPlan.available ? 'receipt-permission' : 'evidence-needed',
+            grants: {}
+          };
+        }
+        const visit = {
+          issuer: receiptIdentifier(issuer, 'a provider identifier'),
+          service: receiptIdentifier(service, 'a service identifier'),
+          subject: receiptIdentifier(subject, 'a subject reference'),
+          zone: 'Asia/Kolkata',
+          windowStart: visitTime(windowStart),
+          windowEnd: visitTime(windowEnd)
+        };
+        if (Date.parse(visit.windowStart) >= Date.parse(visit.windowEnd) || Date.parse(visit.windowEnd) <= +clock()) {
+          throw new DeskError('Choose a booking window that ends in the future.');
+        }
+        return {
+          ...existing,
+          kind: 'visit',
+          owner: owner ? requiredText(owner, 'a provider name', 100) : visit.issuer,
+          visit,
+          issue: 'visit-permission',
+          grants: {}
+        };
+      });
+    },
     householdAccess(id, { operation, choice, revision }) {
       if (!household || !['allowed', 'declined', 'withdrawn'].includes(choice)) {
         throw new DeskError('Choose a permission for the practice household.');
@@ -256,7 +306,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
         try {
           if (record.refund) {
             updateRefund(record.id, checkpointId);
-          } else if (record.bill || record.visit) {
+          } else if (record.bill || record.visit || record.receiptPlan) {
             const { run, fixture } = household[record.kind];
             const next = run(record, fixture, journal, clock());
             if (JSON.stringify(next) !== JSON.stringify(record)) revise(next, record.revision);
@@ -291,6 +341,12 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     },
     resetHousehold(warm) {
       transaction(() => {
+        const extras = list().filter(record => record.practiceCase);
+        const remove = database.prepare('DELETE FROM errands WHERE id = ?');
+        for (const record of extras) {
+          journal.reset(record.id);
+          remove.run(record.id);
+        }
         for (const record of seedHousehold(clock(), warm)) {
           journal.reset(record.id);
           seed(record);

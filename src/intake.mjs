@@ -38,3 +38,20 @@ export function previewErrand(note, today) {
     checkDate: requestedCheckDate(request, today),
   };
 }
+
+export function suggestPracticePlan(note, sources) {
+  const lower = note.toLowerCase();
+  const referenced = /\b(?:reference|ref\.?|id)\s*(?:[:#]\s*)?([a-z0-9][a-z0-9._:-]*)/iu.exec(note);
+  const subject = referenced?.[1].replace(/[.:]+$/u, '') ?? '';
+  if (/\b(?:book|reserve|schedule)\b/u.test(lower)) return { capability: 'visit', subject };
+
+  const issuers = sources.filter(source => lower.includes(source.label.toLowerCase()));
+  const expected = /\b(?:until|once|proof\s+that|confirmation\s+that)\b[^.!?]{0,70}\b(closed|approved|confirmed|issued|rejected|completed)\b/u.exec(lower);
+  return {
+    capability: 'receipt',
+    issuer: issuers.length === 1 ? issuers[0].issuer : '',
+    subject,
+    type: 'receipt',
+    status: expected?.[1] ?? ''
+  };
+}
