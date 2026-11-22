@@ -1,25 +1,31 @@
-# Building the first case
+# Building the first household desk
 
-Start with a judge at a terminal, looking at the same two calendar events before and after the 31 October notice. Give the judge a separate way to inspect who issued each case event. Once these observations work from a fresh reset, the student interface has something trustworthy to show.
+The first implementation should let a judge inspect a booking, a payment and a credit without trusting the agent's account of what happened. Begin with a terminal and independent provider records. The prototype described here is planned.
 
-## Smallest useful setup
+## Seed one Monday
 
-| Part | Proposed implementation | What a builder can inspect directly |
+Use an isolated household and an injected clock of **23 November 2026 IST**. Seed prospective grants already agreed by the household. The bill revision arrives before any payment of the earlier invoice. All personal records and monetary amounts are synthetic.
+
+| What the household permits | What the builder supplies | First observable result |
 | --- | --- | --- |
-| Historical inputs | Four versioned Ministry schedules, one dated portal capture and a fixed IST clock. Keep the original field, a short passage or row, URL, issuer date and capture identity together. | Which evidence was available on the simulated day and which field justified each deadline. [Source register](sources.md) |
-| Case and outbox simulator | A loopback FastAPI service with role-specific fixture controls. Keep the case timeline and local outbox in separate SQLite tables, so queuing against the current case sequence can be atomic. | The authority, stage, case and correction request for each event. The exact payload and receipt for each queued request. |
-| Personal agent | A separate process and SQLite journal. Validate model proposals with Pydantic and run the same state transitions in fixture mode. Start with Python 3.12 and pin tested dependencies when the build lands. | The input that woke the agent, decision, pending effect, and corresponding provider readback. |
-| Calendar | One isolated Radicale calendar on loopback. Seed one unrelated event. Give each managed stage a stable event UID and resource path. | Calendar data obtained from the provider, including the UID, date and revision of each changed event. [Radicale](https://radicale.org/) |
+| Watch one merchant return for ₹1,249. Read its message thread and relevant incoming credits. | The merchant promises the refund. The ledger includes a same-value credit for a different return. | The refund stays open. The expected reference remains visible and the unrelated credit has no effect. |
+| Book one free broadband visit on Tuesday afternoon. Protect existing commitments. | The provider offers 11 am and 3 pm on 24 November. An existing event covers 11 am. The 3 pm slot is free. | Read one confirmed 3 pm reservation from the provider and one corresponding event from the calendar. The unrelated event retains its time and identity. |
+| Pay the named electricity account up to ₹900 per bill. | Invoice revision one is ₹850. Before dispatch, the issuer posts revision two at ₹1,180. | Zero debits. The owner sees the revised amount, payee, reference and choices. The standing limit still reads ₹900. |
 
-## Walk it through from a clean reset
+## Implement the shared path first
 
-1. **Start on 1 October.** Seed one filed NMMSS case for AY 2026–27, both verifications pending, one unrelated calendar event and an empty outbox. Release the 1 October notice. Save provider readbacks for the two new reminders and the unrelated event.
-2. **Advance to 31 October.** Release the revised notice. Compare the same two resources by UID. School moves from 15 to 30 November. District moves from 30 November to 15 December. Replay the release and check the effect history for zero additional writes. [Published dates](sources.md#nmmss-timeline)
-3. **Advance to 29 November.** Have the school request a legible copy. Record the student's correction against that return. Exercise both orders after taking a fresh reset for each run. Approval first queues one local message. Acknowledgement first retires the draft without queuing it. The school owns verification at the end of both runs.
-4. **Withhold the final receipt.** Issue school verification and inspect the district handoff. Leave the case there through a restart. Supply a matching district verification and inspect both authority records before displaying completion. [State and effect contracts](architecture.md)
+Use a deterministic runner before adding model interpretation. A loopback simulator owns mail, free/busy intervals, bookings, credits, invoices and settlement records. Keep the agent's journal in a separate SQLite store. Give the tester direct provider-side readback. The future UI and tests should drive the same runner. [Architecture](architecture.md)
 
-## Make the setup reproducible
+The planner proposes a typed action. The controller checks the household's current grant, allowed fields, amount or time restrictions, freshness and prior effects. The adapter rechecks the state it owns at the moment of the write. Journal an operation key before dispatch. After a lost reply, look up that key and inspect the result before retrying.
 
-Ship one documented path to start, inspect and reset the isolated services on PowerShell and on macOS/Linux. A reset restores only the dedicated fixture data, clock and calendar. Keep dated public excerpts available offline. Label the actual planner mode in both the UI and run record. A fresh-clone check must exercise the fixture-driven path without a model key and declare the configuration needed for live inference.
+Keep domain facts in adapters. A free calendar interval cannot confirm a booking. An additional read source can enable a new tracking job without a workflow named for that errand. A new power, such as filing a form with an agency, needs its own adapter, permission and tests.
 
-If Radicale blocks progress, keep the provider boundary and use a separate loopback SQLite calendar service with stable event IDs. Show that service's native records and label the CalDAV check outstanding. If inference is unavailable, replay the typed case with actual local writes and label it **Fixture-driven demo**. Claim model performance only for scored live runs. [Evaluation protocol](evaluation.md)
+## First build review
+
+1. Reset the dedicated fixture. Capture the original calendar event, invoice history, three grants and initial provider balances or records.
+2. Run the Monday sequence without prompting between errands. Capture the single bill decision, the confirmed 3 pm booking and the outstanding refund reference.
+3. From a fresh reset, remove the 3 pm slot just before confirmation. Inspect the calendar and booking store. Relay can request a different window. The household's existing commitment stays in place.
+4. Approve ₹1,180 once, then revise the invoice again before dispatch. Verify zero debits against the stale approval. In a separate unchanged run, lose a payment response and verify that retry yields one exact payment. Settlement needs its own evidence.
+5. Give the desk an unfamiliar tracking job using an existing read capability. Supply a wrong issuer's acknowledgement, withhold the matching record across a restart, then release it. Inspect each transition without changing program code.
+
+Publish actual install, start, reset and evaluation commands once tested on a clean clone. Pin the runtime, fixtures and planner settings. Supply an offline path and label live-model runs. Start a real pilot with consented reads and reversible calendar work. A local settlement simulation provides no evidence of production payment access. [Roadmap](../roadmap.md) · [Evaluation protocol](evaluation.md)
