@@ -104,6 +104,8 @@ export function createDeskServer({
       const errand = /^\/api\/errands\/([\w-]+)(\/draft)?$/.exec(pathname);
       if (errand && method === 'PUT' && !errand[2]) return send(response, 200, desk.edit(errand[1], await jsonBody(request)));
       if (errand && method === 'POST' && errand[2]) return send(response, 200, desk.draft(errand[1]));
+      const tracking = /^\/api\/errands\/([\w-]+)\/tracking$/.exec(pathname);
+      if (tracking && method === 'POST') return send(response, 200, desk.tracking(tracking[1], await jsonBody(request)));
       const refund = /^\/api\/errands\/([\w-]+)\/(refund-access|check-refund)$/.exec(pathname);
       if (refundFixture && refund && method === 'POST') {
         const [, id, action] = refund;

@@ -32,7 +32,8 @@ export function fact(list, name, text) {
   list.append(title, value);
 }
 
-export const reviewNeeded = record => record.issue === 'bill-review' || record.issue === 'calendar-conflict';
+export const reviewNeeded = record => record.status !== 'stopped' &&
+  (record.issue === 'bill-review' || record.issue === 'calendar-conflict');
 
 const issues = {
   'visit-permission': 'Review access to check and book the visit.',
@@ -47,6 +48,7 @@ const issues = {
 };
 
 export function statusLabel(record) {
+  if (record.status === 'stopped') return 'Tracking stopped';
   if (record.kind === 'visit') {
     if (record.issue === 'calendar-conflict') return 'Visit booked · calendar conflict';
     if (record.reservation) return 'Provider confirmed';
@@ -119,7 +121,7 @@ function renderBill(panel, list, record, run) {
     fact(list, 'Payee', `${invoice.payeeLabel} · ${invoice.payee}`);
   }
   fact(list, 'Standing limit', money(capMinor, bill.currency));
-  if (record.issue === 'bill-review' && invoice) {
+  if (reviewNeeded(record) && invoice) {
     const approved = record.approval?.status === 'allowed';
     addText(panel, 'p', approved
       ? 'One-time payment approved. Check your errands to apply it.'
@@ -146,7 +148,7 @@ export function renderHousehold(panel, list, record, run, deskTime) {
   }
   if (record.calendarEvent) fact(list, 'Calendar entry', 'Confirmed in the practice calendar');
   if (record.conflict) fact(list, 'Calendar conflict', `${when(record.conflict.start)} IST`);
-  if (record.issue && issues[record.issue]) addText(panel, 'p', issues[record.issue]);
+  if (record.status !== 'stopped' && record.issue && issues[record.issue]) addText(panel, 'p', issues[record.issue]);
   if (record.bill) renderBill(panel, list, record, run);
-  renderAccess(panel, record, run, deskTime);
+  if (record.status !== 'stopped') renderAccess(panel, record, run, deskTime);
 }

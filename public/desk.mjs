@@ -120,7 +120,7 @@ function renderRefund(panel, record, update, errorMessage, setBusy) {
     details.append(section);
   }
   panel.append(details);
-  if (record.status !== 'verified' && Object.values(record.refundAccess).some(active)) {
+  if (record.status !== 'verified' && record.status !== 'stopped' && Object.values(record.refundAccess).some(active)) {
     buttons.push(action(panel, 'Check refund sources', event => run('check-refund', {}, event.currentTarget)));
   }
 }
@@ -158,9 +158,10 @@ function renderErrand(record) {
   };
   if (record.refund) {
     fact(part('facts'), 'Return reference', record.refund.reference);
-    renderRefund(part('evidence'), record, result => replaceCard(result, true), part('error'), busy => {
+    if (record.status !== 'stopped') renderRefund(part('evidence'), record, result => replaceCard(result, true), part('error'), busy => {
       part('edit').disabled = busy;
       part('draft').disabled = busy;
+      part('tracking').disabled = busy;
     });
   }
   if (record.visit || record.bill) {
@@ -173,6 +174,7 @@ function renderErrand(record) {
       panel.disabled = true;
       part('edit').disabled = true;
       part('draft').disabled = true;
+      part('tracking').disabled = true;
       try {
         const result = await request(`/api/errands/${id}/${endpoint}`, { method: 'POST', body });
         replaceCard(result, endpoint === 'household-access');
@@ -182,17 +184,38 @@ function renderErrand(record) {
         panel.disabled = false;
         part('edit').disabled = false;
         part('draft').disabled = false;
+        part('tracking').disabled = false;
         current.focus();
       }
     };
     renderHousehold(panel, part('facts'), record, run, deskTime);
   }
+  const trackingButton = part('tracking');
+  trackingButton.hidden = record.status === 'verified';
+  const stopped = record.status === 'stopped';
+  if (stopped) trackingButton.textContent = 'Resume tracking';
+  trackingButton.addEventListener('click', async () => {
+    part('error').textContent = '';
+    const controls = [trackingButton, part('edit'), part('draft'), part('evidence')];
+    controls.forEach(control => { control.disabled = true; });
+    try {
+      const result = await request(`/api/errands/${id}/tracking`, {
+        method: 'POST', body: { choice: stopped ? 'resume' : 'stop', revision: record.revision }
+      });
+      replaceCard(result);
+    } catch (error) {
+      part('error').textContent = error.message;
+      controls.forEach(control => { control.disabled = false; });
+      trackingButton.focus();
+    }
+  });
   if (localDrafts.has(id)) part('extra').append(localDrafts.get(id));
   part('edit').addEventListener('click', () => {
     openEdits.add(id);
     checkpointButton.disabled = true;
     part('edit').disabled = true;
     part('draft').disabled = true;
+    trackingButton.disabled = true;
     part('evidence').disabled = true;
     part('error').textContent = '';
     const form = element('edit-template').content.firstElementChild.cloneNode(true);
@@ -210,6 +233,7 @@ function renderErrand(record) {
       part('error').textContent = '';
       part('edit').disabled = false;
       part('draft').disabled = false;
+      trackingButton.disabled = false;
       part('evidence').disabled = false;
       openEdits.delete(id);
       checkpointButton.disabled = checking || Boolean(openEdits.size);
@@ -247,6 +271,7 @@ function renderErrand(record) {
     const draftButton = part('draft');
     draftButton.disabled = true;
     part('edit').disabled = true;
+    trackingButton.disabled = true;
     try {
       const { text } = await request(`/api/errands/${id}/draft`, { method: 'POST' });
       const panel = document.createElement('div');
@@ -267,6 +292,7 @@ function renderErrand(record) {
     } finally {
       draftButton.disabled = false;
       part('edit').disabled = false;
+      trackingButton.disabled = false;
     }
   });
   return card;
@@ -283,7 +309,7 @@ function showErrands() {
       errands.replaceChildren(...cards.map(([, card]) => card));
       return;
     }
-    const open = cards.filter(([record]) => record.status !== 'verified')
+    const open = cards.filter(([record]) => !['verified', 'stopped'].includes(record.status))
       .sort(([left], [right]) => Number(reviewNeeded(right)) - Number(reviewNeeded(left)) ||
         (left.checkDate ?? '9999-12-31').localeCompare(right.checkDate ?? '9999-12-31') || left.id.localeCompare(right.id))
       .map(([, card]) => card);
@@ -293,6 +319,14 @@ function showErrands() {
       history.className = 'verified-receipts';
       addText(history, 'h3', 'Verified outcomes');
       history.append(...verified);
+      open.push(history);
+    }
+    const stopped = cards.filter(([record]) => record.status === 'stopped').map(([, card]) => card);
+    if (stopped.length) {
+      const history = document.createElement('section');
+      history.className = 'verified-receipts';
+      addText(history, 'h3', 'Stopped errands');
+      history.append(...stopped);
       open.push(history);
     }
     errands.replaceChildren(...open);

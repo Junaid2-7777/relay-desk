@@ -78,6 +78,9 @@ async function startHousehold(t, warm = true) {
     refundAccess: (errand, source, choice) => request(`/api/errands/${errand.id}/refund-access`, {
       source, choice, revision: errand.revision
     }),
+    tracking: (errand, choice) => request(`/api/errands/${errand.id}/tracking`, {
+      choice, revision: errand.revision
+    }),
     billChoice: (errand, choice, status) => request('/api/errands/demo-bill/bill-choice', {
       choice, revision: errand.revision
     }, status)
@@ -283,5 +286,23 @@ test('a protected event arriving after booking preserves the original reservatio
   assert.deepEqual(native.reservations, initial.reservations);
   assert.deepEqual(native.calendar, [...initial.calendar, inserted]);
   assert.equal(native.attempts.filter(item => item.operation === 'reserve').length, 1);
+  assert.equal(native.attempts.filter(item => item.operation === 'calendar.add').length, 2);
   assert.ok(!JSON.stringify({ brief, inspection: await household.inspect() }).includes(inserted.title));
+});
+
+test('stopping an open errand withdraws its permissions and leaves its evidence unresolved', async t => {
+  const household = await startHousehold(t);
+  const refund = errand(await household.checkpoint(), 'refund');
+  const reads = (await household.native('refund')).reads;
+  const stopped = await household.tracking(refund, 'stop');
+  assert.equal(stopped.status, 'stopped');
+  assert.deepEqual(stopped.evidence, []);
+  assert.equal(stopped.note, refund.note);
+  assert.equal(stopped.checkDate, refund.checkDate);
+  assert.equal(stopped.refundAccess.credits.status, 'withdrawn');
+  assert.deepEqual(errand(await household.checkpoint(), 'refund'), stopped);
+  const resumed = await household.tracking(stopped, 'resume');
+  assert.equal(resumed.status, 'open');
+  assert.equal(resumed.refundAccess.merchant.status, 'withdrawn');
+  assert.deepEqual((await household.native('refund')).reads, reads);
 });

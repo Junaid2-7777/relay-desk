@@ -73,7 +73,7 @@ export function sameInvoice(a, b) {
 }
 
 function group(record) {
-  if (record.status === 'verified') return 2;
+  if (['verified', 'stopped'].includes(record.status)) return 2;
   if (record.issue === 'bill-review' || record.issue === 'calendar-conflict') return 0;
   return 1;
 }

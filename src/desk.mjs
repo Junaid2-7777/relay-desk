@@ -182,6 +182,28 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       });
     },
     checkRefund: updateRefund,
+    tracking(id, { choice, revision }) {
+      if (!['stop', 'resume'].includes(choice)) throw new DeskError('Choose whether to track this errand.');
+      return changeCase(id, record => {
+        requireRevision(record, revision);
+        if (choice === 'resume') {
+          if (record.status !== 'stopped') return record;
+          const { stoppedStatus, ...rest } = record;
+          return { ...rest, status: stoppedStatus ?? 'open' };
+        }
+        if (record.status === 'stopped' || record.status === 'verified') return record;
+        const withdraw = grants => Object.fromEntries(Object.entries(grants).map(([source, grant]) =>
+          [source, grant.status === 'allowed' ? { ...grant, status: 'withdrawn', revision: grant.revision + 1, expiresAt: null } : grant]));
+        return {
+          ...record,
+          stoppedStatus: record.status,
+          status: 'stopped',
+          ...(record.grants ? { grants: withdraw(record.grants) } : {}),
+          ...(record.refundAccess ? { refundAccess: withdraw(record.refundAccess) } : {}),
+          ...(record.approval ? { approval: null } : {})
+        };
+      });
+    },
     householdAccess(id, { operation, choice, revision }) {
       if (!household || !['allowed', 'declined', 'withdrawn'].includes(choice)) {
         throw new DeskError('Choose a permission for the practice household.');
