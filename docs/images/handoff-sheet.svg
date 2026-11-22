@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="694" viewBox="0 0 1040 694" role="img" aria-labelledby="title desc">
+  <title id="title">Deadline Relay handoff sheet, concept study</title>
+  <desc id="desc">Synthetic case on 29 November 2026. The school received the corrected copy. The student has nothing to resend. School verification is pending and due 30 November. District review follows. A school receipt supports the case status and a separate Ministry notice supports the date.</desc>
+  <defs>
+    <style>
+      .type { font-family: 'Segoe UI', 'Helvetica Neue', sans-serif; fill: #142240; }
+      .data { font-family: Consolas, 'Liberation Mono', monospace; font-size: 14px; }
+      .label { font-size: 13px; font-weight: 650; letter-spacing: 1.5px; }
+      .sub { fill: #485b73; font-size: 16px; }
+    </style>
+    <linearGradient id="paper" x2=".9" y2="1" gradientUnits="objectBoundingBox">
+      <stop stop-color="#edf3fb"/><stop offset="1" stop-color="#e1e9f4"/>
+    </linearGradient>
+    <pattern id="ruling" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M0 31.5H32" fill="none" stroke="#c8d3e3" stroke-opacity=".48"/>
+    </pattern>
+    <g id="relay-mark" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M0 19 13 6h8" stroke="#254ddd"/>
+      <path d="m8 23 13-13h8" stroke="#142240"/>
+    </g>
+  </defs>
+  <rect width="1040" height="694" fill="url(#paper)"/>
+  <rect width="1040" height="694" fill="url(#ruling)"/>
+  <g class="type">
+    <use href="#relay-mark" x="38" y="26"/>
+    <text x="84" y="50" font-size="25" font-weight="680" letter-spacing="-.7">Deadline Relay</text>
+    <text x="1000" y="47" text-anchor="end" class="data" fill="#445976">Design study  /  Synthetic case</text>
+
+    <rect x="44" y="84" width="956" height="575" rx="14" fill="#192e56" opacity=".085"/>
+    <rect x="40" y="78" width="960" height="575" rx="14" fill="#fff" stroke="#bbc9db"/>
+    <text x="73" y="116" font-size="17" font-weight="600">NMMSS scholarship</text>
+    <text x="249" y="116" class="sub">/  AY 2026–27</text>
+    <text x="967" y="116" text-anchor="end" class="data" fill="#485b73">Simulated date  ·  29 Nov 2026</text>
+
+    <!-- One case fact and one deadline share a sheet but keep separate sources. -->
+    <rect x="64" y="140" width="912" height="222" rx="8" fill="#172e5c"/>
+    <path d="M696 140H968Q976 140 976 148V354Q976 362 968 362H696Z" fill="#2448bb"/>
+    <path d="M696 149v204" stroke="#bbd2ff" stroke-width="1.4" stroke-dasharray="3 6"/>
+    <circle cx="696" cy="140" r="8" fill="#fff"/>
+    <circle cx="696" cy="362" r="8" fill="#fff"/>
+    <text x="90" y="179" class="label" fill="#bfd3ff">WITH YOUR SCHOOL</text>
+    <text x="88" y="241" font-size="52" letter-spacing="-1.7" font-weight="600" fill="white">Your school received</text>
+    <text x="88" y="297" font-size="52" letter-spacing="-1.7" font-weight="600" fill="white">the correction.</text>
+    <text x="90" y="334" font-size="18" fill="#e4ecfb">Verification is still pending. You have nothing to resend.</text>
+    <text x="725" y="180" class="label" fill="#e6eeff">SCHOOL VERIFICATION DUE</text>
+    <text x="719" y="289" font-size="116" font-weight="600" letter-spacing="-9" fill="white">30</text>
+    <text x="729" y="330" font-size="22" fill="white">November 2026</text>
+
+    <text x="74" y="404" class="label" fill="#485b73">APPLICATION HANDOFF</text>
+    <path d="M92 441H476" stroke="#254ddd" stroke-width="3"/>
+    <path d="M476 441H843" stroke="#a0adc1" stroke-width="2" stroke-dasharray="4 5"/>
+    <circle cx="92" cy="441" r="11" fill="#243856"/>
+    <path d="m87 441 3.4 3.6 6.5-7.7" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="476" cy="441" r="16" fill="white" stroke="#254ddd" stroke-width="2.5"/>
+    <circle cx="476" cy="441" r="9.5" fill="#254ddd"/>
+    <circle cx="843" cy="441" r="10" fill="white" stroke="#6a7a91" stroke-width="2"/>
+    <text x="75" y="485" font-size="23" font-weight="600">Student</text>
+    <text x="75" y="511" class="sub">Correction submitted</text>
+    <text x="452" y="485" font-size="23" font-weight="650" fill="#2448bb">School</text>
+    <text x="452" y="511" font-size="16" fill="#2448bb">Current · Verification pending</text>
+    <text x="826" y="485" font-size="23" font-weight="600">District</text>
+    <text x="826" y="511" class="sub">Awaits school</text>
+
+    <path d="M64 541h912" stroke="#cbd5e1"/>
+    <text x="75" y="573" class="label" fill="#485b73">CASE EVIDENCE</text>
+    <text x="75" y="603" font-size="21" font-weight="600">School receipt</text>
+    <text x="75" y="629" class="sub">Correction acknowledged in the simulator.</text>
+    <path d="M524 560v71" stroke="#cbd5e1"/>
+    <text x="552" y="573" class="label" fill="#485b73">DEADLINE SOURCE</text>
+    <text x="552" y="603" font-size="21" font-weight="600">Ministry of Education</text>
+    <text x="552" y="629" class="sub">31 Oct 2026 notice  ·  Institute verification (L1)</text>
+  </g>
+</svg>

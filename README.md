@@ -6,6 +6,10 @@ On 29 November in the proposed demo, a student gets a receipt for the attachment
 
 Deadline Relay is a proposed personal agent for one already-filed National Means-cum-Merit Scholarship Scheme (NMMSS) application. It follows public notices and a case record over time. It can revise the family’s local calendar when a date moves, prepare a follow-up for approval when a case comes back, and wait for the next officer’s decision. This repository contains the product design and build plan for Homingo Hackathon Edition 01, Agents A3. [Official A3 statement](https://hackathon.homingo.co.in/hackathons/edition-01/problem-statements#a3)
 
+![Proposed student handoff sheet on 29 November. The school received the correction and still owes verification by 30 November. The case receipt and the Ministry deadline have separate sources.](docs/images/handoff-sheet.png)
+
+The sheet above shows the moment a receipt arrives. The [interaction design](docs/experience.md) follows the same sheet back to the student when the school requests a correction, then forward to the district when the school verifies.
+
 ## What a judge can change in the planned demo
 
 1. A student has filed their scholarship application and is waiting for school verification. A historical Ministry notice moves the school deadline from **15 November to 30 November** and the district deadline from **30 November to 15 December**. The agent updates the two affected reminders in a real local calendar. A separate calendar entry stays in place. [Earlier Ministry notice](https://www.pib.gov.in/PressReleseDetailm.aspx?PRID=2317657&lang=1&reg=3) · [Revised notice](https://www.pib.gov.in/PressReleasePage.aspx?PRID=2330936&lang=1&reg=3)
