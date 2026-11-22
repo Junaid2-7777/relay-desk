@@ -20,22 +20,22 @@ flowchart LR
 ## Public source and case contracts
 
 - **Notice candidate.** A candidate contains scheme, academic year, cohort, geography, milestone, date as published, issuer, issue date or revision when known, and a URL plus a short evidence locator. Keep approved field values and a retrieval hash. Drop page content beyond what is needed to verify the candidate. Interpret a broad heading and its exceptions together. An undated scheme card can corroborate a dated Ministry notice. Any disagreement without a resolved scope or precedence stays visible for review.
-- **Confirmed milestone.** Resolve only within the same scope. A later authorized revision may replace one or multiple stages. Unrelated schemes, years and cohorts stay independent. If a source has only one date, preserve dates for other stages until specifically revised. Date-only evidence stays date-only in IST. The calendar can use a separate user-selected advance reminder. Never manufacture a cutoff time or a relationship such as `application date + 30 days`.
-- **Case event.** Every synthetic event has an ID, case ID, monotonically increasing service sequence, actor role, type, receipt reference and recorded time. The simulator’s independent role paths emit `submitted`, `returned_for_correction`, `correction_submitted`, `correction_acknowledged`, `institute_verified`, and `district_verified`. Verify issuer role, stage and correlation before advancing. Retain repeated event identity and gap state for recovery.
+- **Confirmed milestone.** Compare issuer revisions within the same scheme, year, cohort, geography and stage. A partial revision replaces only the fields it specifies. A repost or later fetch does not advance the issuer revision. At each replay step, use dated releases published by that day and undated snapshots captured by that day. This first makes the 21 November portal capture available on 21 November. A same-scope conflict holds the affected milestone at its last confirmed value until resolved. Keep the source and date for each field. Preserve date-only evidence as an Indian calendar date, with any advance reminder stored separately. [Historical source register](sources.md#nmmss-timeline)
+- **Case event.** Each event carries a stable event ID, case ID, per-case sequence assigned by the simulator, issuer role, type, stage, receipt reference and recorded time. The institute's return event ID identifies one correction request. Every correction submission or acknowledgement cites that return, and acknowledgement also cites the submission. A subsequent return starts a fresh request with its own reason and invalidates any outstanding draft for the previous request.
 - **Plan.** A typed plan contains the goal, current case sequence, evidence versions, proposed calendar or outbox actions, and a terminal reason. The model chooses which tools to call, interprets public notice variants, and composes a case-specific next action. The controller validates dates, permitted targets and state transitions before effects. Captured data and provider records determine completion.
 
 ## Wait states and independent proof
 
-| Observed event | Owner and next case state |
-| --- | --- |
-| `submitted` | Institute owns verification. The student can track or request follow-up. |
-| `returned_for_correction` | Student owns the correction. Pause routine institute nudges and preserve the actual notice reason. |
-| `correction_submitted` | Institute owns re-review. Prepare a local follow-up when the policy calls for one. |
-| `correction_acknowledged` | Institute still owns verification. Acknowledgement can prevent a redundant reminder to confirm receipt. |
-| `institute_verified` | District owns verification. Retire the institute task and surface the district deadline. |
-| `district_verified` | Close only when the same case has a valid institute verification and district verification at the expected stage. |
+| Receipt from the case simulator | Required context | What the student sees next |
+| --- | --- | --- |
+| Student filing recorded, `submitted` | New case | The institute owns L1. Show its published deadline and the evidence still due. |
+| Institute requests a correction, `returned_for_correction` | L1 pending | The student owns the requested correction. Quote the reason, pause institute nudges and label the L1 date as the institute's deadline. |
+| Student resubmits, `correction_submitted` | Current return, student action in simulator | The institute owns re-review. Offer one draft asking it to confirm receipt while acknowledgement is outstanding. |
+| Institute acknowledges, `correction_acknowledged` | Submission for the current return | Show the receipt, withdraw an unqueued receipt request and keep L1 pending. Any previously queued request stays in history. |
+| Institute verifies, `institute_verified` | L1 pending with any current correction resubmitted | The district owns L2. The institute can verify directly after resubmission even when it issued no separate acknowledgement. |
+| District verifies, `district_verified` | Valid L1 verification for this case | Show both authority receipts and close the verification follow-up. Scholarship award and payment are outside the observed outcome. |
 
-Unsupported events, out-of-order service records, or discrepancies in case identity require a reread or a human handoff. A late response should never rewrite a newer state. A terminal rejection, if modelled, remains an external decision and routes to human review.
+Fold the contiguous case stream in service sequence. Duplicate deliveries of the same record have no effect. A gap triggers a reread from the last accepted sequence and holds case-dependent actions until the gap is filled. A late acknowledgement for a superseded return is historical evidence only. An event with conflicting contents under the same ID or sequence, or a transition the designated authority could not make at that stage, leaves the last verified owner visible with a review reason. A deadline change can update an open reminder at any point in this flow. It cannot assign a new case owner or reopen a completed stage.
 
 ## Tool and write boundaries
 
