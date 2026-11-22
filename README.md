@@ -13,7 +13,7 @@
 
 That’s enough to start. Relay keeps the note and the day you want to check. When you come back on Friday, you can see what the shop promised and whether the refund is still open. You can prepare a draft message to the shop locally. Saving the note requires only the words you want to keep.
 
-**Current stage · Local first-use build.** [Current milestone](roadmap.md#current-stage) · [Five-slide pitch](docs/relay-desk-pitch.pptx)
+**Current stage · Local desk and synthetic household.** [Current milestone](roadmap.md#current-stage) · [Five-slide pitch](docs/relay-desk-pitch.pptx)
 
 Run the local desk with Node.js 24 or newer. The app uses Node’s built-in HTTP and SQLite modules.
 
@@ -23,9 +23,9 @@ npm start
 
 Saved notes stay in `.relay/desk.sqlite`. Open [Relay Desk on this computer](http://127.0.0.1:4173).
 
-Use `npm run reset` to start a fresh practice refund on 23 November 2026 IST, or `npm run demo` to reopen it. Stop the desk before switching commands. The practice desk uses `.relay/demo` by default. In the refund card, open **Refund evidence and access** to allow or decline each source and check the result.
+Use `npm run reset` to start the three-errand practice household on 23 November 2026 IST. Select **Check your errands** to see the morning brief. To start with no permissions, use `npm run reset -- --cold`. To reopen the practice desk, use `npm run demo`. Stop the desk before switching commands. The practice desk uses `.relay/demo` by default.
 
-Run `npm run evaluate` for the automated checks. They include first-use intake through a restart and refund matching against a separately inspected synthetic ledger. [Build and verification commands](docs/build.md#run-the-local-build)
+Run `npm run evaluate` for the automated checks. They cover first-use intake, refund matching, scoped booking, revised bills and selected failures. [Build and verification commands](docs/build.md#run-the-local-build)
 
 ## When you want Relay to take more off your hands
 

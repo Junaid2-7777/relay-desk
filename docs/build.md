@@ -13,11 +13,11 @@ Build this through the ordinary intake and local case store used by the househol
 Use Node.js 24 or newer. There are no third-party runtime packages to install.
 
 - `npm start` opens the ordinary desk on `http://127.0.0.1:4173` with data in `.relay`.
-- `npm run reset` restores the practice refund and starts its desk. `npm run demo` restarts it without resetting. Stop the existing process before switching commands. The practice database lives in `.relay/demo`.
+- `npm run reset` launches the three-errand practice desk with synthetic grants. Select **Check your errands** to run the morning. `npm run reset -- --cold` resets the same household with no grants. `npm run demo` reopens the practice database in `.relay/demo`. Stop the existing process before switching commands.
 - `npm run evaluate` runs the acceptance checks and isolated simulator cases. Run `node --test test/first-use.test.mjs` to replay just the first saved errand.
 - `RELAY_PORT`, `RELAY_DATA_DIR` and `RELAY_CLOCK` override the port, data directory and clock. Supply an ISO timestamp with an explicit offset for the clock.
 
-The practice desk exposes `/api/fixture/refund` for inspection of synthetic merchant events, credits and scoped read attempts. The ordinary desk uses `/api/inspect` to inspect its local errand and zero outside effects. Browser checks covered a keyboard-only first use, a 320 CSS pixel viewport and 200% text size in Chromium.
+The practice desk exposes `/api/fixture/refund`, `/api/fixture/visit` and `/api/fixture/bill` for native provider records. `/api/inspect` shows the local errands, permissions and prepared actions. Browser checks covered the first-use flow by keyboard, a 320 CSS pixel viewport and 200% text size in Chromium. The practice brief was also exercised by keyboard, including deferring a payment and verifying a matching synthetic settlement.
 
 ## Seed one Monday
 

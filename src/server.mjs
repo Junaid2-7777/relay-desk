@@ -2,13 +2,18 @@ import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { runBill } from './bill.mjs';
+import { openBillFixture } from './bill-fixture.mjs';
 import { DeskError, openDesk } from './desk.mjs';
 import { openRefundFixture } from './refund-fixture.mjs';
+import { runVisit } from './visit.mjs';
+import { openVisitFixture } from './visit-fixture.mjs';
 
 const assets = new Map([
   ['/', ['../public/index.html', 'text/html']],
   ['/desk.css', ['../public/desk.css', 'text/css']],
   ['/desk.mjs', ['../public/desk.mjs', 'text/javascript']],
+  ['/household.mjs', ['../public/household.mjs', 'text/javascript']],
   ['/wordmark.svg', ['../docs/brand/wordmark.svg', 'image/svg+xml']],
   ['/mark.svg', ['../docs/brand/mark.svg', 'image/svg+xml']]
 ]);
@@ -46,12 +51,24 @@ async function jsonBody(request) {
   return value;
 }
 
-export function createDeskServer({ dataDir = resolve('.relay'), clock, fixtureMode = false, reset = false } = {}) {
+export function createDeskServer({
+  dataDir = resolve('.relay'), clock, fixtureMode = false, householdMode = false, reset = false, warm = true
+} = {}) {
+  if (householdMode) fixtureMode = true;
   const refundFixture = fixtureMode ? openRefundFixture({ dataDir, clock }) : undefined;
-  const desk = openDesk({ dataDir, clock, refundFixture });
+  const household = householdMode ? {
+    bill: { fixture: openBillFixture({ dataDir, clock }), run: runBill },
+    visit: { fixture: openVisitFixture({ dataDir, clock }), run: runVisit }
+  } : undefined;
+  const desk = openDesk({ dataDir, clock, refundFixture, household });
   if (reset && refundFixture) {
     refundFixture.reset();
-    desk.resetRefund();
+    desk.resetRefund(householdMode && warm);
+    if (household) {
+      household.bill.fixture.reset();
+      household.visit.fixture.reset();
+      desk.resetHousehold(warm);
+    }
   }
   const server = createServer(async (request, response) => {
     try {
@@ -70,6 +87,14 @@ export function createDeskServer({ dataDir = resolve('.relay'), clock, fixtureMo
       if (method === 'GET' && pathname === '/api/fixture/refund' && refundFixture) {
         return send(response, 200, refundFixture.inspect());
       }
+      if (household && method === 'GET') {
+        const provider = /^\/api\/fixture\/(visit|bill)$/.exec(pathname);
+        if (provider) return send(response, 200, household[provider[1]].fixture.inspect());
+      }
+      if (household && method === 'POST' && pathname === '/api/checkpoint') {
+        await jsonBody(request);
+        return send(response, 200, desk.checkpoint());
+      }
       if (method === 'POST' && pathname === '/api/errands/preview') {
         return send(response, 200, desk.preview((await jsonBody(request)).note));
       }
@@ -85,6 +110,12 @@ export function createDeskServer({ dataDir = resolve('.relay'), clock, fixtureMo
         const body = await jsonBody(request);
         return send(response, 200, action === 'refund-access' ? desk.refundAccess(id, body) : desk.checkRefund(id));
       }
+      const decision = /^\/api\/errands\/([\w-]+)\/(household-access|bill-choice)$/.exec(pathname);
+      if (household && decision && method === 'POST') {
+        const [, id, action] = decision;
+        const body = await jsonBody(request);
+        return send(response, 200, action === 'bill-choice' ? desk.billChoice(id, body) : desk.householdAccess(id, body));
+      }
       throw new DeskError('This page could not be found.', 404);
     } catch (error) {
       if (!(error instanceof DeskError)) console.error(error);
@@ -94,6 +125,8 @@ export function createDeskServer({ dataDir = resolve('.relay'), clock, fixtureMo
   server.once('close', () => {
     desk.close();
     refundFixture?.close();
+    household?.bill.fixture.close();
+    household?.visit.fixture.close();
   });
   return server;
 }
@@ -105,7 +138,10 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   const clock = fixedTime ? () => new Date(fixedTime) : undefined;
   if (clock && !Number.isFinite(+clock())) throw new Error('RELAY_CLOCK must be a date or an ISO timestamp.');
   const port = Number(process.env.RELAY_PORT ?? 4173);
-  const server = createDeskServer({ dataDir, clock, fixtureMode, reset: process.argv.includes('--reset') });
+  const server = createDeskServer({
+    dataDir, clock, fixtureMode, householdMode: fixtureMode, reset: process.argv.includes('--reset'),
+    warm: !process.argv.includes('--cold')
+  });
   server.listen(port, '127.0.0.1', () => {
     console.log(`Relay Desk is open at http://127.0.0.1:${server.address().port}`);
   });

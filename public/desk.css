@@ -102,6 +102,18 @@ button:disabled { cursor: default; opacity: .65; }
 .status:empty, .error:empty { margin: 0; }
 
 .work { min-width: 0; }
+.work-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .65rem 1rem;
+  flex-wrap: wrap;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+.work-header h2 { border: 0; padding: 0; }
+.household { grid-template-columns: minmax(0, 1.25fr) minmax(0, .85fr); }
+.household h1 { font-size: clamp(2rem, 4vw, 3.6rem); }
 #errands { display: grid; gap: 1.6rem; padding-top: 1.25rem; }
 .empty {
   margin: 0;
@@ -130,6 +142,14 @@ button:disabled { cursor: default; opacity: .65; }
   pointer-events: none;
 }
 .receipt-status { display: flex; gap: .5rem; align-items: center; margin-bottom: .7rem; }
+.review-needed .receipt-status {
+  width: fit-content;
+  padding: .2rem .55rem;
+  border: 1px solid var(--ink);
+  background: var(--melon);
+  font-weight: 700;
+}
+.review-needed .ring { display: none; }
 .ring { width: .85rem; height: .85rem; flex: none; border: 2px solid var(--violet); border-radius: 50%; }
 .facts {
   display: grid;
@@ -144,15 +164,20 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 700; font-variant-numeric:
 .source p { margin: 0; padding-bottom: .75rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .edit, .draft { margin-block-start: 1rem; padding-block-start: 1rem; border-top: 1px solid var(--line); }
 .evidence { margin-top: .75rem; }
+.evidence > summary + p { padding-top: .45rem; }
 .permission { margin-block: .5rem 1rem; padding-top: .75rem; border-top: 1px solid var(--line); }
 .permission h4, .permission p { margin: 0; overflow-wrap: anywhere; }
 .permission p + p { margin-top: .35rem; }
 .permission .actions { margin-block: .65rem 0; }
 [data-evidence] > button { margin-top: .75rem; }
+[data-evidence] > p { margin: .75rem 0 0; }
 .ring.verified { border: 0; border-radius: 0; width: .85rem; height: .45rem; transform: rotate(-45deg); border-left: 2px solid; border-bottom: 2px solid; }
+.verified-receipts { display: grid; gap: 1rem; margin-top: .8rem; }
+.verified-receipts h3 { padding-bottom: .75rem; border-bottom: 1px solid var(--line); }
+.verified-receipts article h3 { padding-bottom: 0; border: 0; }
 
 @media (max-width: 49rem) {
-  .desk { grid-template-columns: minmax(0, 1fr); }
+  .desk, .household { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 25rem) {
   .frame { width: calc(100% - 1.5rem); }

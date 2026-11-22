@@ -1,3 +1,5 @@
+import { action, addText, fact, renderHousehold, reviewNeeded, statusLabel } from './household.mjs';
+
 const element = id => document.getElementById(id);
 const intake = element('intake');
 const review = element('review');
@@ -7,6 +9,8 @@ const checkInput = element('check-date');
 const errands = element('errands');
 const errorMessage = element('intake-error');
 const statusMessage = element('intake-status');
+const checkpointButton = element('checkpoint');
+const checkpointStatus = element('checkpoint-status');
 const format = new Intl.DateTimeFormat('en-IN', {
   weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC'
 });
@@ -17,6 +21,10 @@ let records = [];
 let reviewedNote;
 let saveRequestId;
 let deskTime;
+let householdMode = false;
+let checking = false;
+const openEdits = new Set();
+const localDrafts = new Map();
 
 const dateLabel = value => format.format(new Date(value));
 
@@ -47,28 +55,6 @@ function validate(fields, message) {
     return false;
   }
   return true;
-}
-
-function fact(list, name, text) {
-  const title = document.createElement('dt');
-  const value = document.createElement('dd');
-  title.textContent = name;
-  value.textContent = text;
-  list.append(title, value);
-}
-
-function addText(parent, tag, text) {
-  const child = document.createElement(tag);
-  child.textContent = text;
-  parent.append(child);
-  return child;
-}
-
-function action(parent, label, callback) {
-  const button = addText(parent, 'button', label);
-  button.type = 'button';
-  button.addEventListener('click', callback);
-  return button;
 }
 
 function renderRefund(panel, record, update, errorMessage, setBusy) {
@@ -143,12 +129,14 @@ function renderErrand(record) {
   const part = name => card.querySelector(`[data-${name}]`);
   const { id, goal, note, kind, checkDate, merchantDeadline } = record;
   card.id = `errand-${id}`;
+  card.dataset.revision = record.revision;
   part('goal').textContent = goal;
   part('goal').tabIndex = -1;
   part('goal').id = `goal-${id}`;
   card.setAttribute('aria-labelledby', part('goal').id);
   part('note').textContent = note;
-  part('status').textContent = record.status === 'verified' ? 'Refund verified' : kind === 'refund' ? 'Waiting for credit' : 'Open';
+  part('status').textContent = statusLabel(record);
+  card.classList.toggle('review-needed', reviewNeeded(record));
   if (record.status === 'verified') card.querySelector('.ring').classList.add('verified');
   fact(part('facts'), 'Your check date', checkDate ? dateLabel(checkDate) : 'Choose when to check');
   if (kind === 'refund') {
@@ -156,8 +144,9 @@ function renderErrand(record) {
   }
   const replaceCard = (result, showEvidence = false) => {
     records = records.map(item => item.id === id ? result : item);
-    const updated = renderErrand(result);
-    card.replaceWith(updated);
+    if (householdMode) showErrands();
+    else card.replaceWith(renderErrand(result));
+    const updated = element(card.id);
     if (showEvidence) {
       const panel = updated.querySelector('[data-evidence] details');
       panel.open = true;
@@ -173,7 +162,34 @@ function renderErrand(record) {
       part('draft').disabled = busy;
     });
   }
+  if (record.visit || record.bill) {
+    const panel = part('evidence');
+    const source = part('note').closest('details');
+    source.open = false;
+    panel.after(source);
+    const run = async (endpoint, body, current, advance = false) => {
+      part('error').textContent = '';
+      panel.disabled = true;
+      part('edit').disabled = true;
+      part('draft').disabled = true;
+      try {
+        const result = await request(`/api/errands/${id}/${endpoint}`, { method: 'POST', body });
+        replaceCard(result, endpoint === 'household-access');
+        if (advance) await checkErrands(id);
+      } catch (error) {
+        part('error').textContent = error.message;
+        panel.disabled = false;
+        part('edit').disabled = false;
+        part('draft').disabled = false;
+        current.focus();
+      }
+    };
+    renderHousehold(panel, part('facts'), record, run, deskTime);
+  }
+  if (localDrafts.has(id)) part('extra').append(localDrafts.get(id));
   part('edit').addEventListener('click', () => {
+    openEdits.add(id);
+    checkpointButton.disabled = true;
     part('edit').disabled = true;
     part('draft').disabled = true;
     part('evidence').disabled = true;
@@ -189,10 +205,13 @@ function renderErrand(record) {
     editedDate.value = checkDate ?? '';
     form.querySelector('[data-cancel]').addEventListener('click', () => {
       form.remove();
+      if (localDrafts.has(id)) part('extra').append(localDrafts.get(id));
       part('error').textContent = '';
       part('edit').disabled = false;
       part('draft').disabled = false;
       part('evidence').disabled = false;
+      openEdits.delete(id);
+      checkpointButton.disabled = checking || Boolean(openEdits.size);
       part('edit').focus();
     });
     form.addEventListener('submit', async event => {
@@ -206,6 +225,8 @@ function renderErrand(record) {
           method: 'PUT',
           body: { goal: editedGoal.value, checkDate: editedDate.value, revision: record.revision }
         });
+        openEdits.delete(id);
+        checkpointButton.disabled = checking || Boolean(openEdits.size);
         replaceCard(result);
       } catch (error) {
         part('error').textContent = error.message;
@@ -217,6 +238,10 @@ function renderErrand(record) {
     editedGoal.focus();
   });
   part('draft').addEventListener('click', async () => {
+    if (localDrafts.has(id)) {
+      localDrafts.get(id).querySelector('textarea').focus();
+      return;
+    }
     part('error').textContent = '';
     const draftButton = part('draft');
     draftButton.disabled = true;
@@ -233,6 +258,7 @@ function renderErrand(record) {
       label.htmlFor = draft.id;
       label.textContent = 'Local follow-up draft';
       panel.append(label, draft);
+      localDrafts.set(id, panel);
       part('extra').replaceChildren(panel);
       draft.focus();
     } catch (error) {
@@ -247,7 +273,28 @@ function renderErrand(record) {
 
 function showErrands() {
   if (records.length) {
-    errands.replaceChildren(...records.map(renderErrand));
+    const prior = new Map([...errands.querySelectorAll('article')].map(card => [card.id, card]));
+    const cards = records.map(record => {
+      const existing = prior.get(`errand-${record.id}`);
+      return [record, existing?.dataset.revision === String(record.revision) ? existing : renderErrand(record)];
+    });
+    if (!householdMode) {
+      errands.replaceChildren(...cards.map(([, card]) => card));
+      return;
+    }
+    const open = cards.filter(([record]) => record.status !== 'verified')
+      .sort(([left], [right]) => Number(reviewNeeded(right)) - Number(reviewNeeded(left)) ||
+        (left.checkDate ?? '9999-12-31').localeCompare(right.checkDate ?? '9999-12-31') || left.id.localeCompare(right.id))
+      .map(([, card]) => card);
+    const verified = cards.filter(([record]) => record.status === 'verified').map(([, card]) => card);
+    if (verified.length) {
+      const history = document.createElement('section');
+      history.className = 'verified-receipts';
+      addText(history, 'h3', 'Verified outcomes');
+      history.append(...verified);
+      open.push(history);
+    }
+    errands.replaceChildren(...open);
     return;
   }
   const empty = document.createElement('p');
@@ -256,15 +303,26 @@ function showErrands() {
   errands.replaceChildren(empty);
 }
 
+function showBrief({ today, now, errands: items, fixture, household }) {
+  deskTime = now;
+  element('today').dateTime = today;
+  element('today').textContent = dateLabel(today);
+  element('practice').hidden = !fixture;
+  checkpointButton.hidden = !household;
+  householdMode = household;
+  if (household) {
+    element('main').classList.add('household');
+    const newErrand = intake.closest('section');
+    const work = errands.closest('section');
+    if (work.previousElementSibling === newErrand) newErrand.before(work);
+  }
+  records = items;
+  showErrands();
+}
+
 async function load() {
   try {
-    const { today, now, errands: items, fixture } = await request('/api/desk');
-    deskTime = now;
-    element('today').dateTime = today;
-    element('today').textContent = dateLabel(today);
-    element('practice').hidden = !fixture;
-    records = items;
-    showErrands();
+    showBrief(await request('/api/desk'));
   } catch {
     const message = document.createElement('p');
     message.textContent = 'Your saved errands could not load.';
@@ -275,6 +333,27 @@ async function load() {
     errands.replaceChildren(message, retry);
   }
 }
+
+async function checkErrands(focusId) {
+  if (checking || openEdits.size) return;
+  checking = true;
+  checkpointButton.disabled = true;
+  checkpointStatus.textContent = 'Checking your errands…';
+  try {
+    const result = await request('/api/checkpoint', { method: 'POST', body: {} });
+    showBrief(result);
+    checkpointStatus.textContent = result.conflicts.length ? 'Some errands changed during the check. Check again to update them.' : 'Errands checked.';
+  } catch (error) {
+    checkpointStatus.textContent = error.message;
+  } finally {
+    checking = false;
+    checkpointButton.disabled = Boolean(openEdits.size);
+    if (focusId) element(`errand-${focusId}`)?.querySelector('h3')?.focus();
+    else if (document.activeElement === document.body) checkpointButton.focus();
+  }
+}
+
+checkpointButton.addEventListener('click', () => checkErrands());
 
 intake.addEventListener('submit', async event => {
   event.preventDefault();
@@ -319,15 +398,13 @@ review.addEventListener('submit', async event => {
       method: 'POST',
       body: { note: reviewedNote, goal: goalInput.value, checkDate: checkInput.value, requestId: saveRequestId }
     });
-    records = [record, ...records];
-    if (records.length === 1) errands.replaceChildren();
-    const card = renderErrand(record);
-    errands.prepend(card);
+    records = [record, ...records.filter(item => item.id !== record.id)];
+    showErrands();
     review.hidden = true;
     intake.reset();
     intake.hidden = false;
     statusMessage.textContent = 'Errand saved.';
-    card.querySelector('h3').focus();
+    element(`errand-${record.id}`).querySelector('h3').focus();
   } catch (error) {
     errorMessage.textContent = error.message;
   } finally {

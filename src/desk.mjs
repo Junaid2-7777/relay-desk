@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { openActionJournal } from './action-journal.mjs';
+import { activeGrant, makeGrant, orderBrief, sameInvoice, scopes, seedHousehold } from './household.mjs';
 import { previewErrand } from './intake.mjs';
 import { checkRefund, refundGrant, refundSources } from './refund.mjs';
 
@@ -36,7 +38,7 @@ function optionalDate(value) {
 
 const readErrand = row => row && JSON.parse(row.record);
 
-export function openDesk({ dataDir, clock = () => new Date(), refundFixture }) {
+export function openDesk({ dataDir, clock = () => new Date(), refundFixture, household }) {
   mkdirSync(dataDir, { recursive: true });
   const database = new DatabaseSync(join(dataDir, 'desk.sqlite'));
   database.exec(`
@@ -66,15 +68,10 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture }) {
     }
     return next;
   }
-  function withRefund(id, action) {
+  function transaction(action) {
     database.exec('BEGIN IMMEDIATE');
     try {
-      const record = find(id);
-      if (!refundFixture || record.refund?.reference !== refundFixture.subject.reference) {
-        throw new DeskError('This errand has no connected refund source.', 404);
-      }
-      const next = action(record);
-      const result = next === record ? record : revise(next, record.revision);
+      const result = action();
       database.exec('COMMIT');
       return result;
     } catch (error) {
@@ -82,9 +79,45 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture }) {
       throw error;
     }
   }
+  function changeCase(id, action) {
+    return transaction(() => {
+      const record = find(id);
+      const next = action(record);
+      return next === record ? record : revise(next, record.revision);
+    });
+  }
+  function withRefund(id, action) {
+    return changeCase(id, record => {
+      if (!refundFixture || record.refund?.reference !== refundFixture.subject.reference) {
+        throw new DeskError('This errand has no connected refund source.', 404);
+      }
+      return action(record);
+    });
+  }
+  function requireRevision(record, revision) {
+    if (record.revision !== revision) {
+      throw new DeskError('This errand changed. Reload the desk before saving again.', 409);
+    }
+  }
+  const journal = openActionJournal(database, find, transaction, clock);
+  const brief = () => ({
+    today: today(),
+    now: clock().toISOString(),
+    errands: household ? orderBrief(list()) : list(),
+    fixture: Boolean(refundFixture),
+    household: Boolean(household)
+  });
+  const updateRefund = id => withRefund(id, record =>
+    record.status === 'verified' ? record : checkRefund(record, refundFixture, clock()));
+  function seed(record) {
+    const existing = readErrand(get.get(record.id));
+    if (existing) return revise(record, existing.revision);
+    insert.run(record.id, record.revision, JSON.stringify(record));
+    return record;
+  }
 
   return {
-    brief: () => ({ today: today(), now: clock().toISOString(), errands: list(), fixture: Boolean(refundFixture) }),
+    brief,
     preview,
     save({ note, goal, checkDate, requestId }) {
       if (requestId !== undefined && (typeof requestId !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(requestId))) {
@@ -133,22 +166,80 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture }) {
         throw new DeskError('Choose a refund source and a permission.');
       }
       return withRefund(id, record => {
-        if (record.revision !== revision) {
-          throw new DeskError('This errand changed. Reload the desk before saving again.', 409);
-        }
+        requireRevision(record, revision);
         const previous = record.refundAccess[source];
         const grant = refundGrant(refundFixture.subject, source, choice, previous, clock());
         return { ...record, refundAccess: { ...record.refundAccess, [source]: grant } };
       });
     },
-    checkRefund(id) {
-      return withRefund(id, record => record.status === 'verified' ? record : checkRefund(record, refundFixture, clock()));
+    checkRefund: updateRefund,
+    householdAccess(id, { operation, choice, revision }) {
+      if (!household || !['allowed', 'declined', 'withdrawn'].includes(choice)) {
+        throw new DeskError('Choose a permission for the practice household.');
+      }
+      return changeCase(id, record => {
+        requireRevision(record, revision);
+        const offered = scopes(record);
+        if (!Object.hasOwn(offered, operation)) throw new DeskError('This errand has no such permission.');
+        const grant = makeGrant(operation, offered[operation], choice, record.grants[operation], clock());
+        return { ...record, grants: { ...record.grants, [operation]: grant } };
+      });
     },
-    resetRefund() {
-      const id = 'demo-refund';
+    billChoice(id, { choice, revision }) {
+      if (!household || !['approve', 'defer'].includes(choice)) throw new DeskError('Choose what to do with the invoice.');
+      return changeCase(id, record => {
+        requireRevision(record, revision);
+        const now = clock();
+        if (!record.bill || record.issue !== 'bill-review' || !activeGrant(record.grants.invoice, now)) {
+          throw new DeskError('There is no invoice ready for review.', 409);
+        }
+        const invoice = household.bill.fixture.readInvoice(record.bill.invoiceId);
+        if (!sameInvoice(invoice, record.invoice)) throw new DeskError('The invoice changed. Check your errands to see the new terms.', 409);
+        if (choice === 'defer') return { ...record, approval: null, deferred: invoice, issue: 'bill-deferred' };
+        if (!activeGrant(record.grants.payment, now) || invoice.payee !== record.bill.payee ||
+            invoice.currency !== record.bill.currency) {
+          throw new DeskError('This invoice needs a separate payment permission.', 409);
+        }
+        const { invoiceId, revision: invoiceRevision, payee, amountMinor, currency } = invoice;
+        return {
+          ...record,
+          approval: {
+            invoiceId,
+            revision: invoiceRevision,
+            payee,
+            amountMinor,
+            currency,
+            status: 'allowed',
+            expiresAt: new Date(+now + 15 * 60 * 1000).toISOString(),
+            grantRevision: record.grants.payment.revision
+          },
+          deferred: null
+        };
+      });
+    },
+    checkpoint() {
+      if (!household) throw new DeskError('The practice household could not be found.', 404);
+      const conflicts = [];
+      for (const record of list()) {
+        try {
+          if (record.refund) {
+            updateRefund(record.id);
+          } else if (record.bill || record.visit) {
+            const { run, fixture } = household[record.kind];
+            const next = run(record, fixture, journal, clock());
+            if (JSON.stringify(next) !== JSON.stringify(record)) revise(next, record.revision);
+          }
+        } catch (error) {
+          if (error.code !== 'operation-pending' && (!(error instanceof DeskError) || error.status !== 409)) throw error;
+          conflicts.push(record.id);
+        }
+      }
+      return { ...brief(), conflicts };
+    },
+    resetRefund(warm = false) {
       const { reference, amountMinor, currency } = refundFixture.subject;
       const record = {
-        id,
+        id: 'demo-refund',
         revision: 1,
         kind: 'refund',
         goal: 'Check for my ₹1,249 refund',
@@ -158,21 +249,30 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture }) {
         status: 'open',
         owner: 'Demo shop',
         refund: { reference, amountMinor, currency },
-        refundAccess: {},
+        refundAccess: warm
+          ? Object.fromEntries(refundSources.map(source => [source, refundGrant(refundFixture.subject, source, 'allowed', null, clock())]))
+          : {},
         checks: {},
         evidence: []
       };
-      const existing = readErrand(get.get(id));
-      if (existing) return revise(record, existing.revision);
-      insert.run(id, record.revision, JSON.stringify(record));
-      return record;
+      return seed(record);
+    },
+    resetHousehold(warm) {
+      transaction(() => {
+        for (const record of seedHousehold(clock(), warm)) {
+          journal.reset(record.id);
+          seed(record);
+        }
+      });
     },
     inspect() {
       const errands = list();
       return {
         errands,
-        grants: errands.flatMap(record => Object.values(record.refundAccess ?? {}).map(grant => ({ errandId: record.id, ...grant }))),
-        effects: refundFixture?.inspect().reads ?? []
+        grants: errands.flatMap(record =>
+          Object.values(record.refundAccess ?? record.grants ?? {}).map(grant => ({ errandId: record.id, ...grant }))),
+        effects: refundFixture?.inspect().reads ?? [],
+        ...(household ? { actions: journal.inspect() } : {})
       };
     },
     close: () => database.close()

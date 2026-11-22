@@ -49,7 +49,11 @@
         <p id="intake-status" class="status" role="status"></p>
       </section>
       <section aria-labelledby="errands-heading" class="work">
-        <h2 id="errands-heading">Your errands</h2>
+        <div class="work-header">
+          <h2 id="errands-heading">Your errands</h2>
+          <button id="checkpoint" type="button" hidden>Check your errands</button>
+        </div>
+        <p id="checkpoint-status" class="status" role="status"></p>
         <div id="errands"><p>Loading your errands…</p></div>
         <noscript><p>Enable JavaScript to open your saved errands.</p></noscript>
       </section>
