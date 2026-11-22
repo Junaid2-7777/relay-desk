@@ -1,35 +1,39 @@
 <h1>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/brand/wordmark-reversed.svg">
-    <img src="docs/brand/wordmark.svg" width="320" alt="Deadline Relay">
+    <img src="docs/brand/wordmark.svg" width="300" alt="Relay Desk">
   </picture>
 </h1>
 
-**Your school received the correction. Does that mean your application is verified?**
+**“Get my refund back. Book the broadband visit around my calendar. Handle the electricity bill up to ₹900.”**
 
-On 29 November in the proposed demo, a student gets a receipt for the attachment their school asked them to replace. They can put the file away. The school still owes a verification by 30 November. When it verifies, the district takes over with its own 15 December deadline. [Ministry schedule](https://www.pib.gov.in/PressReleasePage.aspx?PRID=2330936&lang=1&reg=3)
+That is a handoff someone might give an assistant before leaving for work. **Relay Desk** is a proposed personal chief of staff for people who handle that work themselves. It follows each job across messages, calendars and provider records, acts within the permission the person gave it, and brings back the decisions that still need them.
 
-Deadline Relay is a proposed personal agent for a family following one already-filed National Means-cum-Merit Scholarship Scheme (NMMSS) application. It follows the handoff across public notices, the student's calendar and the case record. When a family comes back to the case, they should know who has it, what they can do today and which record backs that answer.
+## One decision on Monday morning
 
-![Proposed student handoff sheet on 29 November. The school received the correction and still owes verification by 30 November. The case receipt and the Ministry deadline have separate sources.](docs/images/handoff-sheet.png)
+In the proposed demonstration, three updates arrive for one synthetic household on **23 November 2026**.
 
-The repository contains the design and research for Homingo Hackathon Edition 01, Agents A3. The roadmap sets out how to build, challenge and score the first local demo. [Build roadmap](roadmap.md) · [Official A3 statement](https://hackathon.homingo.co.in/hackathons/edition-01/problem-statements#a3)
+| What comes in | What Relay would take off the person's plate | What counts as done |
+| --- | --- | --- |
+| A shop promises a **₹1,249 refund**. | Watch for the matching incoming credit. If the agreed checkpoint passes, prepare a specific follow-up for the owner's review. | A posted credit for this return, account, amount and currency. |
+| The broadband provider offers **11 am or 3 pm Tuesday**. | Check availability. The morning slot is busy. Book the free 3 pm visit under the existing permission and put it in the calendar. | A provider-confirmed booking and its matching calendar entry. |
+| An unpaid electricity invoice changes **from ₹850 to ₹1,180**. | Hold payment. Show exactly what changed and let the person approve this revision once or leave it unpaid. | A matching biller settlement if paid. Tomorrow's standing limit stays ₹900. |
 
-## What a judge can change in the planned demo
+<img src="docs/images/relay-desk-briefing.png" width="470" alt="Proposed morning briefing. The revised electricity bill needs one decision. Relay is watching for the refund credit and the provider has confirmed the Tuesday afternoon visit.">
 
-1. A student has filed their scholarship application and is waiting for school verification. A historical Ministry notice moves the school deadline from **15 November to 30 November** and the district deadline from **30 November to 15 December**. The agent updates the two affected reminders in a real local calendar. A separate calendar entry stays in place. [Earlier Ministry notice](https://www.pib.gov.in/PressReleseDetailm.aspx?PRID=2317657&lang=1&reg=3) · [Revised notice](https://www.pib.gov.in/PressReleasePage.aspx?PRID=2330936&lang=1&reg=3)
-2. The judge writes the school's reason for returning the case. “The back page is missing” should give the student a different task from “The copy is unreadable.” If the reason leaves out which page, the agent should help the student ask. After the student records a correction, they can review the exact follow-up and approve it for the local outbox.
-3. The school acknowledges receipt. The agent keeps the verification deadline open. The judge can withhold the district’s record after the school verifies. The case must still say who the family is waiting for. Supplying the matching district verification closes the case, with the two officers’ records available for inspection.
+The worked brief assumes the household already set its permissions. A first-time user would review the proposed grants. The evaluation accounts separately for that setup and for later interruptions. [A3 audit](docs/decision.md) · [Household experience](docs/experience.md)
 
-The notices are public government records. Every student, status change, correspondence, and calendar entry in the demo is synthetic. The demo uses a historical clock and local services.
+## Give it a job the team never scripted
 
-## Read the proposal
+Ask Relay to track the closure of a library membership. It should agree on the outcome, the membership reference, the library that can confirm closure, and the records it may read. A reply saying “we received your request” keeps the file open. The library's matching closure record finishes it. Tracking the request gives Relay no permission to cancel the membership.
 
-- **For the family’s experience**, read the worked correction, proposed student sheet and plan to test them with families. [Product brief](docs/problem.md) · [Student experience](docs/experience.md)
-- **For the visual identity**, use the folded-receipt logo, the Paper and Carbon themes, and the two-page specimen. [Identity guide](DESIGN.md) · [Identity sheets (PDF)](docs/brand/identity.pdf)
-- **For the evidence**, follow the four historical schedules, their scope and the reasons for selecting this problem. [Source register](docs/sources.md) · [Decision record](docs/decision.md)
-- **For the build**, start with the next milestone, then follow one case from a clean reset. [Roadmap](roadmap.md) · [Build notes](docs/build.md) · [Agent guide](agents.md)
-- **For the release decision**, inspect the authority rules, fault cases and matched model comparison. [Architecture](docs/architecture.md) · [Evaluation](docs/evaluation.md)
-- **For a judge walkthrough**, use the historical replay, live challenge and recording sequence. [Demo runbook](docs/demo.md) · [Event and submission checklist](docs/hackathon.md)
+A judge can supply a different goal and issuer after the build is frozen. A new job that fits an existing capability should need no new workflow. If the desk cannot reach the issuer or identify the matching record, it should say what evidence is missing. The original scholarship work remains a specialist example where school and district verification must happen in sequence. [Delegation contracts](docs/architecture.md) · [Scholarship evidence](docs/scholarship-sources.md)
 
-Codex assisted with research, drafting and identity design. The identity sheets also have an editable Canva edition. The runnable agent, evaluation results and demo recording are planned deliverables.
+## Project status and materials
+
+**Design proposal for Homingo A3.** The repository contains the audit, build roadmap, visual studies and evaluation protocol. The runnable agent, provider integrations, measured outcomes and submission video are planned. Household records and money in the studies are synthetic. Codex assisted with research, writing and design. The editable visual materials were prepared for Canva. [Official brief](https://hackathon.homingo.co.in/hackathons/edition-01/problem-statements#a3)
+
+- **Understand the problem and evidence.** [Product brief](docs/problem.md) · [Research and provider sources](docs/sources.md)
+- **Build the first release.** [Roadmap](roadmap.md) · [First build review](docs/build.md) · [Contributor guide](agents.md)
+- **Challenge the proposal.** [Evaluation and baselines](docs/evaluation.md) · [Judge walkthrough](docs/demo.md) · [Submission checklist](docs/hackathon.md)
+- **Use the identity.** [Design guide and logos](DESIGN.md) · [Printable identity sheets](docs/brand/identity.pdf) · [Editable identity source](docs/brand/identity.pptx)
