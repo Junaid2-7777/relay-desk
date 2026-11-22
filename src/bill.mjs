@@ -110,8 +110,7 @@ export function runBill(record, fixture, journal, clockNow) {
 
   const payload = paymentIntent(record.id, invoice);
   const prepared = journal.prepare(record.id, 'pay', payload.key, payload);
-  if (prepared?.status === 'blocked') journal.mark(payload.key, 'prepared');
-  else if (prepared?.status !== 'prepared') return openWith(updated, 'payment-unknown');
+  if (prepared.status !== 'prepared') return openWith(updated, 'payment-unknown');
   let payment;
   try {
     payment = journal.dispatch(record.id, (current, currentTime) => {

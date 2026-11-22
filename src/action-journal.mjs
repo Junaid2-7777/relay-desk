@@ -16,6 +16,7 @@ export function openActionJournal(database, find, transaction, clock) {
     ORDER BY status IN ('prepared', 'unknown', 'committed', 'confirmed', 'recorded') DESC, rowid DESC LIMIT 1
   `);
   const insert = database.prepare("INSERT OR IGNORE INTO actions VALUES (?, ?, ?, ?, 'prepared', ?)");
+  const reopen = database.prepare("UPDATE actions SET status = 'prepared' WHERE key = ? AND status IN ('blocked', 'failed', 'conflict')");
   const update = database.prepare(`
     UPDATE actions SET status = ? WHERE key = ?
     AND status NOT IN ('committed', 'confirmed', 'recorded')
@@ -37,6 +38,7 @@ export function openActionJournal(database, find, transaction, clock) {
       if (row.errandId !== errandId || row.operation !== operation || row.payload !== encoded) {
         throw new Error('The operation key belongs to different terms.');
       }
+      if (reopen.run(key).changes) row.status = 'prepared';
       return decode(row);
     }),
     dispatch: (errandId, action) => transaction(() => action(find(errandId), clock())),
