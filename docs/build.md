@@ -1,6 +1,12 @@
 # Building the first household desk
 
-The first implementation should let a judge inspect a booking, a payment and a credit without trusting the agent's account of what happened. Begin with a terminal and independent provider records. The prototype described here is planned.
+The planned build starts with an errand someone can hand over using only a sentence. Then exercise the three-job household fixture, where a judge can inspect a booking, a payment and a credit directly.
+
+## Start with one note
+
+Use a fresh local desk with no connected accounts or model key. Accept typed text or a pasted, redacted note. Show an editable goal and optional check date together before saving. For the shop refund example, save the user's Friday check and label the promise **From your note**. Keep provider details optional. On reopening the desk, the same errand and check should be easy to find.
+
+Build this through the ordinary intake and local case store used by the household brief. The first review needs one saved item and a trace with zero provider calls. A pasted note can support preparing a follow-up locally. Sending one is a separate action. [First-use acceptance](evaluation.md#first-use-acceptance)
 
 ## Seed one Monday
 
@@ -22,7 +28,7 @@ Keep domain facts in adapters. A free calendar interval cannot confirm a booking
 
 ## First build review
 
-1. Run both starting conditions. In a first-use reset the task descriptions arrive with **no grants**. Have the owner permit free/busy only and decline ledger access. Record the setup decisions, the narrower actions available and the refund's missing evidence. In the separate Monday reset, capture the original calendar event, invoice history, three existing grants and initial provider records.
+1. After the single-note check, run both multi-job starting conditions. In a cold reset the three tasks arrive with **no grants**. Have the owner permit free/busy only and decline ledger access. Record the setup decisions, available actions and missing refund evidence. In the warm Monday reset, capture the original calendar event, invoice history, three existing grants and initial provider records.
 2. Run the Monday sequence without prompting between errands. Capture the single bill decision, the confirmed 3 pm booking and the outstanding refund reference.
 3. From a fresh reset, remove the 3 pm slot just before confirmation. Then run a separate race in which the provider confirms the visit and a new protected calendar event arrives before sync. Report the existing reservation and conflict, offer a rescheduling decision, and preserve the protected event. Read back the reservation before any second booking.
 4. Approve ₹1,180 once, then revise the invoice again before dispatch. Verify zero debits against the stale approval. In a separate unchanged run, lose a payment response and verify that retry yields one exact payment. Settlement needs its own evidence.

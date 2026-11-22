@@ -2,6 +2,14 @@
 
 The proposed release must carry several duties at once, bring the right exception to the person, perform work already covered by their grant and keep each duty open until its own evidence arrives. The following are fixtures, measurements and release criteria for a future build.
 
+## First-use acceptance
+
+Run this small check from ordinary intake with the synthetic clock set to Monday 23 November 2026 IST. Start with an empty desk, no connected services and no model key.
+
+1. Type or paste “The shop said it would refund me. Can you help me check on Friday?” Save the errand without entering an order number, amount, issuer rule or account permission.
+2. Close the desk, advance to Friday 27 November and reopen it. Find one open refund errand with the promise attributed to the user's note and Friday labeled as their chosen check. The refund has no confirmed credit or merchant deadline. Preparing a question for the shop, if requested, leaves it local.
+3. Inspect the record, effect trace and fixture stores. Expect one local errand and zero new grants, provider reads, calendar writes, queued messages or notification requests. Count required fields, prompts and clarifications. A forced connection or proof question blocks this first-use gate.
+
 ## One household, three independent outcomes
 
 Start the local clock on **23 November 2026 IST** with a promised **₹1,249 refund**, a **free broadband service visit** and an **electricity bill revised from ₹850 to ₹1,180** against a **₹900 cap**. Seed one unrelated event and one unrelated financial record. Keep expected outcomes outside the planner and provider tools. The operator can change a provider record without editing the planner's journal. [Delegation and write contracts](architecture.md)
@@ -34,7 +42,7 @@ Give each arm fresh copies of the same fixtures, clock, free/busy intervals, del
 | Fixed-rule desk | A documented parser and rules interpret the input. Use the same brief ordering, evidence rules, permission checks and providers as the model-backed desk. |
 | Model-backed desk | Replace the parser and proposed next action with the bounded planner. Use the same spelling variants, tools, payload-review rubric and scenario budget. The validator stays fixed. |
 
-Run R1 **cold** with no grants and **warm** with the recorded active grants. In the cold run, decline the settlement-feed read and allow only free/busy for the appointment. Verify zero ledger reads and zero bookings until their respective permissions are granted. In the warm morning, the only decision is the revised bill. Start every arm with the same information and track the same period from intake through resolution or a fixed cutoff for open duties.
+Report the single-note first-use check separately. For R1, run the three jobs **cold** with no grants and **warm** with recorded active grants. In the cold run, decline the settlement-feed read and allow only free/busy for the appointment. Verify zero ledger reads and zero bookings until their respective permissions are granted. In the warm morning, the only decision is the revised bill. Start every arm with the same information and track the same period from intake through resolution or a fixed cutoff for open duties.
 
 Report setup, ongoing and total burden for each arm. Count distinct consent choices, missing-field clarifications, exception decisions, manual lookups and repeat prompts. Record **interruptions** as separate occasions requiring the person to attend. Approving three scopes on one screen involves three choices in one visit. Include later renewals and clarifications, and charge each arm only for steps its user actually takes. Score attention saved alongside achieved outcomes, missed interventions and fixture-clock timeliness. Scripted counts estimate workload. Measuring time or perceived effort requires people using the product.
 
