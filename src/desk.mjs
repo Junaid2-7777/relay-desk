@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { previewErrand } from './intake.mjs';
+import { checkRefund, refundGrant, refundSources } from './refund.mjs';
 
 export class DeskError extends Error {
   constructor(message, status = 400) {
@@ -35,7 +36,7 @@ function optionalDate(value) {
 
 const readErrand = row => row && JSON.parse(row.record);
 
-export function openDesk({ dataDir, clock = () => new Date() }) {
+export function openDesk({ dataDir, clock = () => new Date(), refundFixture }) {
   mkdirSync(dataDir, { recursive: true });
   const database = new DatabaseSync(join(dataDir, 'desk.sqlite'));
   database.exec(`
@@ -56,9 +57,34 @@ export function openDesk({ dataDir, clock = () => new Date() }) {
   const list = () => database.prepare('SELECT record FROM errands ORDER BY rowid DESC').all().map(readErrand);
   const today = () => localDay(clock());
   const preview = note => previewErrand(requiredText(note, 'an errand', 4000), today());
+  const insert = database.prepare('INSERT OR IGNORE INTO errands VALUES (?, ?, ?)');
+  const update = database.prepare('UPDATE errands SET record = ?, revision = ? WHERE id = ? AND revision = ?');
+  function revise(record, revision) {
+    const next = { ...record, revision: revision + 1 };
+    if (!update.run(JSON.stringify(next), next.revision, next.id, revision).changes) {
+      throw new DeskError('This errand changed. Reload the desk before saving again.', 409);
+    }
+    return next;
+  }
+  function withRefund(id, action) {
+    database.exec('BEGIN IMMEDIATE');
+    try {
+      const record = find(id);
+      if (!refundFixture || record.refund?.reference !== refundFixture.subject.reference) {
+        throw new DeskError('This errand has no connected refund source.', 404);
+      }
+      const next = action(record);
+      const result = next === record ? record : revise(next, record.revision);
+      database.exec('COMMIT');
+      return result;
+    } catch (error) {
+      database.exec('ROLLBACK');
+      throw error;
+    }
+  }
 
   return {
-    brief: () => ({ today: today(), errands: list() }),
+    brief: () => ({ today: today(), now: clock().toISOString(), errands: list(), fixture: Boolean(refundFixture) }),
     preview,
     save({ note, goal, checkDate, requestId }) {
       if (requestId !== undefined && (typeof requestId !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(requestId))) {
@@ -77,8 +103,7 @@ export function openDesk({ dataDir, clock = () => new Date() }) {
         owner: proposal.kind === 'refund' ? 'Shop' : null,
         evidence: []
       };
-      const saved = database.prepare('INSERT OR IGNORE INTO errands VALUES (?, ?, ?)')
-        .run(record.id, record.revision, JSON.stringify(record));
+      const saved = insert.run(record.id, record.revision, JSON.stringify(record));
       if (saved.changes) return record;
       const existing = find(record.id);
       if (record.note !== existing.note || record.goal !== existing.goal || record.checkDate !== existing.checkDate) {
@@ -89,16 +114,11 @@ export function openDesk({ dataDir, clock = () => new Date() }) {
     edit(id, { goal, checkDate, revision }) {
       const errand = find(id);
       if (!Number.isInteger(revision)) throw new DeskError('An errand revision is required.');
-      const record = {
+      return revise({
         ...errand,
-        revision: revision + 1,
         goal: requiredText(goal, 'a goal', 4000),
         checkDate: optionalDate(checkDate)
-      };
-      const update = database.prepare('UPDATE errands SET record = ?, revision = ? WHERE id = ? AND revision = ?')
-        .run(JSON.stringify(record), record.revision, id, revision);
-      if (!update.changes) throw new DeskError('This errand changed. Reload the desk before saving again.', 409);
-      return record;
+      }, revision);
     },
     draft(id) {
       const errand = find(id);
@@ -108,7 +128,53 @@ export function openDesk({ dataDir, clock = () => new Date() }) {
           : `Hello, could you share an update on this? Thank you.\n\n${errand.goal}`
       };
     },
-    inspect: () => ({ errands: list(), grants: [], effects: [] }),
+    refundAccess(id, { source, choice, revision }) {
+      if (!refundSources.includes(source) || !['allowed', 'declined', 'withdrawn'].includes(choice)) {
+        throw new DeskError('Choose a refund source and a permission.');
+      }
+      return withRefund(id, record => {
+        if (record.revision !== revision) {
+          throw new DeskError('This errand changed. Reload the desk before saving again.', 409);
+        }
+        const previous = record.refundAccess[source];
+        const grant = refundGrant(refundFixture.subject, source, choice, previous, clock());
+        return { ...record, refundAccess: { ...record.refundAccess, [source]: grant } };
+      });
+    },
+    checkRefund(id) {
+      return withRefund(id, record => record.status === 'verified' ? record : checkRefund(record, refundFixture, clock()));
+    },
+    resetRefund() {
+      const id = 'demo-refund';
+      const { reference, amountMinor, currency } = refundFixture.subject;
+      const record = {
+        id,
+        revision: 1,
+        kind: 'refund',
+        goal: 'Check for my ₹1,249 refund',
+        note: 'The shop promised a refund for my return. Help me check for the credit on Friday.',
+        checkDate: '2026-11-27',
+        merchantDeadline: null,
+        status: 'open',
+        owner: 'Demo shop',
+        refund: { reference, amountMinor, currency },
+        refundAccess: {},
+        checks: {},
+        evidence: []
+      };
+      const existing = readErrand(get.get(id));
+      if (existing) return revise(record, existing.revision);
+      insert.run(id, record.revision, JSON.stringify(record));
+      return record;
+    },
+    inspect() {
+      const errands = list();
+      return {
+        errands,
+        grants: errands.flatMap(record => Object.values(record.refundAccess ?? {}).map(grant => ({ errandId: record.id, ...grant }))),
+        effects: refundFixture?.inspect().reads ?? []
+      };
+    },
     close: () => database.close()
   };
 }

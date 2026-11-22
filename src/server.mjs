@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DeskError, openDesk } from './desk.mjs';
+import { openRefundFixture } from './refund-fixture.mjs';
 
 const assets = new Map([
   ['/', ['../public/index.html', 'text/html']],
@@ -45,8 +46,13 @@ async function jsonBody(request) {
   return value;
 }
 
-export function createDeskServer({ dataDir = resolve('.relay'), clock } = {}) {
-  const desk = openDesk({ dataDir, clock });
+export function createDeskServer({ dataDir = resolve('.relay'), clock, fixtureMode = false, reset = false } = {}) {
+  const refundFixture = fixtureMode ? openRefundFixture({ dataDir, clock }) : undefined;
+  const desk = openDesk({ dataDir, clock, refundFixture });
+  if (reset && refundFixture) {
+    refundFixture.reset();
+    desk.resetRefund();
+  }
   const server = createServer(async (request, response) => {
     try {
       const { host, origin } = request.headers;
@@ -61,6 +67,9 @@ export function createDeskServer({ dataDir = resolve('.relay'), clock } = {}) {
       }
       if (method === 'GET' && pathname === '/api/desk') return send(response, 200, desk.brief());
       if (method === 'GET' && pathname === '/api/inspect') return send(response, 200, desk.inspect());
+      if (method === 'GET' && pathname === '/api/fixture/refund' && refundFixture) {
+        return send(response, 200, refundFixture.inspect());
+      }
       if (method === 'POST' && pathname === '/api/errands/preview') {
         return send(response, 200, desk.preview((await jsonBody(request)).note));
       }
@@ -70,22 +79,33 @@ export function createDeskServer({ dataDir = resolve('.relay'), clock } = {}) {
       const errand = /^\/api\/errands\/([\w-]+)(\/draft)?$/.exec(pathname);
       if (errand && method === 'PUT' && !errand[2]) return send(response, 200, desk.edit(errand[1], await jsonBody(request)));
       if (errand && method === 'POST' && errand[2]) return send(response, 200, desk.draft(errand[1]));
+      const refund = /^\/api\/errands\/([\w-]+)\/(refund-access|check-refund)$/.exec(pathname);
+      if (refundFixture && refund && method === 'POST') {
+        const [, id, action] = refund;
+        const body = await jsonBody(request);
+        return send(response, 200, action === 'refund-access' ? desk.refundAccess(id, body) : desk.checkRefund(id));
+      }
       throw new DeskError('This page could not be found.', 404);
     } catch (error) {
       if (!(error instanceof DeskError)) console.error(error);
       send(response, error.status ?? 500, { error: error.status ? error.message : 'Relay Desk could not finish this request.' });
     }
   });
-  server.once('close', () => desk.close());
+  server.once('close', () => {
+    desk.close();
+    refundFixture?.close();
+  });
   return server;
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-  const dataDir = process.env.RELAY_DATA_DIR ?? resolve('.relay');
-  const clock = process.env.RELAY_CLOCK ? () => new Date(process.env.RELAY_CLOCK) : undefined;
+  const fixtureMode = process.argv.includes('--fixture');
+  const dataDir = process.env.RELAY_DATA_DIR ?? resolve(fixtureMode ? '.relay/demo' : '.relay');
+  const fixedTime = process.env.RELAY_CLOCK ?? (fixtureMode ? '2026-11-23T09:00:00+05:30' : undefined);
+  const clock = fixedTime ? () => new Date(fixedTime) : undefined;
   if (clock && !Number.isFinite(+clock())) throw new Error('RELAY_CLOCK must be a date or an ISO timestamp.');
   const port = Number(process.env.RELAY_PORT ?? 4173);
-  const server = createDeskServer({ dataDir, clock });
+  const server = createDeskServer({ dataDir, clock, fixtureMode, reset: process.argv.includes('--reset') });
   server.listen(port, '127.0.0.1', () => {
     console.log(`Relay Desk is open at http://127.0.0.1:${server.address().port}`);
   });

@@ -21,7 +21,11 @@ Run the local desk with Node.js 24 or newer. The app uses Node’s built-in HTTP
 npm start
 ```
 
-Open [Relay Desk on this computer](http://127.0.0.1:4173). Saved notes stay in `.relay/desk.sqlite`. Run `npm run evaluate` for the first-use acceptance check with a fresh temporary desk, or `npm test` for the full automated suite.
+Saved notes stay in `.relay/desk.sqlite`. Open [Relay Desk on this computer](http://127.0.0.1:4173).
+
+Use `npm run reset` to start a fresh practice refund on 23 November 2026 IST, or `npm run demo` to reopen it. Stop the desk before switching commands. The practice desk uses `.relay/demo` by default. In the refund card, open **Refund evidence and access** to allow or decline each source and check the result.
+
+Run `npm run evaluate` for the automated checks. They include first-use intake through a restart and refund matching against a separately inspected synthetic ledger. [Build and verification commands](docs/build.md#run-the-local-build)
 
 ## When you want Relay to take more off your hands
 

@@ -10,9 +10,13 @@ const statusMessage = element('intake-status');
 const format = new Intl.DateTimeFormat('en-IN', {
   weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC'
 });
+const activityFormat = new Intl.DateTimeFormat('en-IN', {
+  day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata'
+});
 let records = [];
 let reviewedNote;
 let saveRequestId;
+let deskTime;
 
 const dateLabel = value => format.format(new Date(value));
 
@@ -53,6 +57,87 @@ function fact(list, name, text) {
   list.append(title, value);
 }
 
+function addText(parent, tag, text) {
+  const child = document.createElement(tag);
+  child.textContent = text;
+  parent.append(child);
+  return child;
+}
+
+function action(parent, label, callback) {
+  const button = addText(parent, 'button', label);
+  button.type = 'button';
+  button.addEventListener('click', callback);
+  return button;
+}
+
+function renderRefund(panel, record, update, errorMessage, setBusy) {
+  const details = document.createElement('details');
+  details.className = 'source evidence';
+  addText(details, 'summary', 'Refund evidence and access');
+  if (record.evidence.length) {
+    const receipt = record.evidence[0];
+    addText(details, 'p', `Posted credit ${receipt.reference} · ${activityFormat.format(new Date(receipt.postedAt))}`);
+  }
+  const sources = [
+    ['merchant', 'Shop thread', 'Read messages about this return.'],
+    ['credits', 'Incoming credits', 'Read incoming credits linked to this return on the practice ledger.']
+  ];
+  const buttons = [];
+  const active = grant => grant?.status === 'allowed' && Date.parse(grant.expiresAt) > Date.parse(deskTime);
+  const run = async (endpoint, body, current) => {
+    errorMessage.textContent = '';
+    buttons.forEach(button => { button.disabled = true; });
+    setBusy(true);
+    try {
+      const result = await request(`/api/errands/${record.id}/${endpoint}`, { method: 'POST', body });
+      update(result);
+    } catch (error) {
+      errorMessage.textContent = error.message;
+      buttons.forEach(button => { button.disabled = false; });
+      setBusy(false);
+      current.focus();
+    }
+  };
+
+  for (const [key, label, scope] of sources) {
+    const grant = record.refundAccess[key];
+    const section = document.createElement('section');
+    section.className = 'permission';
+    addText(section, 'h4', label);
+    addText(section, 'p', scope);
+    const availability = {
+      allowed: active(grant) ? `Allowed until ${activityFormat.format(new Date(grant.expiresAt))} IST` : 'Access expired',
+      declined: 'Access declined',
+      withdrawn: 'Access withdrawn'
+    };
+    addText(section, 'p', availability[grant?.status] ?? 'Access available for seven days');
+    const checked = record.checks[key];
+    if (checked) {
+      addText(section, 'p', `Last checked ${activityFormat.format(new Date(checked.checkedAt))} IST`);
+      if (checked.lastEventAt) addText(section, 'p', `Last event ${activityFormat.format(new Date(checked.lastEventAt))} IST`);
+    }
+    if (key === 'merchant' && record.merchantEvent) {
+      addText(section, 'p', record.merchantEvent.type === 'promise' ? 'Shop promised the refund.' : 'Shop updated the return.');
+    }
+    const row = document.createElement('div');
+    row.className = 'actions';
+    const choose = (text, choice) => buttons.push(action(row, text, event =>
+      run('refund-access', { source: key, choice, revision: record.revision }, event.currentTarget)));
+    if (active(grant)) choose(`Withdraw ${label.toLowerCase()} access`, 'withdrawn');
+    else {
+      choose(`Allow ${label.toLowerCase()} access`, 'allowed');
+      if (grant?.status !== 'declined') choose(`Decline ${label.toLowerCase()} access`, 'declined');
+    }
+    section.append(row);
+    details.append(section);
+  }
+  panel.append(details);
+  if (record.status !== 'verified' && Object.values(record.refundAccess).some(active)) {
+    buttons.push(action(panel, 'Check refund sources', event => run('check-refund', {}, event.currentTarget)));
+  }
+}
+
 function renderErrand(record) {
   const card = element('errand-template').content.firstElementChild.cloneNode(true);
   const part = name => card.querySelector(`[data-${name}]`);
@@ -63,14 +148,35 @@ function renderErrand(record) {
   part('goal').id = `goal-${id}`;
   card.setAttribute('aria-labelledby', part('goal').id);
   part('note').textContent = note;
-  part('status').textContent = kind === 'refund' ? 'Waiting for credit' : 'Open';
+  part('status').textContent = record.status === 'verified' ? 'Refund verified' : kind === 'refund' ? 'Waiting for credit' : 'Open';
+  if (record.status === 'verified') card.querySelector('.ring').classList.add('verified');
   fact(part('facts'), 'Your check date', checkDate ? dateLabel(checkDate) : 'Choose when to check');
   if (kind === 'refund') {
     fact(part('facts'), 'Merchant deadline', merchantDeadline ? dateLabel(merchantDeadline) : 'Unknown');
   }
+  const replaceCard = (result, showEvidence = false) => {
+    records = records.map(item => item.id === id ? result : item);
+    const updated = renderErrand(result);
+    card.replaceWith(updated);
+    if (showEvidence) {
+      const panel = updated.querySelector('[data-evidence] details');
+      panel.open = true;
+      panel.querySelector('summary').focus();
+    } else {
+      updated.querySelector('h3').focus();
+    }
+  };
+  if (record.refund) {
+    fact(part('facts'), 'Return reference', record.refund.reference);
+    renderRefund(part('evidence'), record, result => replaceCard(result, true), part('error'), busy => {
+      part('edit').disabled = busy;
+      part('draft').disabled = busy;
+    });
+  }
   part('edit').addEventListener('click', () => {
     part('edit').disabled = true;
     part('draft').disabled = true;
+    part('evidence').disabled = true;
     part('error').textContent = '';
     const form = element('edit-template').content.firstElementChild.cloneNode(true);
     const editedGoal = form.querySelector('[data-edit-goal]');
@@ -86,6 +192,7 @@ function renderErrand(record) {
       part('error').textContent = '';
       part('edit').disabled = false;
       part('draft').disabled = false;
+      part('evidence').disabled = false;
       part('edit').focus();
     });
     form.addEventListener('submit', async event => {
@@ -99,10 +206,7 @@ function renderErrand(record) {
           method: 'PUT',
           body: { goal: editedGoal.value, checkDate: editedDate.value, revision: record.revision }
         });
-        records = records.map(item => item.id === id ? result : item);
-        const updated = renderErrand(result);
-        card.replaceWith(updated);
-        updated.querySelector('h3').focus();
+        replaceCard(result);
       } catch (error) {
         part('error').textContent = error.message;
         fields.disabled = false;
@@ -154,9 +258,11 @@ function showErrands() {
 
 async function load() {
   try {
-    const { today, errands: items } = await request('/api/desk');
+    const { today, now, errands: items, fixture } = await request('/api/desk');
+    deskTime = now;
     element('today').dateTime = today;
     element('today').textContent = dateLabel(today);
+    element('practice').hidden = !fixture;
     records = items;
     showErrands();
   } catch {

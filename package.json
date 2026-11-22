@@ -7,6 +7,8 @@
   "scripts": {
     "start": "node src/server.mjs",
     "test": "node --test",
-    "evaluate": "node --test test/first-use.test.mjs"
+    "evaluate": "node --test",
+    "demo": "node src/server.mjs --fixture",
+    "reset": "node src/server.mjs --fixture --reset"
   }
 }

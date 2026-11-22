@@ -2,9 +2,9 @@
 
 ## Current stage
 
-**The local first-use build is ready.** A person can save a refund note, choose when to check and reopen it without connecting an account. Scripted checks exercise the everyday entry point and persistence across a restart. Participant testing and the working-demo video are still ahead. [Product brief](docs/problem.md) · [Pitch](docs/relay-desk-pitch.pptx) · [Evaluation plan](docs/evaluation.md)
+**The local desk can save an errand and check a practice refund.** A person can start with a note and choose when to check. In the practice desk they can separately allow the shop thread and incoming credits. The matching posted credit verifies the refund. Participant testing and the working-demo video are still ahead. [Run the desk](docs/build.md#run-the-local-build) · [Evaluation plan](docs/evaluation.md)
 
-**Build next · Check the evidence.** Use an isolated synthetic refund to test a shop’s promise, another return’s credit and the matching posted credit against the household’s permission. [First build specification](docs/build.md)
+**Build next · Act within permission.** Add the free broadband visit and revised electricity bill to the synthetic household. [First build specification](docs/build.md#seed-one-monday)
 
 ## Build order
 
@@ -13,7 +13,7 @@ Pick the first unfinished step. Move on when another person can reproduce the re
 | Step | What to build | How to tell it works |
 | --- | --- | --- |
 | 1. Keep one errand · Built | Save a short note, an optional check date and the source of the information. Let the person review and edit it. | Reopen Relay with no connections. The refund is still open and the check date is still theirs. Inspect the trace for zero outside reads or writes. [First-use check](docs/evaluation.md#first-use-acceptance) |
-| 2. Check the evidence | Add a resettable synthetic household, a read-only refund tracker and a separate source for incoming credits. Ask for access just to the records that errand needs. | Declining access leaves the saved note usable. With access, neither a shop’s promise nor a same-value credit for another order closes the refund. A matching posted credit does. |
+| 2. Check the evidence · Built | Add a resettable synthetic household, a read-only refund tracker and a separate source for incoming credits. Ask for access just to the records that errand needs. | Declining access leaves the saved note usable. With access, neither a shop’s promise nor a same-value credit for another order closes the refund. A matching posted credit does. |
 | 3. Act within permission | Add an appointment provider, calendar and bill simulator. Give each action a precise permission and each person a short explanation when a choice is needed. | Relay books the free visit and checks both the provider confirmation and calendar entry. The refund stays open. A bill revised from ₹850 to ₹1,180 puts one decision in the brief and leaves the ₹900 limit intact. [Worked session](docs/build.md#first-build-review) |
 | 4. Recover when something changes | Handle withdrawn permission, revised invoices, newly busy slots and lost provider replies. Track each attempted action across restarts. | An expired approval produces zero debits. A lost reply yields the original receipt once. A conflict after a confirmed booking shows the reservation and the conflict without moving someone else’s appointment. |
 | 5. Make the brief easy to use | Put the decision, amount and consequence together. Let people inspect a source, decline an action, withdraw access or add an errand from the same brief. | Using a phone or keyboard, a reader can find the one decision, see why the refund is open and tell whether a payment was made. Check those answers with people who handle different kinds of errands. [Experience](docs/experience.md) |

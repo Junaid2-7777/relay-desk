@@ -8,6 +8,17 @@ Use a fresh local desk with no connected accounts or model key. Accept typed tex
 
 Build this through the ordinary intake and local case store used by the household brief. The first review needs one saved item and a trace with zero provider calls. A pasted note can support preparing a follow-up locally. Sending one is a separate action. [First-use acceptance](evaluation.md#first-use-acceptance)
 
+## Run the local build
+
+Use Node.js 24 or newer. There are no third-party runtime packages to install.
+
+- `npm start` opens the ordinary desk on `http://127.0.0.1:4173` with data in `.relay`.
+- `npm run reset` restores the practice refund and starts its desk. `npm run demo` restarts it without resetting. Stop the existing process before switching commands. The practice database lives in `.relay/demo`.
+- `npm run evaluate` runs the acceptance checks and isolated simulator cases. Run `node --test test/first-use.test.mjs` to replay just the first saved errand.
+- `RELAY_PORT`, `RELAY_DATA_DIR` and `RELAY_CLOCK` override the port, data directory and clock. Supply an ISO timestamp with an explicit offset for the clock.
+
+The practice desk exposes `/api/fixture/refund` for inspection of synthetic merchant events, credits and scoped read attempts. The ordinary desk uses `/api/inspect` to inspect its local errand and zero outside effects. Browser checks covered a keyboard-only first use, a 320 CSS pixel viewport and 200% text size in Chromium.
+
 ## Seed one Monday
 
 Use an isolated household and an injected clock of **23 November 2026 IST**. Seed prospective grants already agreed by the household. The bill revision arrives before any payment of the earlier invoice. All personal records and monetary amounts are synthetic.

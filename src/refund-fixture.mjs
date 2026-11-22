@@ -83,7 +83,7 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
   `);
   const scopedCredits = database.prepare(`
     SELECT id, account, amountMinor, currency, direction, status, returnReference, postedAt
-    FROM ledger_credits WHERE account = ? AND (
+    FROM ledger_credits WHERE account = ? AND direction = 'incoming' AND (
       returnReference = ? OR (returnReference IS NULL AND id IN (SELECT value FROM json_each(?)))
     )
     ORDER BY postedAt, id
