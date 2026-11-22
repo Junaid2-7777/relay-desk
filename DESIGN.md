@@ -2,7 +2,7 @@
 
 ![Relay Desk’s folded R on a stack of receipts, with the five colours of the Paper and Carbon system.](docs/brand/identity-preview.png)
 
-**Leave the follow-up to Relay.** Relay Desk is a personal chief of staff for everyday admin. Its mark comes from the folded duplicate on a paper receipt. Keep the outcome the owner handed over, the permission they gave and the record that proves what happened close together. The morning briefing demonstrates that principle across a refund, a service visit and a revised bill. [Household experience](docs/experience.md)
+**Leave the follow-up to Relay.** Relay Desk is a personal assistant for everyday errands. Its mark comes from the folded duplicate on a paper receipt, the little slip you keep until a job is settled. Write in the words someone would use at a shop counter or on the phone. “Waiting for your refund” tells them more than an internal status name. Show what they asked for, what Relay may do and what happened. The morning briefing puts those three facts together for a refund, a service visit and a bill. [Household experience](docs/experience.md)
 
 The two-page identity board includes the wordmark, palette, typography and a synthetic household briefing. The editable source retains separate text, colour swatches and artwork. [Identity board PDF](docs/brand/identity.pdf) · [Editable identity board](docs/brand/identity.pptx)
 

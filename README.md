@@ -5,37 +5,39 @@
   </picture>
 </h1>
 
-**“Get my refund back. Book the broadband visit around my calendar. Handle the electricity bill up to ₹900.”**
+**A personal staff for everyone.** Relay Desk is a proposed personal assistant for the errands you have to remember long after the call ends. You can hand it one job in your own words, whether that’s following up on a refund, finding an appointment around your shifts or checking what happened to a form. You decide what it can see and what it may do for you.
 
-That is a handoff someone might give an assistant before leaving for work. **Relay Desk** is a proposed personal chief of staff for people who handle that work themselves. It follows each job across messages, calendars and provider records, acts within the permission the person gave it, and brings back the decisions that still need them.
+## Start with one errand
 
-**Current stage · Proposal and design.** Review the five-slide pitch or start with the first planned build, a refund tracker that can distinguish a merchant’s promise from money returned to the account. [Pitch](docs/relay-desk-pitch.pptx) · [Current milestone](roadmap.md#current-stage)
+> The shop said it would refund me. Can you help me check on Friday?
 
-## One decision on Monday morning
+That’s enough to start. In the proposed first build, Relay would keep the note and the day you want to check. When you come back on Friday, you’d see what the shop promised and that the money is still unconfirmed. You could ask for a draft message to the shop. Saving the note would give Relay no access to your inbox or bank account.
 
-In the proposed demonstration, three updates arrive for one synthetic household on **23 November 2026**.
+**Current stage · Proposal and design.** The next build is this single-errand flow. The roadmap moves forward when each result works. [Current milestone](roadmap.md#current-stage) · [Five-slide pitch](docs/relay-desk-pitch.pptx)
 
-| What comes in | What Relay would take off the person's plate | What counts as done |
+## When you want Relay to take more off your hands
+
+Suppose you’ve asked Relay to watch a return, book a free broadband visit on Tuesday afternoon and pay your electricity bill up to ₹900. Here is the proposed morning brief for one synthetic household.
+
+| Your errand | What Relay would do | What you’d see |
 | --- | --- | --- |
-| A shop promises a **₹1,249 refund**. | Watch for the matching incoming credit. If the agreed checkpoint passes, prepare a specific follow-up for the owner's review. | A posted credit for this return, account, amount and currency. |
-| The broadband provider offers **11 am or 3 pm Tuesday**. | Check availability. The morning slot is busy. Book the free 3 pm visit under the existing permission and put it in the calendar. | A provider-confirmed booking and its matching calendar entry. |
-| An unpaid electricity invoice changes **from ₹850 to ₹1,180**. | Hold payment. Show exactly what changed and let the person approve this revision once or leave it unpaid. | A matching biller settlement if paid. Tomorrow's standing limit stays ₹900. |
+| “Did my ₹1,249 refund come through?” | With your permission, check the incoming credit against the return. If it’s overdue, prepare a follow-up for you to review. | **Waiting for credit.** The refund stays open until the matching credit posts. |
+| “Book the broadband visit around my calendar.” | Check the offered times. The 11 am slot conflicts with an existing commitment. Book the free 3 pm visit with the provider and add it to your calendar. | **Booked for Tuesday at 3 pm.** You can open the provider confirmation and calendar entry. |
+| “Handle this bill up to ₹900.” | The bill changed from ₹850 to ₹1,180. Hold payment and bring you the revised amount. | **Pay ₹1,180 once** or **Leave unpaid**. If you approve it, your next bill still has a ₹900 limit. |
 
-<img src="docs/images/relay-desk-briefing.png" width="470" alt="Proposed morning briefing. The revised electricity bill needs one decision. Relay is watching for the refund credit and the provider has confirmed the Tuesday afternoon visit.">
+<img src="docs/images/relay-desk-briefing.png" width="470" alt="Proposed morning briefing. The revised electricity bill needs one decision. Relay is watching for the refund credit and the broadband provider has confirmed Tuesday at 3 pm.">
 
-The worked brief assumes the household already set its permissions. A first-time user would review the proposed grants. The evaluation accounts separately for that setup and for later interruptions. [A3 audit](docs/decision.md) · [Household experience](docs/experience.md)
+## Can it handle a different errand?
 
-## Give it a job the team never scripted
+A student waiting for a scholarship decision needs to know which office still has the application. Someone closing a library membership needs confirmation from the library. Both should be able to start by saying what they’re waiting for. A reply saying “we received your request” leaves the errand open. If Relay has no authorized way to check the outcome, it should say what is missing. [Product brief](docs/problem.md) · [Scholarship example](docs/scholarship-sources.md)
 
-Ask Relay to track the closure of a library membership. It should agree on the outcome, the membership reference, the library that can confirm closure, and the records it may read. A reply saying “we received your request” keeps the file open. The library's matching closure record finishes it. Tracking the request gives Relay no permission to cancel the membership.
+The evaluation asks someone outside the team to supply an unfamiliar errand after the build is frozen. It also tests whether people can start without connecting accounts, whether Relay stays within permission, and how many checks a person still has to do themselves. [Evaluation and baselines](docs/evaluation.md)
 
-A judge can supply a different goal and issuer after the build is frozen. A new job that fits an existing capability should need no new workflow. If the desk cannot reach the issuer or identify the matching record, it should say what evidence is missing. The original scholarship work remains a specialist example where school and district verification must happen in sequence. [Delegation contracts](docs/architecture.md) · [Scholarship evidence](docs/scholarship-sources.md)
+## Project materials
 
-## Project status and materials
+Prepared for **Homingo Hack Days, Agents A3 · A personal staff for everyone**. The studies use synthetic records and amounts. The runnable agent, measured outcomes and submission video are planned. Codex assisted with research, writing and design. [Official brief](https://hackathon.homingo.co.in/hackathons/edition-01/problem-statements#a3)
 
-Prepared for **Homingo Hack Days, Agents A3 · A personal staff for everyone**. The studies use synthetic household records and amounts. The runnable agent, provider integrations, measured outcomes and submission video are planned. Codex assisted with research, writing and design. The editable visual materials were prepared for Canva. [Official brief](https://hackathon.homingo.co.in/hackathons/edition-01/problem-statements#a3)
-
-- **Understand the problem and evidence.** [Product brief](docs/problem.md) · [Research and provider sources](docs/sources.md)
-- **Build the first release.** [Roadmap](roadmap.md) · [First build review](docs/build.md) · [Contributor guide](agents.md)
-- **Challenge the proposal.** [Evaluation and baselines](docs/evaluation.md) · [Judge walkthrough](docs/demo.md) · [Submission checklist](docs/hackathon.md)
-- **Use the identity.** [Design guide and logos](DESIGN.md) · [Printable identity sheets](docs/brand/identity.pdf) · [Editable identity source](docs/brand/identity.pptx)
+- [A3 design audit](docs/decision.md) · [Research and provider sources](docs/sources.md) · [Everyday experience](docs/experience.md)
+- [Build order](roadmap.md) · [First build review](docs/build.md) · [Contributor guide](agents.md)
+- [Judge walkthrough](docs/demo.md) · [Submission checklist](docs/hackathon.md)
+- [Design guide and logos](DESIGN.md) · [Printable identity sheets](docs/brand/identity.pdf) · [Editable identity source](docs/brand/identity.pptx)

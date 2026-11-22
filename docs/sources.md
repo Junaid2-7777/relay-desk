@@ -2,7 +2,7 @@
 
 ## Who carries the work
 
-Lucie Martin, Liam Delaney and Orla Doyle studied everyday administrative work in an original survey of 2,243 UK adults across ten domains. Bills and goods or services were among the areas that took substantial time. Recall period affected the estimates. The study supports looking across household chores. It does not establish local demand for Relay Desk, people's willingness to delegate, or how much time the product would save. The proposed household study measures those separately. [Original study](https://onlinelibrary.wiley.com/doi/full/10.1111/puar.13709) · [Product brief](problem.md)
+Lucie Martin, Liam Delaney and Orla Doyle studied everyday administrative work in a survey of 2,243 UK adults across ten domains. Bills and goods or services were among the areas that took substantial time. Recall period affected the estimates. For Relay, the open question is which part of a real errand a person would want help with. The planned interviews start with an errand each participant already handles. Measuring time saved will require observing people using a working product. [Original study](https://onlinelibrary.wiley.com/doi/full/10.1111/puar.13709) · [Product brief](problem.md)
 
 ## What a provider can establish
 
