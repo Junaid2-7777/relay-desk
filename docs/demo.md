@@ -1,73 +1,45 @@
 # Demo runbook
 
-Open on a submitted scholarship application with one day left for institute verification. The student has done their part once. The case now depends on two offices, and the deadlines have already moved. Let the judge decide what happens next.
+“Your school says it received your correction. Can you stop following up?” Give the judge that decision on the student’s own handoff sheet. The case can stay open, move to the district, or pause for review according to the evidence the judge supplies.
 
-This is the planned demo for Deadline Relay. The prototype, its calendar writes, and its evaluation results are pending. The notices below are public records. The application, status events, recipient, and calendar belong to the local simulator.
+This is the planned demonstration. The Ministry notices are historical public records. The application, students, offices, messages, clock and calendar entries are synthetic. The prototype and measurements are pending. [Student experience](experience.md)
 
-## The case
+## Set the scene
 
-Use the National Means-cum-Merit Scholarship Scheme (NMMSS), academic year 2026–27. The fixture starts with a submitted application. Keep the public rules and this individual case side by side so viewers can see what each source proves.
+1. Once the local build exists, follow the tested setup in the README. Reset the dedicated fixture to **1 October 2026**. Check the case service for one submitted NMMSS application for academic year 2026–27 with both verifications pending. The local calendar starts with one unrelated event and no scholarship reminders. The local outbox is empty.
+2. Open the student sheet in one view, the judge controls in another and the independent provider records in a third. Keep the student on the sheet while the judge enters authority events. Record only public evidence and synthetic records.
+3. Keep **Simulated date** and the actual planner mode visible. Use **Live model**, **Planner replay** or **Fixture-driven demo** as appropriate. Identify the public records as historical snapshots. An alternate calendar provider must be named in the recording and its own records shown.
 
-| Historical release | Last date to submit | Institute Nodal Officer (L1) | District Nodal Officer (L2) |
-| --- | --- | --- | --- |
-| 1 Oct 2026 | 31 Oct 2026 | 15 Nov 2026 | 30 Nov 2026 |
-| 31 Oct 2026 | 15 Nov 2026 | 30 Nov 2026 | 15 Dec 2026 |
+## First, move the deadlines
 
-Replay the [1 October PIB release](https://www.pib.gov.in/PressReleseDetailm.aspx?PRID=2317657&lang=1&reg=3) and then the [31 October PIB release](https://www.pib.gov.in/PressReleasePage.aspx?PRID=2330936&lang=1&reg=3). The new notice supplies the new deadlines. Confirmation of each case stage comes from the simulator’s separate case store.
-
-Keep all dates as Indian calendar dates. Move the fixture clock to 29 November 2026 IST after the historical replay. Label that clock **Simulated date** on screen.
-
-## Before recording
-
-1. Start the application, case simulator, local CalDAV server, and local message outbox using the README setup steps once they are available. Seed or reset the demo fixture.
-2. Use an anonymous case identifier and a local fixture inbox. Check that the case is submitted, L1 and L2 verification are pending, the calendar has one unrelated synthetic event and no program reminders, and the outbox has no messages.
-3. Choose live-model mode when available. If using a recorded planner trace, label it **Planner replay** and show the state-changing tools running locally. Label a scripted path **Fixture-driven demo**.
-4. Set the browser up so the project view, calendar provider readback, and case event log are easy to switch between. A recording should contain only public sources and synthetic data.
-
-## Shared opening
-
-1. Load the 1 October release. Show the matching scheme and academic year and the two verification reminders it creates on the local CalDAV server. The case timeline remains submitted and waiting for L1.
-2. Replay the 31 October release. Show why it replaces the earlier schedule for this scope, and open its source evidence at the two revised dates.
-3. Read the two events back from the calendar server. Show that the L1 and L2 event UIDs are the same as before, that their dates moved to 30 November and 15 December, and that there are still exactly two scholarship milestone events. Replaying the new release again should keep both UIDs, dates, and count unchanged. The unrelated event stays untouched throughout.
-4. Advance the case clock to 29 November. Show the current case state and the next deadline. Ask the judge to choose a branch.
-
-## Branch A — the institute returns the application
-
-1. Inject a **Returned as defective** case event through the simulator controls. Include a synthetic correction request, such as replacing an unreadable attachment with a legible copy. The case should surface the student’s next action while retaining the official L1 and L2 deadlines.
-2. Use the student control to record the correction in the simulator. Show the resulting follow-up draft with its exact local recipient, subject and body, such as “A legible copy was recorded for this case. Please confirm whether the corrected submission is visible for institute verification.” Show an empty outbox before approval. Approve that version, then verify a single queued request in the local outbox.
-3. Inject an acknowledgement that the correction was received. The case must still show L1 as pending. Hold the view long enough for that distinction to register.
-4. Inject an explicit **L1 verified** event from the institute actor. Show that L2 is still pending. Inject a separate **L2 verified** event from the district actor and show both source-backed transitions in the case timeline. The final state reports the two verification stages complete.
-
-## Branch B — the judge adds a misleading notice
-
-1. Feed the agent an old release again, or a fixture for a different scheme that uses similar verification language. Show the candidate’s scheme, academic year, and publication date beside the active NMMSS release.
-2. Open the decision trace. Show the reason the candidate did not supersede the current schedule, such as an older publication or a different scheme.
-3. Read the calendar back from CalDAV. Show the same two UIDs, 30 November and 15 December dates, and event count. The case remains submitted and awaiting L1, and the outbox remains empty.
-
-## What the recording should prove
-
-| Moment | Direct evidence |
-| --- | --- |
-| Dates are replaced | The 31 October release is visible. Calendar readback shows updated dates for the original event UIDs and two total milestone events. |
-| Replayed or irrelevant input | Provider readback shows that both event UIDs and dates are untouched. The decision displays the freshness or scope reason. |
-| Approved follow-up | The exact local draft is visible before approval. The outbox has zero messages before approval and one matching queue record afterwards. |
-| Acknowledgement versus verification | The case event log shows receipt of the correction with L1 pending, a distinct L1 verification with L2 pending, then a distinct L2 verification. |
-
-## Video plan
-
-Target **2:20**. Record Branch A for the main entry because it shows the full student workflow. Keep both branches ready for a live walkthrough.
-
-| Time | Shot | Suggested narration |
+| Simulated date | What the presenter does | Expected evidence |
 | --- | --- | --- |
-| 0:00–0:18 | Submitted case beside the two verification steps and the imminent deadline. | “You submitted your scholarship application. Two offices still have to verify it. What happens when the deadlines move or the institute needs something from you?” |
-| 0:18–0:46 | Replay 1 October and 31 October, expand the published source, and read back CalDAV. | “These two Ministry notices are real. Deadline Relay applies the revised dates to the existing reminders. The calendar still has the same two event IDs.” |
-| 0:46–0:57 | Show the simulated 29 November clock and pick the judge’s branch. | “In this simulated case, it’s one day before institute verification closes. Let’s see what happens if the institute returns the application.” |
-| 0:57–1:27 | Show the defect and student correction, then confirm the exact draft and one outbox write. | “The student replaces the unreadable attachment. The agent prepares a follow-up. The local outbox gets the approved version once.” |
-| 1:27–1:59 | Show distinct acknowledgement, L1 verification, and L2 verification events. | “The institute received the correction. L1 is still pending. Here is the institute’s separate verification. The district then verifies at L2.” |
-| 1:59–2:20 | End on the evidence panel and completed synthetic case. | “The public notice determines when each step is due. The case record shows which step happened and who did it.” |
+| **1 Oct** | Reveal the 1 October Ministry notice and show the school as the current owner. | The application deadline is 31 Oct. Two local all-day events appear for verification, school on 15 Nov and district on 30 Nov. Read both stable event IDs from CalDAV. |
+| **31 Oct** | Advance the clock to the publication day and release the revised notice. Expand the school date on the sheet. | The application deadline becomes 15 Nov. The same two event IDs now read 30 Nov and 15 Dec. The filing receipt and unrelated event retain their original values. |
+| **29 Nov** | Advance to the eve of school verification. Leave the student sheet open. Give the judge the choice of returning the case or introducing a misleading notice. | The sheet reads **Your school has the next step**. School verification is due 30 Nov. District verification is due 15 Dec. |
 
-For Branch B, use 0:57–1:52 to show the candidate, the rejection reason, and both unchanged calendar records. End on the pending case and the two dates, or show measured evaluation results once they exist. Confirm shared video playback, readable screen text, and captions before submission.
+Use each notice’s three stated dates separately. Reveal the 21 November NSP cross-check only after the simulated clock reaches its observation date. Date-only sources authorize no cutoff hour. [1 October Ministry release](https://www.pib.gov.in/PressReleseDetailm.aspx?PRID=2317657&lang=1&reg=3) · [31 October Ministry release](https://www.pib.gov.in/PressReleasePage.aspx?PRID=2330936&lang=1&reg=3) · [Portal snapshot and provenance](sources.md#public-nsp-cross-check-on-21-november-2026)
 
-## Submission copy
+## Judge choice A · Return the application
 
-Deadline Relay picks up where a scholarship application leaves off. It tracks which person owes the next action, revises the student’s calendar from official notices, and helps recover a returned application. In the demo, a judge sends the case back for correction. The agent follows it through student action and local follow-up, then waits for separate school and district verification records. The dates come from real Ministry notices. The case and communications run in a local simulation.
+1. **School actor.** Record a return for this case with the reason “The attachment is too faint to read. Please provide a legible copy.” On the sheet, Student becomes current, the reason appears in the school’s words and the 30 Nov deadline still belongs to the school. The student now has a concrete action, **Open student simulator**.
+2. **Student actor.** Record the correction through the simulator and return to the sheet. Open **Review follow-up**. Show the empty outbox and read the case, exact local recipient, subject and message. An example message is “I’ve supplied a clearer copy for this case. Can you confirm receipt of the corrected attachment for school verification?” Choose **Approve and queue locally**. Show the single matching row and its receipt in the local outbox.
+3. **School actor.** Acknowledge the correction. Stop on the student sheet. Ask “Who has the next step now?” The route stays at School and the headline reads **Your school received the correction**. Open the receipt so the judge can read what the school acknowledged. School verification is still pending. On a second run, let the school acknowledge *before* draft approval. The obsolete receipt request should retire and the outbox should stay empty.
+4. **School actor, then district actor.** Record school verification and show the current owner move to District with the 15 Dec date. Issue the district’s separate verification for the same case. End on **Both verification steps are complete** and open the two authority records. The demonstrated outcome ends at verification.
+
+## Judge choice B · Challenge the calendar
+
+Give the judge the 1 October release again or the fixture for a different scholarship. Show the candidate beside the 31 October NMMSS record. An old release loses on issue date. A different scheme fails the scope check even if one date matches. Read the two stable event IDs, event count, dates and unrelated record directly from the calendar. The operation trace should show zero calendar or outbox writes, the outbox should remain empty and the school should still own the case. Replaying the accepted release also preserves all three calendar entries and the empty outbox. [Scope fixtures and release gates](evaluation.md)
+
+## Cut for a 2 minute 20 second recording
+
+| Time | Shot to keep |
+| --- | --- |
+| 0:00–0:15 | A submitted case on 1 Oct. Introduce the student’s question and name the school as the current owner. |
+| 0:15–0:45 | The October extension. Hold the original and revised provider readbacks on screen long enough to compare each event’s ID and date. |
+| 0:45–1:15 | Advance to 29 Nov. Have the judge return the case. Show the reason, the student’s simulated correction and the correction receipt. |
+| 1:15–1:40 | The student reviews the local recipient and exact message. Cut from explicit approval to the matching outbox row. |
+| 1:40–2:00 | Acknowledge receipt. Give viewers a moment to name the next owner. Then show the school's separate verification move the case to District. |
+| 2:00–2:20 | The district verification record and the completed handoff sheet. Leave both authority receipts readable in the closing shot. |
+
+For a live review, allow a judge to stop on any record or choose the scope challenge. If a provider readback fails, show the pending effect and the last confirmed value. Resume from that operation once the service recovers. Label any recorded segment at the point where playback begins. Check captions and legibility at the shared video size before submitting.
