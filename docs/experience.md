@@ -1,71 +1,35 @@
-# The student handoff
+# The household briefing
 
-A student opens Deadline Relay on a phone after school. The first screen should answer three questions in a glance. Who has my application? Is there something I need to do? Which deadline matters now?
+A household owner leaves for work with three jobs on the desk. Relay can book a broadband visit around their calendar, watch for a promised refund and handle electricity bills within an agreed limit. When the owner checks in, the first screen should tell them what needs their judgement, what Relay did and what someone else still owes.
 
-## One case, one sheet
+## Monday morning
 
-Keep the case on the same page from filing through district verification. Put the current handoff first, its evidence one tap away, and earlier handoffs below it. Put the simulated school and district controls in a separate judge view. The student’s view reflects the records those actors create.
+<img src="images/relay-desk-briefing.png" width="500" alt="Proposed briefing for a synthetic household on 23 November 2026. Only the revised electricity bill needs review. The merchant refund is still pending and the provider confirmed Tuesday's broadband visit at 3 pm.">
 
-Here is the proposed sheet just after the school returns the synthetic case. The wording in quotation marks comes from the example school record.
+**Review revised bill** opens the earlier and current invoices side by side. Show the payee, account reference, dates and amount for each. Put the household’s standing ₹900 limit immediately below the new ₹1,180 total. Explain that the decision applies to this version of this invoice. Present **Pay ₹1,180 once** and **Leave unpaid**. Choosing the one-time exception authorizes the local simulator to pay that version, and the ₹900 standing limit still applies to the next bill.
 
-> **NMMSS · Academic year 2026–27**
->
-> Synthetic case · Simulated date 29 Nov 2026
->
-> ### Your school needs a clearer copy
->
-> **Your next step**
->
-> Replace the unreadable attachment in the student simulator.
->
-> **From your school**
->
-> “The attachment is too faint to read. Please provide a legible copy.”
->
-> **School verification is due 30 Nov 2026.**
->
-> The school still needs to verify your corrected application.
->
-> **Open student simulator**
->
-> View school request · View deadline source
+After approval, show the local payment action and its status. If the writer loses its response, say **Checking whether the payment went through** and reconcile the existing operation. Mark the bill settled only after reading a matching settlement receipt. A new invoice revision while the owner is reviewing the bill retires the old decision and shows what changed. Deferring the bill returns the owner to the brief without reprompting them on every refresh.
 
-The published date belongs to the school. Only show a personal correction deadline if the case has a separately evidenced one. Opening the simulator lets the student record the correction against this case using a synthetic attachment description. Returning to the sheet should show the resulting receipt or explain that it is still waiting for one.
+## Work the owner can leave on the desk
 
-## What changes on the sheet
-
-| Evidence observed | Student-facing headline | Action or evidence available |
+| Delegated outcome | What the owner sees today | What counts as proof |
 | --- | --- | --- |
-| Filed application | **Your school has the next step** | “Your school needs to verify your application by 30 Nov.” Open the filing receipt or the deadline source. |
-| School return | **Your school needs a clearer copy** | Show the school’s reason verbatim and offer **Open student simulator**. Pause routine verification nudges. |
-| Student correction receipt | **Your correction is back with your school** | Offer **Review follow-up** for the prepared draft. Show the case, local recipient, subject and full message. **Approve and queue locally** or **Skip follow-up** returns to the same handoff. |
-| School acknowledgement | **Your school received the correction** | “Verification is still pending. You have nothing to resend.” Keep the school active, with 30 Nov beside it. Retire the unqueued receipt request. A previously queued message stays in history. |
-| School verification | **Your district has the next step** | Show the school verification receipt, the district deadline of 15 Dec and the district verification record the case is waiting for. |
-| District verification after school verification | **Both verification steps are complete** | Show the school and district records side by side or stacked. The tracked case ends here. Scholarship award and payment are separate decisions. |
+| Recover the **₹1,249 merchant refund** | **Waiting for credit.** Open the merchant’s promise, the last check of the authorized account and the next agreed checkpoint. If it passes, offer a follow-up for review. | A posted incoming credit on the scoped account matching the amount, currency and return reference. A credit of the same amount for another return leaves this case open. |
+| Arrange **one free Tuesday afternoon broadband visit** | **Booked for Tue 24 Nov, 3 pm.** The 11 am offer overlapped a household commitment. The permitted 3 pm booking has a provider confirmation and a calendar entry. | The provider’s confirmed booking for the correct service, date, time and zone. Show calendar readback separately. If the booking is confirmed but the calendar is unavailable, keep the booking and disclose the calendar problem. |
+| Pay the **electricity account within ₹900** | **Needs your review.** The original ₹850 invoice was replaced by ₹1,180 before any payment. Hold the payment while waiting for the owner’s decision. | A settled receipt matching the exact invoice, payee, currency and amount authorized for that payment. |
 
-These examples assume the clock is set to 29 November and the 31 October notice is in effect. Derive labels from the current case, date and source in the build. Display **Queued locally** only after reading the exact approved message from the outbox. If the draft or case changes during review, preserve the reviewed text for comparison, explain the change and require a fresh review of any still-relevant draft. [Source timeline](sources.md#nmmss-timeline) · [Case and write contracts](architecture.md)
+The brief interrupts the owner once for this set of facts. Relay can still work on the refund and booking while the owner considers the bill. Open any row to see the original instruction, permission, next owner, next check and the issuer’s record. A single missed check stays attached to the affected job. Keep last successful check and last event as separate dates. An unavailable issuer should yield a message such as **The last ledger check was Monday. Relay couldn’t check for a newer credit.** A quiet feed with a successful read can report a fresh check with no new record. [Delegation and evidence contracts](architecture.md)
 
-## Reading the route
+## Giving Relay a new job
 
-![Proposed handoff after acknowledgement. The school receipt confirms the correction arrived. The separate Ministry notice gives 30 November as the deadline for the school to verify it.](images/handoff-sheet.png)
+Start with an outcome in the owner’s own words. Relay repeats the outcome, the exact scope of the access it needs, what it may do independently, and the record that will finish the job. For the broadband visit, the owner should be able to see **One appointment · Tuesday afternoon · Free · Keep existing commitments** before delegating. If the remaining offers all require a fee, a different day or moving an event, Relay returns with those specific choices.
 
-Give Student, School and District a single line across the sheet. Use an ink outline for a future stop, a violet double ring and the word **Current** for the next owner, and a check with a specific label for a recorded step. When the school returns the case, move **Current** to Student while keeping **Filed** visible in history. After acknowledgement it stays at School. The route should still make sense printed in black and white.
+For unfamiliar work, ask for the missing evidence at intake. “Watch for my old library membership to close” needs the membership reference and a source that can confirm closure. If only an acknowledgement is available, keep the case open and show the missing confirmation. The owner can inspect or revoke a delegation at any time. Withdrawing permission stops future work and keeps the history of receipts already recorded.
 
-Give the two records different places on a carbon-copy receipt. On the warm case paper, set the school’s update in mulberry ink. Attach the published date on a violet tab with a melon index and a diagonally cut corner. A narrow, evenly offset edge exposes the carbon sheet underneath. Set the headline in Barlow Semi Condensed Bold and use Atkinson Hyperlegible Next with tabular numerals for dates and record details. Keep the tab’s edge clear of type at every width.
+## A briefing that works on a phone
 
-Opening **School receipt** reveals the actor, case, sequence and receipt. Opening the date source reveals the issuer, publication date, stage, cited passage and historical notice. A calendar change opens to the independently read dates and event identities. Keep the headline in the family’s language and put record IDs in the evidence view.
+Read the decision first, including the previous value, the new value and the owner’s rule. Put completed or waiting work in a calm list below. Use a text label with every status symbol. Keep the decision visible until resolved, and leave provider evidence accessible from each item. Use the carbon-copy receipt treatment for the decision and save the melon tab for a genuine exception. [Identity system](../DESIGN.md)
 
-At phone width, stack owner, action, deadline and evidence in that order. Let the route become a vertical list with the same names and reading order. Place focus on the draft heading when it opens and return it to the invoking control on close, or the new handoff heading if the control has retired. Routine background updates announce once and preserve focus. Keep text labels, visible keyboard focus and touch-sized controls throughout. A short highlight can draw attention to a newly confirmed handoff. With reduced motion, change its text and shape immediately.
+At 320 CSS pixels, stack the revised amount, permission and choices in reading order. Give controls visible keyboard focus and touch targets of at least 44 by 44 CSS pixels. Opening a decision places focus at the invoice heading. Closing it returns focus to the invoking control, or to the updated briefing when that control retires. New receipts announce once without stealing focus. Reduced-motion mode updates the text and state immediately.
 
-## When the answer is uncertain
-
-| Situation | What the student sees |
-| --- | --- |
-| Two equally applicable notices disagree | **School deadline needs review.** Show the last confirmed date, both conflicting passages and which field differs. Keep the corresponding calendar entry at its last confirmed value. |
-| A calendar write has an unknown outcome | **Checking your calendar.** Show the confirmed public date and last calendar readback separately. Reconcile the existing event before offering a retry. |
-| The case service is quiet | Show when the service was last read successfully and when the last case event occurred. For example, **Case checked 29 Nov at 4 pm IST** can sit beside **Last school record 27 Nov**. A successful read with no new events updates the check time. Only a new case event can change the recorded handoff. |
-| The latest case check fails or a scheduled check is overdue | **We haven’t confirmed whether your school has replied.** Label the owner as last confirmed, keep both timestamps and offer **Check again**. If the service has never answered, show **Waiting for the first case record**. Suppress assurances such as “You have nothing to resend” until a successful read confirms the current handoff. |
-| A case record is missing | **Checking the school record.** Keep the last evidenced handoff visible while rereading the missing sequence. Show which evidence is still missing if the gap persists. |
-| The deadline passes with no verification | **School verification was due 30 Nov.** Keep the case open, show the last school record and the state of any local follow-up. Offer one optional question for the student to ask in person, “Has my application been verified at school, or do you need anything else from me?” Displaying the question leaves the outbox untouched. |
-
-For design acceptance, give a reader the acknowledgement screen without narration. Ask who acts next, whether the case is verified, and where the date came from. Then ask them to find the school receipt and the Ministry notice using only a keyboard. Repeat at 320 CSS pixels and with 200% text zoom. Record any answer or interaction that depended on colour, a tooltip or the presenter. Run these checks against the eventual interface.
+Use the synthetic Monday briefing for a future walkthrough. Ask an owner to identify their one decision, find the refund proof that is still missing, and explain what paying this bill does to next month’s limit. Repeat with keyboard navigation and 200% text zoom. Record errors and the detail the owner had to hunt for. These checks specify the intended experience. The current artwork is a design study. [Evaluation plan](evaluation.md)
