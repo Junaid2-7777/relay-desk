@@ -11,9 +11,17 @@
 
 > The shop said it would refund me. Can you help me check on Friday?
 
-That’s enough to start. In the proposed first build, Relay would keep the note and the day you want to check. When you come back on Friday, you’d see what the shop promised and that the money is still unconfirmed. You could ask for a draft message to the shop. Saving the note would give Relay no access to your inbox or bank account.
+That’s enough to start. Relay keeps the note and the day you want to check. When you come back on Friday, you can see what the shop promised and whether the refund is still open. You can prepare a draft message to the shop locally. Saving the note requires only the words you want to keep.
 
-**Current stage · Proposal and design.** Saving and revisiting this first errand is the next build. [Current milestone](roadmap.md#current-stage) · [Five-slide pitch](docs/relay-desk-pitch.pptx)
+**Current stage · Local first-use build.** [Current milestone](roadmap.md#current-stage) · [Five-slide pitch](docs/relay-desk-pitch.pptx)
+
+Run the local desk with Node.js 24 or newer. The app uses Node’s built-in HTTP and SQLite modules.
+
+```sh
+npm start
+```
+
+Open [Relay Desk on this computer](http://127.0.0.1:4173). Saved notes stay in `.relay/desk.sqlite`. Run `npm run evaluate` for the first-use acceptance check with a fresh temporary desk, or `npm test` for the full automated suite.
 
 ## When you want Relay to take more off your hands
 
@@ -35,7 +43,7 @@ The evaluation asks someone outside the team to supply an unfamiliar errand afte
 
 ## Project materials
 
-Prepared for **Homingo Hack Days, Agents A3 · A personal staff for everyone**. The studies use synthetic records and amounts. The runnable agent, measured outcomes and submission video are planned. Codex assisted with research, writing and design. [Official brief](https://hackathon.homingo.co.in/hackathons/edition-01/problem-statements#a3)
+Prepared for **Homingo Hack Days, Agents A3 · A personal staff for everyone**. The studies use synthetic records and amounts. The full household simulation, measured outcomes and submission video are planned. Codex assisted with research, writing, design and implementation. [Official brief](https://hackathon.homingo.co.in/hackathons/edition-01/problem-statements#a3)
 
 - [A3 design audit](docs/decision.md) · [Research and provider sources](docs/sources.md) · [Everyday experience](docs/experience.md)
 - [Build order](roadmap.md) · [First build review](docs/build.md) · [Contributor guide](agents.md)

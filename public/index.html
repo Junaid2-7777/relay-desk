@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en-IN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#fff8f0">
+    <title>Relay Desk</title>
+    <link rel="icon" href="/mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/desk.css">
+    <script type="module" src="/desk.mjs"></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to your desk</a>
+    <header class="masthead">
+      <div class="frame masthead-inner">
+        <img src="/wordmark.svg" width="174" height="43" alt="Relay Desk">
+        <time id="today"></time>
+      </div>
+    </header>
+    <main class="frame desk" id="main">
+      <section aria-labelledby="intake-heading" class="intake">
+        <h1 id="intake-heading">What would you like help following up on?</h1>
+        <form id="intake" novalidate>
+          <fieldset id="intake-fields">
+            <label for="note">Your errand</label>
+            <textarea id="note" name="note" rows="5" maxlength="4000" required aria-describedby="note-hint" placeholder="The shop said it would refund me. Can you help me check on Friday?"></textarea>
+            <p id="note-hint" class="hint">Use your own words. The note is saved on this computer.</p>
+            <button class="primary" type="submit">Review errand</button>
+          </fieldset>
+        </form>
+        <form id="review" novalidate hidden>
+          <fieldset id="review-fields">
+            <label for="goal">What you want to happen</label>
+            <textarea id="goal" rows="3" maxlength="4000" required></textarea>
+            <label for="check-date">Your check date <span class="optional">Optional</span></label>
+            <input id="check-date" type="date" aria-describedby="date-hint">
+            <p id="date-hint" class="hint">Choose the day you want to look at this again.</p>
+            <details class="source">
+              <summary>From your note</summary>
+              <p id="review-note"></p>
+            </details>
+            <div class="actions">
+              <button class="primary" type="submit">Save errand</button>
+              <button id="back" type="button">Back to note</button>
+            </div>
+          </fieldset>
+        </form>
+        <p id="intake-error" class="error" role="alert"></p>
+        <p id="intake-status" class="status" role="status"></p>
+      </section>
+      <section aria-labelledby="errands-heading" class="work">
+        <h2 id="errands-heading">Your errands</h2>
+        <div id="errands"><p>Loading your errands…</p></div>
+        <noscript><p>Enable JavaScript to open your saved errands.</p></noscript>
+      </section>
+    </main>
+
+    <template id="errand-template">
+      <article class="receipt">
+        <div class="receipt-status"><span aria-hidden="true" class="ring"></span><span data-status></span></div>
+        <h3 data-goal></h3>
+        <dl data-facts class="facts"></dl>
+        <details class="source" open>
+          <summary>From your note</summary>
+          <p data-note></p>
+        </details>
+        <div class="actions">
+          <button type="button" data-edit>Edit errand</button>
+          <button type="button" data-draft>Draft a follow-up</button>
+        </div>
+        <div data-extra></div>
+        <p data-error class="error" role="alert"></p>
+      </article>
+    </template>
+    <template id="edit-template">
+      <form class="edit" novalidate>
+        <fieldset>
+          <label data-goal-label>What you want to happen</label>
+          <textarea data-edit-goal rows="3" maxlength="4000" required></textarea>
+          <label data-date-label>Your check date <span class="optional">Optional</span></label>
+          <input data-edit-date type="date">
+          <div class="actions">
+            <button type="submit" class="primary">Save changes</button>
+            <button type="button" data-cancel>Cancel edit</button>
+          </div>
+        </fieldset>
+      </form>
+    </template>
+  </body>
+</html>

@@ -2,9 +2,9 @@
 
 ## Current stage
 
-**The proposal and design are ready for review.** The first build starts with one person and one errand. Implementation, user testing and the working-demo video are still ahead. [Product brief](docs/problem.md) · [Pitch](docs/relay-desk-pitch.pptx) · [Evaluation plan](docs/evaluation.md)
+**The local first-use build is ready.** A person can save a refund note, choose when to check and reopen it without connecting an account. Scripted checks exercise the everyday entry point and persistence across a restart. Participant testing and the working-demo video are still ahead. [Product brief](docs/problem.md) · [Pitch](docs/relay-desk-pitch.pptx) · [Evaluation plan](docs/evaluation.md)
 
-**Build next: save a refund question.** Someone types “The shop said it would refund me. Can you help me check on Friday?” They can save it with no connected accounts. When they come back, they should see their chosen check date, what the shop said and what still needs checking. No payment, message or calendar event should result. [First build specification](docs/build.md#start-with-one-note)
+**Build next · Check the evidence.** Use an isolated synthetic refund to test a shop’s promise, another return’s credit and the matching posted credit against the household’s permission. [First build specification](docs/build.md)
 
 ## Build order
 
@@ -12,7 +12,7 @@ Pick the first unfinished step. Move on when another person can reproduce the re
 
 | Step | What to build | How to tell it works |
 | --- | --- | --- |
-| 1. Keep one errand | Save a short note, an optional check date and the source of the information. Let the person review and edit it. | Reopen Relay with no connections. The refund is still open and the check date is still theirs. Inspect the trace for zero outside reads or writes. [First-use check](docs/evaluation.md#first-use-acceptance) |
+| 1. Keep one errand · Built | Save a short note, an optional check date and the source of the information. Let the person review and edit it. | Reopen Relay with no connections. The refund is still open and the check date is still theirs. Inspect the trace for zero outside reads or writes. [First-use check](docs/evaluation.md#first-use-acceptance) |
 | 2. Check the evidence | Add a resettable synthetic household, a read-only refund tracker and a separate source for incoming credits. Ask for access just to the records that errand needs. | Declining access leaves the saved note usable. With access, neither a shop’s promise nor a same-value credit for another order closes the refund. A matching posted credit does. |
 | 3. Act within permission | Add an appointment provider, calendar and bill simulator. Give each action a precise permission and each person a short explanation when a choice is needed. | Relay books the free visit and checks both the provider confirmation and calendar entry. The refund stays open. A bill revised from ₹850 to ₹1,180 puts one decision in the brief and leaves the ₹900 limit intact. [Worked session](docs/build.md#first-build-review) |
 | 4. Recover when something changes | Handle withdrawn permission, revised invoices, newly busy slots and lost provider replies. Track each attempted action across restarts. | An expired approval produces zero debits. A lost reply yields the original receipt once. A conflict after a confirmed booking shows the reservation and the conflict without moving someone else’s appointment. |

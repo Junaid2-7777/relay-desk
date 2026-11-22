@@ -60,10 +60,13 @@ export function openDesk({ dataDir, clock = () => new Date() }) {
   return {
     brief: () => ({ today: today(), errands: list() }),
     preview,
-    save({ note, goal, checkDate }) {
+    save({ note, goal, checkDate, requestId }) {
+      if (requestId !== undefined && (typeof requestId !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(requestId))) {
+        throw new DeskError('Use a valid save reference.');
+      }
       const proposal = preview(note);
       const record = {
-        id: randomUUID(),
+        id: requestId ?? randomUUID(),
         revision: 1,
         kind: proposal.kind,
         goal: requiredText(goal ?? proposal.goal, 'a goal', 4000),
@@ -74,8 +77,14 @@ export function openDesk({ dataDir, clock = () => new Date() }) {
         owner: proposal.kind === 'refund' ? 'Shop' : null,
         evidence: []
       };
-      database.prepare('INSERT INTO errands VALUES (?, ?, ?)').run(record.id, record.revision, JSON.stringify(record));
-      return record;
+      const saved = database.prepare('INSERT OR IGNORE INTO errands VALUES (?, ?, ?)')
+        .run(record.id, record.revision, JSON.stringify(record));
+      if (saved.changes) return record;
+      const existing = find(record.id);
+      if (record.note !== existing.note || record.goal !== existing.goal || record.checkDate !== existing.checkDate) {
+        throw new DeskError('This errand was already saved. Reload the desk to review it.', 409);
+      }
+      return existing;
     },
     edit(id, { goal, checkDate, revision }) {
       const errand = find(id);
