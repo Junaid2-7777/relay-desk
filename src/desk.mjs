@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -52,6 +52,10 @@ function visitTime(value) {
 }
 
 const readErrand = row => row && JSON.parse(row.record);
+const followupTerms = Object.freeze({
+  recipient: 'returns@practice-shop.example',
+  subject: 'Check on return-demo-1249'
+});
 
 export function openDesk({ dataDir, clock = () => new Date(), refundFixture, household }) {
   mkdirSync(dataDir, { recursive: true });
@@ -178,8 +182,48 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       return {
         text: errand.kind === 'refund'
           ? 'Hello, could you check the status of the refund we discussed? Please let me know when it was issued and any reference I can use to find it. Thank you.'
-          : `Hello, could you share an update on this? Thank you.\n\n${errand.goal}`
+          : `Hello, could you share an update on this? Thank you.\n\n${errand.goal}`,
+        ...(household?.outbox && errand.refund && errand.status === 'open' && !errand.queuedFollowup ? followupTerms : {})
       };
+    },
+    queueFollowup(id, { revision, recipient, subject, text }) {
+      const outbox = household?.outbox.fixture;
+      if (!outbox || recipient !== followupTerms.recipient || subject !== followupTerms.subject ||
+          typeof text !== 'string' || !text.trim() || text.length > 4000) {
+        throw new DeskError('Review the exact practice recipient, subject and message.');
+      }
+      const terms = { recipient, subject, text };
+      const key = 'followup-' + createHash('sha256').update(JSON.stringify([id, terms])).digest('hex');
+      const record = find(id);
+      if (!record.refund) throw new DeskError('This errand has no practice shop.', 404);
+      const previous = journal.latest(id, 'followup');
+      const existing = previous ? outbox.get(previous.key) : null;
+      if (existing) {
+        if (existing.key !== key) throw new DeskError('A follow-up is already queued for this return.', 409);
+        journal.mark(key, 'committed');
+        return changeCase(id, current => current.queuedFollowup ? current : { ...current, queuedFollowup: existing });
+      }
+      requireRevision(record, revision);
+      if (record.status !== 'open') throw new DeskError('This refund no longer needs a follow-up.', 409);
+      if (previous?.status === 'prepared' && previous.key !== key) {
+        throw new DeskError('Retry the original draft before approving different text.', 409);
+      }
+      journal.prepare(id, 'followup', key, { key, ...terms });
+      const result = journal.dispatch(id, (current, now) => {
+        requireRevision(current, revision);
+        return refundFixture.withinSnapshot(() => {
+          const checked = checkRefund(current, refundFixture, now);
+          const canQueue = checked.status === 'open' && checked.checks.credits?.status !== 'unavailable';
+          const next = canQueue ? {
+            ...checked,
+            queuedFollowup: outbox.enqueue({ key, ...terms }, proposed =>
+              proposed.key === key && proposed.recipient === recipient && proposed.subject === subject && proposed.text === text)
+          } : checked;
+          return next === current ? current : revise(next, current.revision);
+        });
+      });
+      journal.mark(key, result.queuedFollowup ? 'committed' : 'blocked');
+      return result;
     },
     refundAccess(id, { source, choice, revision }) {
       if (!refundSources.includes(source) || !['allowed', 'declined', 'withdrawn'].includes(choice)) {

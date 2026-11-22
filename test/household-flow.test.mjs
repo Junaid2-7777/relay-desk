@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { mondayBill, openBillFixture } from '../src/bill-fixture.mjs';
+import { mondayRefund, openRefundFixture } from '../src/refund-fixture.mjs';
 import { createDeskServer } from '../src/server.mjs';
 import { mondayVisit, openVisitFixture } from '../src/visit-fixture.mjs';
 
@@ -81,6 +82,8 @@ async function startHousehold(t, warm = true) {
     tracking: (errand, choice) => request(`/api/errands/${errand.id}/tracking`, {
       choice, revision: errand.revision
     }),
+    draft: errand => request(`/api/errands/${errand.id}/draft`, {}),
+    queue: (errand, terms) => request(`/api/errands/${errand.id}/queue-followup`, { revision: errand.revision, ...terms }),
     billChoice: (errand, choice, status) => request('/api/errands/demo-bill/bill-choice', {
       choice, revision: errand.revision
     }, status)
@@ -305,4 +308,42 @@ test('stopping an open errand withdraws its permissions and leaves its evidence 
   assert.equal(resumed.status, 'open');
   assert.equal(resumed.refundAccess.merchant.status, 'withdrawn');
   assert.deepEqual((await household.native('refund')).reads, reads);
+});
+
+test('the review queues one exact local follow-up and a matching credit retires an unsent draft', async t => {
+  await t.test('queue first', async t => {
+    const household = await startHousehold(t);
+    const refund = errand(await household.checkpoint(), 'refund');
+    const draft = await household.draft(refund);
+    assert.deepEqual((await household.native('outbox')).messages, []);
+    const approved = { ...draft, text: `${draft.text}\n\nPlease reply with a reference. ` };
+    const queued = await household.queue(refund, approved);
+    assert.equal(queued.status, 'open');
+    assert.equal(queued.queuedFollowup.text, approved.text);
+    assert.equal(queued.queuedFollowup.recipient, approved.recipient);
+    assert.equal(queued.queuedFollowup.subject, approved.subject);
+    await household.restart(tuesday);
+    assert.deepEqual((await household.queue(refund, approved)).queuedFollowup, queued.queuedFollowup);
+    assert.deepEqual((await household.native('outbox')).messages, [queued.queuedFollowup]);
+  });
+  await t.test('credit first', async t => {
+    const household = await startHousehold(t);
+    const refund = errand(await household.checkpoint(), 'refund');
+    const draft = await household.draft(refund);
+    const fixture = household.provider(openRefundFixture);
+    fixture.putCredit({
+      id: 'credit-demo-before-approval',
+      account: mondayRefund.account,
+      amountMinor: mondayRefund.amountMinor,
+      currency: mondayRefund.currency,
+      direction: 'incoming',
+      status: 'posted',
+      returnReference: mondayRefund.reference,
+      postedAt: monday
+    });
+    const result = await household.queue(refund, draft);
+    assert.equal(result.status, 'verified');
+    assert.equal(result.queuedFollowup, undefined);
+    assert.deepEqual((await household.native('outbox')).messages, []);
+  });
 });

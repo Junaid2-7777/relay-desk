@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { runBill } from './bill.mjs';
 import { openBillFixture } from './bill-fixture.mjs';
 import { DeskError, openDesk } from './desk.mjs';
+import { openOutboxFixture } from './outbox-fixture.mjs';
 import { runReceipt, ReceiptPlanError } from './receipt.mjs';
 import { openReceiptFixture } from './receipt-fixture.mjs';
 import { openRefundFixture } from './refund-fixture.mjs';
@@ -62,7 +63,8 @@ export function createDeskServer({
   const household = householdMode ? {
     bill: { fixture: openBillFixture({ dataDir, clock }), run: runBill },
     visit: { fixture: openVisitFixture({ dataDir, clock }), run: runVisit },
-    receipt: { fixture: openReceiptFixture({ dataDir, clock }), run: runReceipt }
+    receipt: { fixture: openReceiptFixture({ dataDir, clock }), run: runReceipt },
+    outbox: { fixture: openOutboxFixture({ dataDir, clock }) }
   } : undefined;
   const desk = openDesk({ dataDir, clock, refundFixture, household });
   const server = createServer(async (request, response) => {
@@ -83,7 +85,7 @@ export function createDeskServer({
         return send(response, 200, refundFixture.inspect());
       }
       if (household && method === 'GET') {
-        const provider = /^\/api\/fixture\/(visit|bill|receipt)$/.exec(pathname);
+        const provider = /^\/api\/fixture\/(visit|bill|receipt|outbox)$/.exec(pathname);
         if (provider) return send(response, 200, household[provider[1]].fixture.inspect());
       }
       if (household && method === 'POST' && pathname === '/api/checkpoint') {
@@ -99,6 +101,10 @@ export function createDeskServer({
       const errand = /^\/api\/errands\/([\w-]+)(\/draft)?$/.exec(pathname);
       if (errand && method === 'PUT' && !errand[2]) return send(response, 200, desk.edit(errand[1], await jsonBody(request)));
       if (errand && method === 'POST' && errand[2]) return send(response, 200, desk.draft(errand[1]));
+      const followup = /^\/api\/errands\/([\w-]+)\/queue-followup$/.exec(pathname);
+      if (household && followup && method === 'POST') {
+        return send(response, 200, desk.queueFollowup(followup[1], await jsonBody(request)));
+      }
       const tracking = /^\/api\/errands\/([\w-]+)\/tracking$/.exec(pathname);
       if (tracking && method === 'POST') return send(response, 200, desk.tracking(tracking[1], await jsonBody(request)));
       const refund = /^\/api\/errands\/([\w-]+)\/(refund-access|check-refund)$/.exec(pathname);
@@ -130,6 +136,7 @@ export function createDeskServer({
           household.bill.fixture.reset();
           household.visit.fixture.reset();
           household.receipt.fixture.reset();
+          household.outbox.fixture.reset();
           desk.resetHousehold(warm);
         }
       } catch (error) {
@@ -144,6 +151,7 @@ export function createDeskServer({
     household?.bill.fixture.close();
     household?.visit.fixture.close();
     household?.receipt.fixture.close();
+    household?.outbox.fixture.close();
   });
   return server;
 }

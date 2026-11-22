@@ -163,6 +163,8 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 700; font-variant-numeric:
 .source summary { min-height: 2.75rem; padding-block: .6rem; cursor: pointer; font-weight: 700; }
 .source p { margin: 0; padding-bottom: .75rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .edit, .draft { margin-block-start: 1rem; padding-block-start: 1rem; border-top: 1px solid var(--line); }
+.draft [role=status]:empty { display: none; }
+.draft [data-queue] { margin-top: .75rem; }
 .evidence { margin-top: .75rem; }
 .evidence > summary + p { padding-top: .45rem; }
 .permission { margin-block: .5rem 1rem; padding-top: .75rem; border-top: 1px solid var(--line); }

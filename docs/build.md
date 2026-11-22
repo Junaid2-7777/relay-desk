@@ -19,6 +19,8 @@ Use Node.js 24 or newer. There are no third-party runtime packages to install.
 
 The practice desk exposes `/api/fixture/refund`, `/api/fixture/visit` and `/api/fixture/bill` for native provider records. `/api/inspect` shows the local errands, permissions and prepared actions. Browser checks covered the first-use flow by keyboard, a 320 CSS pixel viewport and 200% text size in Chromium. The practice brief was also exercised by keyboard, including deferring a payment and verifying a matching synthetic settlement.
 
+In the practice refund, **Draft a follow-up** shows the synthetic recipient, subject and editable message. **Queue this draft in practice outbox** authorizes those exact words. Inspect the saved queue row at `/api/fixture/outbox`. The refund remains open while waiting for credit. If an authorized credit check already finds the matching posted credit when you approve the draft, the desk verifies the refund and skips the queue.
+
 To rehearse a new errand, save “Track my membership with Practice library reference member-17 until it is closed.” Open **Set up a practice check** and confirm the issuer, reference, record type and expected status. The suggestion uses fixed rules. After saving, allow just the issuer receipt and select **Check your errands**. An evaluator can publish an acknowledgement or closure through `openReceiptFixture` and inspect the native records at `/api/fixture/receipt`. Run `node --test test/transfer-flow.test.mjs` to replay the receipt, unavailable issuer and new booking subjects without manual setup.
 
 ## Seed one Monday

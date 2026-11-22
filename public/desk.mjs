@@ -159,6 +159,7 @@ function renderErrand(record) {
   };
   if (record.refund) {
     fact(part('facts'), 'Return reference', record.refund.reference);
+    if (record.queuedFollowup) fact(part('facts'), 'Follow-up', 'Queued in the practice outbox');
     if (record.status !== 'stopped') renderRefund(part('evidence'), record, result => replaceCard(result, true), part('error'), busy => {
       part('edit').disabled = busy;
       part('draft').disabled = busy;
@@ -213,7 +214,14 @@ function renderErrand(record) {
       trackingButton.focus();
     }
   });
-  if (localDrafts.has(id)) part('extra').append(localDrafts.get(id));
+  function restoreDraft() {
+    const draft = localDrafts.get(id);
+    if (!draft) return;
+    const queue = draft.querySelector('[data-queue]');
+    if (queue) queue.hidden = record.status !== 'open' || Boolean(record.queuedFollowup);
+    part('extra').append(draft);
+  }
+  restoreDraft();
   part('edit').addEventListener('click', () => {
     openEdits.add(id);
     checkpointButton.disabled = true;
@@ -233,7 +241,7 @@ function renderErrand(record) {
     editedDate.value = checkDate ?? '';
     form.querySelector('[data-cancel]').addEventListener('click', () => {
       form.remove();
-      if (localDrafts.has(id)) part('extra').append(localDrafts.get(id));
+      restoreDraft();
       part('error').textContent = '';
       part('edit').disabled = false;
       part('draft').disabled = false;
@@ -277,7 +285,7 @@ function renderErrand(record) {
     part('edit').disabled = true;
     trackingButton.disabled = true;
     try {
-      const { text } = await request(`/api/errands/${id}/draft`, { method: 'POST' });
+      const { text, recipient, subject } = await request(`/api/errands/${id}/draft`, { method: 'POST' });
       const panel = document.createElement('div');
       panel.className = 'draft';
       const label = document.createElement('label');
@@ -287,7 +295,39 @@ function renderErrand(record) {
       draft.value = text;
       label.htmlFor = draft.id;
       label.textContent = 'Local follow-up draft';
+      if (recipient) {
+        const message = document.createElement('dl');
+        message.className = 'facts';
+        fact(message, 'Recipient', recipient);
+        fact(message, 'Subject', subject);
+        panel.append(message);
+      }
       panel.append(label, draft);
+      if (recipient) {
+        const resultMessage = addText(panel, 'p', '');
+        resultMessage.setAttribute('role', 'status');
+        const queue = action(panel, 'Queue this draft in practice outbox', async () => {
+          const current = records.find(item => item.id === id);
+          queue.disabled = true;
+          resultMessage.textContent = '';
+          try {
+            const result = await request(`/api/errands/${id}/queue-followup`, {
+              method: 'POST', body: { revision: current.revision, recipient, subject, text: draft.value }
+            });
+            const pending = !result.queuedFollowup && result.status === 'open';
+            resultMessage.textContent = result.queuedFollowup
+              ? 'Draft queued locally.'
+              : pending ? 'Check refund sources before queuing again.' : 'Credit verified. The draft did not need to be queued.';
+            replaceCard(result);
+          } catch (error) {
+            resultMessage.textContent = error.message;
+            queue.focus();
+          } finally {
+            queue.disabled = false;
+          }
+        });
+        queue.dataset.queue = '';
+      }
       localDrafts.set(id, panel);
       part('extra').replaceChildren(panel);
       draft.focus();

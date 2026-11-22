@@ -107,8 +107,11 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
   const reconnect = database.prepare('DELETE FROM refund_unavailable_sources WHERE source = ?');
   const writeFailedRead = database.prepare('INSERT INTO refund_failed_reads VALUES (?)');
 
+  let inTransaction = false;
   function transaction(action) {
+    if (inTransaction) return action();
     database.exec('BEGIN IMMEDIATE');
+    inTransaction = true;
     try {
       const result = action();
       database.exec('COMMIT');
@@ -116,6 +119,8 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
     } catch (error) {
       database.exec('ROLLBACK');
       throw error;
+    } finally {
+      inTransaction = false;
     }
   }
 
@@ -149,6 +154,7 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
 
   return {
     subject: mondayRefund,
+    withinSnapshot: transaction,
     reset() {
       transaction(() => {
         database.exec(`
