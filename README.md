@@ -35,5 +35,5 @@ A judge can supply a different goal and issuer after the build is frozen. A new 
 
 - **Understand the problem and evidence.** [Product brief](docs/problem.md) · [Research and provider sources](docs/sources.md)
 - **Build the first release.** [Roadmap](roadmap.md) · [First build review](docs/build.md) · [Contributor guide](agents.md)
-- **Challenge the proposal.** [Evaluation and baselines](docs/evaluation.md) · [Judge walkthrough](docs/demo.md) · [Submission checklist](docs/hackathon.md)
+- **Challenge the proposal.** [Five-slide judge pitch](docs/relay-desk-pitch.pptx) · [Evaluation and baselines](docs/evaluation.md) · [Judge walkthrough](docs/demo.md) · [Submission checklist](docs/hackathon.md)
 - **Use the identity.** [Design guide and logos](DESIGN.md) · [Printable identity sheets](docs/brand/identity.pdf) · [Editable identity source](docs/brand/identity.pptx)

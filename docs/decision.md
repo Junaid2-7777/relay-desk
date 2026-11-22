@@ -2,7 +2,7 @@
 
 **23 November 2026 · Product decision for Agents A3**
 
-Keep the part of Deadline Relay that earned trust. It asked the right question about a school acknowledgement. Who can actually prove the work is finished? Apply that question to the household’s open commitments, and let the owner give permission once for routine work. The product becomes **Relay Desk**, a household chief of staff. Deadline Relay becomes its scholarship specialist.
+Deadline Relay established an evidence rule worth keeping. A school’s acknowledgement tells a family that a correction arrived. The school must issue a separate verification record before the case can advance. **Relay Desk** applies the same question to household errands. Who can prove this job is finished, and what can the desk do while it waits? The original scholarship proposal becomes one specialist example.
 
 ## What the previous proposal actually established
 
@@ -22,6 +22,6 @@ Homingo publishes five judging criteria for the edition. The A3 statement gives 
 
 A refund, a broadband appointment and an electricity bill compete for the same person’s attention while they wait on different people. Each requires a different use of authority. Follow up on money owed to the owner. Claim a permitted time on their behalf. Stop before spending beyond their instruction. The session only succeeds when these three behaviours coexist. An unresolved bill cannot stop a permitted booking, and a merchant’s promise cannot pad the number of finished jobs.
 
-A single new outcome is the test of breadth. A judge can ask the desk to track the closure of a library membership. The desk needs the membership reference, the issuing library and the record that would show the membership closed. Until that record is available, it can explain what is outstanding. Tracking a closure gives it no permission to cancel a membership. [Worked household brief](problem.md)
+Use the library membership in the pitch to rehearse ordinary intake. The desk needs the membership reference, issuing library and record that would show the membership closed. Tracking a closure gives it no permission to cancel a membership. To test breadth, have someone outside the build choose a different goal and proof condition **after the rules are frozen**. Score whether the same desk can pursue it or explain exactly what access is missing. [Worked household brief](problem.md) · [Held-out evaluation](evaluation.md)
 
 The scholarship work still answers a harder specialist question. Public notices establish a deadline. Only the institute and then the district can verify a particular application. The four historical notices and the old probe belong to this example. They supply no evidence of refund settlement, household demand or time saved. [Scholarship source register](scholarship-sources.md)

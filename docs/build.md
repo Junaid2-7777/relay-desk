@@ -22,10 +22,10 @@ Keep domain facts in adapters. A free calendar interval cannot confirm a booking
 
 ## First build review
 
-1. Reset the dedicated fixture. Capture the original calendar event, invoice history, three grants and initial provider balances or records.
+1. Run both starting conditions. In a first-use reset the task descriptions arrive with **no grants**. Have the owner permit free/busy only and decline ledger access. Record the setup decisions, the narrower actions available and the refund's missing evidence. In the separate Monday reset, capture the original calendar event, invoice history, three existing grants and initial provider records.
 2. Run the Monday sequence without prompting between errands. Capture the single bill decision, the confirmed 3 pm booking and the outstanding refund reference.
-3. From a fresh reset, remove the 3 pm slot just before confirmation. Inspect the calendar and booking store. Relay can request a different window. The household's existing commitment stays in place.
+3. From a fresh reset, remove the 3 pm slot just before confirmation. Then run a separate race in which the provider confirms the visit and a new protected calendar event arrives before sync. Report the existing reservation and conflict, offer a rescheduling decision, and preserve the protected event. Read back the reservation before any second booking.
 4. Approve ₹1,180 once, then revise the invoice again before dispatch. Verify zero debits against the stale approval. In a separate unchanged run, lose a payment response and verify that retry yields one exact payment. Settlement needs its own evidence.
-5. Give the desk an unfamiliar tracking job using an existing read capability. Supply a wrong issuer's acknowledgement, withhold the matching record across a restart, then release it. Inspect each transition without changing program code.
+5. Rehearse ordinary intake with library membership closure. After freezing the build, have the evaluator choose a different tracking job using an existing read capability. Supply a wrong issuer's acknowledgement, withhold the matching record across a restart, then release it. Inspect each transition without changing program code.
 
 Publish actual install, start, reset and evaluation commands once tested on a clean clone. Pin the runtime, fixtures and planner settings. Supply an offline path and label live-model runs. Start a real pilot with consented reads and reversible calendar work. A local settlement simulation provides no evidence of production payment access. [Roadmap](../roadmap.md) · [Evaluation protocol](evaluation.md)
