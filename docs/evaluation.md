@@ -4,7 +4,7 @@ The proposed release must carry several duties at once, bring the right exceptio
 
 ## Local rehearsal
 
-Run `npm run evaluate` with Node.js 24 or newer. Each automated case starts with its own data directory, uses the fixed-rule desk and inspects independent native records where a provider is involved. The suite covers first use, cold and warm starts, refund identity and exact outbox approval, booking and calendar recovery, invoice changes and settlement, and a disconnected feed. The receipt and new booking examples are authored transfer rehearsals.
+Run `npm run evaluate` with Node.js 24 or newer. Keep the test output and its revision, fixture, test source and rubric hashes with any result you share. The suite uses the fixed-rule desk, isolated data directories and independent native records. It covers first use, cold and warm starts, refund identity and exact outbox approval, booking and calendar recovery, invoice changes and settlement, and a disconnected feed. The receipt and new booking examples are authored transfer rehearsals.
 
 The release evidence requires independently supplied tasks after a freeze, matched manual and model-backed runs, and sessions with people for effort and usability observations. [Run the local build](build.md#run-the-local-build)
 
