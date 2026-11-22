@@ -31,6 +31,12 @@ Use each notice’s three stated dates separately. Reveal the 21 November NSP cr
 
 Give the judge the 1 October release again or the fixture for a different scholarship. Show the candidate beside the 31 October NMMSS record. An old release loses on issue date. A different scheme fails the scope check even if one date matches. Read the two stable event IDs, event count, dates and unrelated record directly from the calendar. The operation trace should show zero calendar or outbox writes, the outbox should remain empty and the school should still own the case. Replaying the accepted release also preserves all three calendar entries and the empty outbox. [Scope fixtures and release gates](evaluation.md)
 
+## Optional live challenge · Change the school’s words
+
+At the start of choice A, invite the judge to type a new school return reason in their own words. Keep the case, dates and event type fixed. For example, “The back page of the attachment is missing” should produce **Add the missing back page**. After a matching student correction receipt, the draft can ask “Can you confirm receipt of the back page?” If the judge writes only “A page is missing,” the sheet should quote that request and offer a question the student can ask the school, “Which page do you need?” Guessing a page fails the challenge.
+
+In both versions, Student owns the open correction until the student records a submission. School verification is due 30 Nov and district verification is due 15 Dec. Inspect the calendar and outbox immediately after the return. The event IDs and dates must match their previous readback and the outbox must still be empty. A local message requires a correction receipt and explicit approval of its exact wording. Run this audience-supplied exercise in live-model mode and report its result separately from the frozen evaluation trials. [Evaluation protocol](evaluation.md)
+
 ## Cut for a 2 minute 20 second recording
 
 | Time | Shot to keep |
