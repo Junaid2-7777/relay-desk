@@ -36,6 +36,12 @@ function optionalDate(value) {
   throw new DeskError('Choose a valid check date.');
 }
 
+function checkpointReference(value) {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string' && /^[\w.-]{1,100}$/.test(value)) return value;
+  throw new DeskError('Use a valid check reference.');
+}
+
 const readErrand = row => row && JSON.parse(row.record);
 
 export function openDesk({ dataDir, clock = () => new Date(), refundFixture, household }) {
@@ -107,8 +113,11 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     fixture: Boolean(refundFixture),
     household: Boolean(household)
   });
-  const updateRefund = id => withRefund(id, record =>
-    record.status === 'verified' ? record : checkRefund(record, refundFixture, clock()));
+  const updateRefund = (id, reference) => {
+    const checkpointId = checkpointReference(reference);
+    return withRefund(id, record =>
+      ['verified', 'stopped'].includes(record.status) ? record : checkRefund(record, refundFixture, clock(), checkpointId));
+  };
   function seed(record) {
     const existing = readErrand(get.get(record.id));
     if (existing) return revise(record, existing.revision);
@@ -217,13 +226,14 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
         };
       });
     },
-    checkpoint() {
+    checkpoint(reference) {
+      const checkpointId = checkpointReference(reference);
       if (!household) throw new DeskError('The practice household could not be found.', 404);
       const conflicts = [];
       for (const record of list()) {
         try {
           if (record.refund) {
-            updateRefund(record.id);
+            updateRefund(record.id, checkpointId);
           } else if (record.bill || record.visit) {
             const { run, fixture } = household[record.kind];
             const next = run(record, fixture, journal, clock());

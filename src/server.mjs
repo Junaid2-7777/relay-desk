@@ -92,8 +92,8 @@ export function createDeskServer({
         if (provider) return send(response, 200, household[provider[1]].fixture.inspect());
       }
       if (household && method === 'POST' && pathname === '/api/checkpoint') {
-        await jsonBody(request);
-        return send(response, 200, desk.checkpoint());
+        const { checkpointId } = await jsonBody(request);
+        return send(response, 200, desk.checkpoint(checkpointId));
       }
       if (method === 'POST' && pathname === '/api/errands/preview') {
         return send(response, 200, desk.preview((await jsonBody(request)).note));
@@ -108,7 +108,7 @@ export function createDeskServer({
       if (refundFixture && refund && method === 'POST') {
         const [, id, action] = refund;
         const body = await jsonBody(request);
-        return send(response, 200, action === 'refund-access' ? desk.refundAccess(id, body) : desk.checkRefund(id));
+        return send(response, 200, action === 'refund-access' ? desk.refundAccess(id, body) : desk.checkRefund(id, body.checkpointId));
       }
       const decision = /^\/api\/errands\/([\w-]+)\/(household-access|bill-choice)$/.exec(pathname);
       if (household && decision && method === 'POST') {

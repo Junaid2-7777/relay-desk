@@ -1,3 +1,5 @@
+import { RefundFeedUnavailable } from './refund-fixture.mjs';
+
 const postedTimestamp = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/u;
 
 function hasPostedTimestamp(value) {
@@ -56,40 +58,68 @@ export function refundAccess(grant, now) {
   return grant?.status ?? 'unasked';
 }
 
-export function checkRefund(record, fixture, now) {
+export function checkRefund(record, fixture, now, checkpointId) {
   const subject = fixture.subject;
   const allowed = source => {
-    const grant = record.refundAccess[source];
+    const grant = record.refundAccess?.[source];
     return grant?.operation === 'read' && refundAccess(grant, now) === 'allowed' &&
-      Object.entries(refundScope(subject, source)).every(([field, value]) => grant.scope[field] === value);
+      Object.entries(refundScope(subject, source)).every(([field, value]) => grant.scope?.[field] === value);
   };
+  const history = record.refundCheckpoints ?? [];
+  if ((checkpointId !== undefined && history.includes(checkpointId)) || !refundSources.some(allowed)) return record;
+
   const checkedAt = now.toISOString();
   const checks = { ...record.checks };
+  let retryAvailable = true;
+  function readWithRetry(read) {
+    while (true) {
+      try {
+        return read();
+      } catch (error) {
+        if (!(error instanceof RefundFeedUnavailable)) throw error;
+        if (!retryAvailable) return null;
+        retryAvailable = false;
+      }
+    }
+  }
+
+  function saveCheck(source, successful, lastEventAt) {
+    const previous = checks[source];
+    checks[source] = {
+      checkedAt: successful ? checkedAt : previous?.checkedAt ?? null,
+      lastEventAt: lastEventAt ?? previous?.lastEventAt ?? null,
+      status: successful ? 'checked' : 'unavailable',
+      ...(checkpointId !== undefined ? { checkpointId } : {})
+    };
+  }
+
   let { merchantEvent = null } = record;
   let links = [];
   let credit = null;
   if (allowed('merchant')) {
-    const merchant = fixture.readMerchant(refundScope(subject, 'merchant'));
-    links = merchant.links;
-    merchantEvent = merchant.events.at(-1) ?? merchantEvent;
-    checks.merchant = { checkedAt, lastEventAt: merchantEvent?.occurredAt ?? null };
+    const merchant = readWithRetry(() => fixture.readMerchant(refundScope(subject, 'merchant')));
+    if (merchant) {
+      links = merchant.links;
+      merchantEvent = merchant.events.at(-1) ?? merchantEvent;
+    }
+    saveCheck('merchant', Boolean(merchant), merchantEvent?.occurredAt);
   }
   if (allowed('credits')) {
-    const credits = fixture.readCredits({
+    const credits = readWithRetry(() => fixture.readCredits({
       ...refundScope(subject, 'credits'),
       linkedCreditIds: links.map(link => link.creditId)
-    });
-    credit = matchRefundCredit(subject, { credits, links });
-    const lastEventAt = credits.reduce((latest, row) =>
+    }));
+    if (credits) credit = matchRefundCredit(subject, { credits, links });
+    const lastEventAt = credits?.reduce((latest, row) =>
       Date.parse(row.postedAt) > Date.parse(latest ?? '1970-01-01') ? row.postedAt : latest,
     checks.credits?.lastEventAt ?? null);
-    checks.credits = { checkedAt, lastEventAt };
+    saveCheck('credits', Boolean(credits), lastEventAt);
   }
-  if (!allowed('merchant') && !allowed('credits')) return record;
   return {
     ...record,
     merchantEvent,
     checks,
+    ...(checkpointId !== undefined ? { refundCheckpoints: [...history, checkpointId] } : {}),
     status: credit ? 'verified' : record.status,
     evidence: credit
       ? [{ source: 'credits', reference: credit.id, amountMinor: credit.amountMinor, currency: credit.currency, postedAt: credit.postedAt }]

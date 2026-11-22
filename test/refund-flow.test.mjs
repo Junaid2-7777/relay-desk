@@ -8,6 +8,8 @@ import { mondayRefund, openRefundFixture } from '../src/refund-fixture.mjs';
 import { createDeskServer } from '../src/server.mjs';
 
 const monday = '2026-11-23T03:30:00.000Z';
+const tuesday = '2026-11-24T03:30:00.000Z';
+const wednesday = '2026-11-25T03:30:00.000Z';
 const friday = '2026-11-27T03:30:00.000Z';
 const refund = '/api/errands/demo-refund';
 const merchantScope = {
@@ -65,7 +67,7 @@ async function startDesk(t, { fixtureMode = true } = {}) {
     moveTime(date) { time = date; },
     async record() { return (await request('/api/desk')).errands.find(item => item.id === 'demo-refund'); },
     inspect: () => request('/api/fixture/refund'),
-    check: () => request(`${refund}/check-refund`, { body: {} }),
+    check: checkpointId => request(`${refund}/check-refund`, { body: { checkpointId } }),
     access: (record, source, choice, status) => request(`${refund}/refund-access`, {
       body: { source, choice, revision: record.revision }, status
     })
@@ -116,7 +118,7 @@ test('declining credits preserves the note across restart and only reads the all
   assert.equal(checked.checkDate, '2026-11-27');
   assert.equal(checked.merchantEvent.type, 'promise');
   assert.deepEqual(checked.evidence, []);
-  assert.deepEqual(checked.checks.merchant, { checkedAt: friday, lastEventAt: checked.merchantEvent.occurredAt });
+  assert.deepEqual(checked.checks.merchant, { checkedAt: friday, lastEventAt: checked.merchantEvent.occurredAt, status: 'checked' });
   assert.equal(checked.checks.credits, undefined);
   assert.deepEqual((await desk.inspect()).reads, [{ source: 'merchant', scope: merchantScope, checkedAt: friday }]);
 });
@@ -133,7 +135,7 @@ test('a merchant promise and pending or unrelated credits leave the refund open 
   assert.equal(first.status, 'open');
   assert.equal(first.merchantEvent.type, 'promise');
   assert.deepEqual(first.evidence, []);
-  assert.deepEqual(first.checks.credits, { checkedAt: monday, lastEventAt: null });
+  assert.deepEqual(first.checks.credits, { checkedAt: monday, lastEventAt: null, status: 'checked' });
   assert.ok(!JSON.stringify(first).includes(unrelated.id));
   assert.deepEqual((await desk.inspect()).reads.map(({ source, scope }) => ({ source, scope })), [
     { source: 'merchant', scope: merchantScope },
@@ -145,7 +147,7 @@ test('a merchant promise and pending or unrelated credits leave the refund open 
   const pending = await desk.check();
   assert.equal(pending.status, 'open');
   assert.deepEqual(pending.evidence, []);
-  assert.deepEqual(pending.checks.credits, { checkedAt: friday, lastEventAt: null });
+  assert.deepEqual(pending.checks.credits, { checkedAt: friday, lastEventAt: null, status: 'checked' });
 
   const posted = candidate('credit-demo-pending', { postedAt: friday });
   desk.fixture.putCredit(posted);
@@ -205,7 +207,7 @@ test('withdrawal and expiry each stop their source at the provider and retain th
   assert.equal(creditsOnly.refundAccess.merchant.status, 'withdrawn');
   assert.equal(creditsOnly.refundAccess.merchant.revision, 2);
   assert.deepEqual(creditsOnly.checks.merchant, checked.checks.merchant);
-  assert.deepEqual(creditsOnly.checks.credits, { checkedAt: friday, lastEventAt: null });
+  assert.deepEqual(creditsOnly.checks.credits, { checkedAt: friday, lastEventAt: null, status: 'checked' });
   assert.equal(creditsOnly.status, 'open');
   const priorReads = (await desk.inspect()).reads;
   assert.deepEqual(priorReads.map(read => read.source), ['merchant', 'credits', 'credits']);
@@ -213,4 +215,114 @@ test('withdrawal and expiry each stop their source at the provider and retain th
   desk.moveTime(both.refundAccess.credits.expiresAt);
   assert.deepEqual(await desk.check(), creditsOnly);
   assert.deepEqual((await desk.inspect()).reads, priorReads);
+});
+
+test('a quiet checkpoint advances the check time and a disconnected feed retries once across replay', async t => {
+  const desk = await startDesk(t);
+  const merchant = await desk.access(await desk.record(), 'merchant', 'allowed');
+  await desk.access(merchant, 'credits', 'allowed');
+  desk.fixture.putCredit(candidate('credit-demo-partial', { amountMinor: 1000 }));
+  const first = await desk.check('quiet-start');
+  assert.equal(first.status, 'open');
+  assert.deepEqual(first.checks.credits, {
+    checkedAt: monday, lastEventAt: monday, status: 'checked', checkpointId: 'quiet-start'
+  });
+
+  desk.moveTime(tuesday);
+  const quiet = await desk.check('quiet-next');
+  assert.deepEqual(quiet.checks.credits, {
+    checkedAt: tuesday, lastEventAt: monday, status: 'checked', checkpointId: 'quiet-next'
+  });
+  assert.equal(quiet.checks.merchant.lastEventAt, first.checks.merchant.lastEventAt);
+
+  const unrelatedMarker = 'private-synthetic-record-outside-grant';
+  desk.fixture.putCredit(candidate(unrelatedMarker, { returnReference: 'return-demo-unrelated' }));
+  desk.fixture.setAvailable('credits', false);
+  desk.moveTime(wednesday);
+  await desk.open();
+  const outage = await desk.check('outage');
+  assert.equal(outage.status, 'open');
+  assert.equal(outage.owner, quiet.owner);
+  assert.deepEqual(outage.merchantEvent, quiet.merchantEvent);
+  assert.equal(outage.checks.merchant.checkedAt, wednesday);
+  assert.deepEqual(outage.checks.credits, {
+    checkedAt: tuesday, lastEventAt: monday, status: 'unavailable', checkpointId: 'outage'
+  });
+  const outageTrace = (await desk.inspect()).reads;
+  const failedRead = {
+    source: 'credits',
+    scope: { ...creditScope, linkedCreditIds: [] },
+    checkedAt: wednesday,
+    status: 'unavailable'
+  };
+  assert.deepEqual(outageTrace.slice(-3), [
+    { source: 'merchant', scope: merchantScope, checkedAt: wednesday },
+    failedRead,
+    failedRead
+  ]);
+  assert.ok(!JSON.stringify(outageTrace).includes(unrelatedMarker));
+  assert.ok(!JSON.stringify(outage).includes(unrelatedMarker));
+
+  await desk.open();
+  assert.deepEqual(await desk.check('outage'), outage);
+  assert.deepEqual((await desk.inspect()).reads, outageTrace);
+
+  desk.fixture.setAvailable('credits', true);
+  desk.moveTime(friday);
+  const restored = await desk.check('restored');
+  assert.deepEqual(restored.checks.credits, {
+    checkedAt: friday, lastEventAt: monday, status: 'checked', checkpointId: 'restored'
+  });
+  const restoredTrace = (await desk.inspect()).reads;
+  assert.equal(restoredTrace.length, outageTrace.length + 2);
+  assert.deepEqual(await desk.check('outage'), restored);
+  assert.deepEqual((await desk.inspect()).reads, restoredTrace);
+});
+
+test('credit verification can continue while the last known merchant event is retained', async t => {
+  const desk = await startDesk(t);
+  const merchant = await desk.access(await desk.record(), 'merchant', 'allowed');
+  await desk.access(merchant, 'credits', 'allowed');
+  const first = await desk.check('initial');
+
+  desk.fixture.setAvailable('merchant', false);
+  desk.fixture.putCredit(candidate('credit-demo-during-merchant-outage', { postedAt: friday }));
+  desk.moveTime(friday);
+  const verified = await desk.check('merchant-outage');
+  assert.equal(verified.status, 'verified');
+  assert.equal(verified.owner, first.owner);
+  assert.deepEqual(verified.merchantEvent, first.merchantEvent);
+  assert.deepEqual(verified.checks.merchant, {
+    checkedAt: monday,
+    lastEventAt: first.checks.merchant.lastEventAt,
+    status: 'unavailable',
+    checkpointId: 'merchant-outage'
+  });
+  assert.equal(verified.evidence[0].reference, 'credit-demo-during-merchant-outage');
+  assert.deepEqual((await desk.inspect()).reads.slice(-3).map(read => [read.source, read.status]), [
+    ['merchant', 'unavailable'],
+    ['merchant', 'unavailable'],
+    ['credits', undefined]
+  ]);
+});
+
+test('two disconnected sources share one automatic retry in a checkpoint', async t => {
+  const desk = await startDesk(t);
+  const merchant = await desk.access(await desk.record(), 'merchant', 'allowed');
+  await desk.access(merchant, 'credits', 'allowed');
+  desk.fixture.setAvailable('merchant', false);
+  desk.fixture.setAvailable('credits', false);
+
+  const checked = await desk.check('both-out');
+  assert.equal(checked.status, 'open');
+  for (const source of ['merchant', 'credits']) {
+    assert.deepEqual(checked.checks[source], {
+      checkedAt: null, lastEventAt: null, status: 'unavailable', checkpointId: 'both-out'
+    });
+  }
+  assert.deepEqual((await desk.inspect()).reads.map(read => [read.source, read.status]), [
+    ['merchant', 'unavailable'],
+    ['merchant', 'unavailable'],
+    ['credits', 'unavailable']
+  ]);
 });

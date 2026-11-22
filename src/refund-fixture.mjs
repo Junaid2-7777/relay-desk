@@ -14,6 +14,13 @@ export const mondayRefund = Object.freeze({
 const monday = '2026-11-22T18:30:00.000Z';
 const plainRows = rows => rows.map(row => ({ ...row }));
 
+export class RefundFeedUnavailable extends Error {
+  constructor(source) {
+    super('The refund source is unavailable.');
+    this.source = source;
+  }
+}
+
 export function openRefundFixture({ dataDir, clock = () => new Date() }) {
   mkdirSync(dataDir, { recursive: true });
   const database = new DatabaseSync(join(dataDir, 'refund-fixture.sqlite'));
@@ -52,6 +59,12 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
       scope TEXT NOT NULL,
       checkedAt TEXT NOT NULL
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS refund_unavailable_sources (
+      source TEXT PRIMARY KEY CHECK (source IN ('merchant', 'credits'))
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS refund_failed_reads (
+      readId INTEGER PRIMARY KEY REFERENCES refund_reads(id)
+    ) STRICT;
   `);
 
   const writeEvent = database.prepare(`
@@ -89,6 +102,10 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
     ORDER BY postedAt, id
   `);
   const writeRead = database.prepare('INSERT INTO refund_reads(source, scope, checkedAt) VALUES (?, ?, ?)');
+  const unavailableSource = database.prepare('SELECT source FROM refund_unavailable_sources WHERE source = ?');
+  const disconnect = database.prepare('INSERT OR IGNORE INTO refund_unavailable_sources VALUES (?)');
+  const reconnect = database.prepare('DELETE FROM refund_unavailable_sources WHERE source = ?');
+  const writeFailedRead = database.prepare('INSERT INTO refund_failed_reads VALUES (?)');
 
   function transaction(action) {
     database.exec('BEGIN IMMEDIATE');
@@ -118,14 +135,26 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
   }
 
   function logRead(source, scope) {
-    writeRead.run(source, JSON.stringify(scope), clock().toISOString());
+    const read = writeRead.run(source, JSON.stringify(scope), clock().toISOString());
+    if (!unavailableSource.get(source)) return true;
+    writeFailedRead.run(read.lastInsertRowid);
+    return false;
+  }
+
+  function readOrUnavailable(source, read) {
+    const records = transaction(read);
+    if (records === null) throw new RefundFeedUnavailable(source);
+    return records;
   }
 
   return {
     subject: mondayRefund,
     reset() {
       transaction(() => {
-        database.exec('DELETE FROM merchant_events; DELETE FROM return_links; DELETE FROM ledger_credits; DELETE FROM refund_reads;');
+        database.exec(`
+          DELETE FROM refund_failed_reads; DELETE FROM refund_reads; DELETE FROM refund_unavailable_sources;
+          DELETE FROM merchant_events; DELETE FROM return_links; DELETE FROM ledger_credits;
+        `);
         putEvent({
           id: 'event-demo-refund-promise',
           issuer: mondayRefund.merchantIssuer,
@@ -146,9 +175,16 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
         });
       });
     },
+    setAvailable(source, available) {
+      if ((source !== 'merchant' && source !== 'credits') || typeof available !== 'boolean') {
+        throw new TypeError('Choose a known refund source and whether it is available.');
+      }
+      if (available) reconnect.run(source);
+      else disconnect.run(source);
+    },
     readMerchant({ issuer, thread, reference }) {
-      return transaction(() => {
-        logRead('merchant', { issuer, thread, reference });
+      return readOrUnavailable('merchant', () => {
+        if (!logRead('merchant', { issuer, thread, reference })) return null;
         return {
           events: plainRows(merchantEvents.all(issuer, thread, reference)),
           links: plainRows(merchantLinks.all(issuer, thread, reference))
@@ -156,7 +192,7 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
       });
     },
     readCredits({ account, reference, linkedCreditIds = [] }) {
-      return transaction(() => {
+      return readOrUnavailable('credits', () => {
         let confirmedIds = [];
         if (linkedCreditIds.length && account === mondayRefund.account && reference === mondayRefund.reference) {
           const requestedIds = new Set(linkedCreditIds);
@@ -164,7 +200,7 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
             .map(link => link.creditId)
             .filter(id => requestedIds.has(id));
         }
-        logRead('credits', { account, reference, linkedCreditIds: confirmedIds });
+        if (!logRead('credits', { account, reference, linkedCreditIds: confirmedIds })) return null;
         return plainRows(scopedCredits.all(account, reference, JSON.stringify(confirmedIds)));
       });
     },
@@ -173,8 +209,13 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
         events: plainRows(database.prepare('SELECT * FROM merchant_events ORDER BY occurredAt, id').all()),
         links: plainRows(database.prepare('SELECT * FROM return_links ORDER BY issuer, thread, returnReference, creditId').all()),
         credits: plainRows(database.prepare('SELECT * FROM ledger_credits ORDER BY postedAt, id').all()),
-        reads: database.prepare('SELECT source, scope, checkedAt FROM refund_reads ORDER BY id').all()
-          .map(row => ({ ...row, scope: JSON.parse(row.scope) }))
+        reads: database.prepare(`
+          SELECT source, scope, checkedAt, failed.readId IS NOT NULL AS unavailable
+          FROM refund_reads LEFT JOIN refund_failed_reads AS failed ON failed.readId = refund_reads.id
+          ORDER BY refund_reads.id
+        `).all().map(({ source, scope, checkedAt, unavailable }) => ({
+          source, scope: JSON.parse(scope), checkedAt, ...(unavailable ? { status: 'unavailable' } : {})
+        }))
       };
     },
     putCredit,

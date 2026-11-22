@@ -100,7 +100,8 @@ function renderRefund(panel, record, update, errorMessage, setBusy) {
     addText(section, 'p', availability[grant?.status] ?? 'Access available for seven days');
     const checked = record.checks[key];
     if (checked) {
-      addText(section, 'p', `Last checked ${activityFormat.format(new Date(checked.checkedAt))} IST`);
+      if (checked.status === 'unavailable') addText(section, 'p', 'Unable to check this source.');
+      if (checked.checkedAt) addText(section, 'p', `Last successful check ${activityFormat.format(new Date(checked.checkedAt))} IST`);
       if (checked.lastEventAt) addText(section, 'p', `Last event ${activityFormat.format(new Date(checked.lastEventAt))} IST`);
     }
     if (key === 'merchant' && record.merchantEvent) {
