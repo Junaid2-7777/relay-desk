@@ -1,16 +1,16 @@
 # Deadline Relay
 
-**You submitted the application. The next deadline belongs to someone else.**
+**Your school received the correction. Does that mean your application is verified?**
 
-Deadline Relay is a personal agent for students and families following up on an already-submitted scholarship application. It reads official notices, tracks who owes the next action, and reworks the student’s calendar and follow-up when a deadline moves or the application is returned. It keeps the case open until it sees verification from the responsible authority.
+On 29 November in the proposed demo, a student gets a receipt for the attachment their school asked them to replace. They can put the file away. The school still owes a verification by 30 November. If it verifies, the district takes over with its own 15 December deadline. A family opening Deadline Relay at any point should be able to tell who has the case, whether they need to do anything today, and which record supports that answer. [Ministry schedule](https://www.pib.gov.in/PressReleasePage.aspx?PRID=2330936&lang=1&reg=3)
 
-This is the selected proposal for Homingo Hackathon Edition 01, **Agents A3 — A personal staff for everyone**. The repository contains the specification and research. The runnable agent, evaluation results, and submission video are in the build plan. [Official A3 statement](https://hackathon.homingo.co.in/hackathons/edition-01/problem-statements#a3)
+Deadline Relay is a proposed personal agent for one already-filed National Means-cum-Merit Scholarship Scheme (NMMSS) application. It follows public notices and a case record over time. It can revise the family’s local calendar when a date moves, prepare a follow-up for approval when a case comes back, and wait for the next officer’s decision. This repository contains the product design and build plan for Homingo Hackathon Edition 01, Agents A3. [Official A3 statement](https://hackathon.homingo.co.in/hackathons/edition-01/problem-statements#a3)
 
-## What judges can change live
+## What a judge can change in the planned demo
 
 1. A student has filed their scholarship application and is waiting for school verification. A historical Ministry notice moves the school deadline from **15 November to 30 November** and the district deadline from **30 November to 15 December**. The agent updates the two affected reminders in a real local calendar. A separate calendar entry stays in place. [Earlier Ministry notice](https://www.pib.gov.in/PressReleseDetailm.aspx?PRID=2317657&lang=1&reg=3) · [Revised notice](https://www.pib.gov.in/PressReleasePage.aspx?PRID=2330936&lang=1&reg=3)
 2. The judge switches to the simulated school’s view and returns the application for a correction. The agent reads the reason, identifies who must act next, and prepares a specific handoff. The student controls the correction, and an explicit approval is required to queue a follow-up in the local sandbox.
-3. The school acknowledges receipt. The agent keeps the verification deadline open. After the simulated school verifies the case, it follows the handoff to the district. Only the district’s own verification record closes the case. The judge can also introduce an old or differently scoped notice and inspect what the agent leaves untouched.
+3. The school acknowledges receipt. The agent keeps the verification deadline open. The judge can withhold the district’s record after the school verifies. The case must still say who the family is waiting for. Supplying the matching district verification closes the case, with the two officers’ records available for inspection.
 
 The notices are public government records. Every student, status change, correspondence, and calendar entry in the demo is synthetic. The demo uses a historical clock and local services.
 
