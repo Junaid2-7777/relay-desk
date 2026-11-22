@@ -1,51 +1,33 @@
-# Demo runbook
+# A morning at Relay Desk
 
-“Your school says it received your correction. Can you stop following up?” Give the judge that decision on the student’s own handoff sheet. The case can stay open, move to the district, or pause for review according to the evidence the judge supplies.
+**Planned demonstration · 2 minutes 20 seconds.** The product, its tools and the measurements described here are proposed. Use one synthetic household on Monday 23 November 2026 IST. Keep the fixture clock and actual planner mode visible throughout any eventual recording. All account records, amounts, people and service messages in this session are synthetic.
 
-This is the planned demonstration. The Ministry notices are historical public records. The application, students, offices, messages, clock and calendar entries are synthetic. The prototype and measurements are pending. [Student experience](experience.md)
+Open on the owner leaving for work. “Please get the refund back, book the broadband visit around my calendar, and handle this electricity account up to ₹900. Bring me anything you can’t decide.” Keep this one session open while the judge changes its inputs. Three separate walkthroughs would miss the point.
 
-## Set the scene
+## Prepare the fixture
 
-1. Once the local build exists, follow the tested setup in the README. Reset the dedicated fixture to **1 October 2026**. Check the case service for one submitted NMMSS application for academic year 2026–27 with both verifications pending. The local calendar starts with one unrelated event and no scholarship reminders. The local outbox is empty.
-2. Open the student sheet in one view, the judge controls in another and the independent provider records in a third. Keep the student on the sheet while the judge enters authority events. Record only public evidence and synthetic records.
-3. Keep **Simulated date** and the actual planner mode visible. Use **Live model**, **Planner replay** or **Fixture-driven demo** as appropriate. Identify the public records as historical snapshots. An alternate calendar provider must be named in the recording and its own records shown.
+- Seed one ₹1,249 return and a merchant promise. Initially the authorized account ledger has no matching posted credit.
+- Give the desk permission to book one free broadband visit on Tuesday afternoon, 24 November. The provider offers 11 am and 3 pm. An existing household commitment occupies 11 am. The household controls that event.
+- Seed the electricity account with its ₹900 limit. Deliver the ₹850 invoice and its replacement for ₹1,180 **before the first payment decision**. Both versions refer to the same unpaid bill.
+- Start with no booking, no managed service-visit calendar entry and no bill payment. Give the judge separate controls over the provider records. The agent can inspect those records and exercise its own scoped tools. Only the responsible provider can issue a settlement, booking confirmation or account-closure record. [Proposed architecture](architecture.md)
 
-## First, move the deadlines
+## Follow the session
 
-| Simulated date | What the presenter does | Expected evidence |
+| Time | What happens on screen | What the audience can verify |
 | --- | --- | --- |
-| **1 Oct** | Reveal the 1 October Ministry notice and show the school as the current owner. | The application deadline is 31 Oct. Two local all-day events appear for verification, school on 15 Nov and district on 30 Nov. Read both stable event IDs from CalDAV. |
-| **31 Oct** | Advance the clock to the publication day and release the revised notice. Expand the school date on the sheet. | The application deadline becomes 15 Nov. The same two event IDs now read 30 Nov and 15 Dec. The filing receipt and unrelated event retain their original values. |
-| **29 Nov** | Advance to the eve of school verification. Leave the student sheet open. Give the judge the choice of returning the case or introducing a misleading notice. | The sheet reads **Your school has the next step**. School verification is due 30 Nov. District verification is due 15 Dec. |
+| 0:00–0:18 | The owner hands over the three outcomes. Open the Tuesday booking grant and electricity limit briefly, then leave the desk to work. | Each grant names the subject and allowed action. These permissions belong to the household. |
+| 0:18–0:48 | The judge opens the two visit offers and the existing event. The desk selects Tuesday at 3 pm, confirms with the provider and records it in the calendar. Meanwhile the merchant says the refund was issued and the revised invoice arrives. | One provider booking and one matching calendar entry. The original commitment remains at 11 am. The refund stays open. The bill has zero payment attempts outside its grant. |
+| 0:48–1:12 | Return to the owner’s brief. The only decision is the ₹1,180 electricity bill. Show the earlier ₹850 version, the ₹900 cap, **Pay ₹1,180 once** and **Leave unpaid**. Open the quiet work beneath it on request. | The office visit needed no interruption. The merchant’s promise appears as evidence of a promise. The brief still shows the refund as waiting. |
+| 1:12–1:35 | Let the judge choose the bill decision. If they approve, show the exact payee, amount and revision they approved. If they defer, continue with the other work. | Approval applies once, and a matching settled receipt from the biller closes that invoice. A processing acknowledgement leaves it pending. Deferral makes zero payments. The standing cap stays at ₹900 in both branches. |
+| 1:35–1:55 | Let the judge post a credit of the same amount for a different return. Then supply the credit for this return, or withhold it. | Only the matching incoming credit for the authorized account, return reference, currency and amount settles the job. Withholding it keeps a truthful open item while the booked visit stays booked. |
+| 1:55–2:20 | Invite one unfamiliar request. The owner might say, “Track when my library membership closes.” Specify the member reference, permitted evidence source and the issuer record needed to finish. Leave the final brief visible. | The same desk accepts the fourth outcome without a new screen or task-specific code. A library acknowledgement leaves it open. A matching closure record from the designated library can finish it. Opening a tracking file gives the desk no right to cancel the membership. |
 
-Use each notice’s three stated dates separately. Reveal the 21 November NSP cross-check only after the simulated clock reaches its observation date. Date-only sources authorize no cutoff hour. [1 October Ministry release](https://www.pib.gov.in/PressReleseDetailm.aspx?PRID=2317657&lang=1&reg=3) · [31 October Ministry release](https://www.pib.gov.in/PressReleasePage.aspx?PRID=2330936&lang=1&reg=3) · [Portal snapshot and provenance](sources.md#public-nsp-cross-check-on-21-november-2026)
+At the end, let the judge inspect the three separate records for the appointment offer, confirmed booking and matching calendar entry. The booking only proves the agreed visit was scheduled. The household could still be waiting on a refund or an invoice settlement at the close of a successful demonstration.
 
-## Judge choice A · Return the application
+## Let the judge break the plan
 
-1. **School actor.** Record a return for this case with the reason “The attachment is too faint to read. Please provide a legible copy.” On the sheet, Student becomes current, the reason appears in the school’s words and the 30 Nov deadline still belongs to the school. The student now has a concrete action, **Open student simulator**.
-2. **Student actor.** Record the correction through the simulator and return to the sheet. Open **Review follow-up**. Show the empty outbox and read the case, exact local recipient, subject and message. An example message is “I’ve supplied a clearer copy for this case. Can you confirm receipt of the corrected attachment for school verification?” Choose **Approve and queue locally**. Show the single matching row and its receipt in the local outbox.
-3. **School actor.** Acknowledge the correction. Stop on the student sheet. Ask “Who has the next step now?” The route stays at School and the headline reads **Your school received the correction**. Open the receipt so the judge can read what the school acknowledged. School verification is still pending. On a second run, let the school acknowledge *before* draft approval. The obsolete receipt request should retire and the outbox should stay empty.
-4. **School actor, then district actor.** Record school verification and show the current owner move to District with the 15 Dec date. Issue the district’s separate verification for the same case. End on **Both verification steps are complete** and open the two authority records. The demonstrated outcome ends at verification.
+Use a clean fixture for each challenge. A lost 3 pm slot should prompt a fresh availability check within the existing grant. If only a paid visit or a busy time remains, show the alternatives and leave the protected event alone. Changing the bill again after a one-time approval should retire the stale decision before any new payment. Dropping a provider response after an accepted write should trigger readback before a retry. Compare the provider records before and after the challenge. Preserve failed runs separately from the uninterrupted video. [Evaluation plan](evaluation.md)
 
-## Judge choice B · Challenge the calendar
+For the unfamiliar task, let the judge choose the subject and issuer. If the available tools cannot read the specified proof, accept a tracking-only task or ask for clarification and disclose the limitation. Record this audience-chosen trial separately from frozen evaluation cases. For viewers who know the original project, the scholarship specialist offers a further example. A school’s receipt of a correction leaves verification outstanding through the separate institute and district stages. [Scholarship sources](scholarship-sources.md)
 
-Give the judge the 1 October release again or the fixture for a different scholarship. Show the candidate beside the 31 October NMMSS record. An old release loses on issue date. A different scheme fails the scope check even if one date matches. Read the two stable event IDs, event count, dates and unrelated record directly from the calendar. The operation trace should show zero calendar or outbox writes, the outbox should remain empty and the school should still own the case. Replaying the accepted release also preserves all three calendar entries and the empty outbox. [Scope fixtures and release gates](evaluation.md)
-
-## Optional live challenge · Change the school’s words
-
-At the start of choice A, invite the judge to type a new school return reason in their own words. Keep the case, dates and event type fixed. For example, “The back page of the attachment is missing” should produce **Add the missing back page**. After a matching student correction receipt, the draft can ask “Can you confirm receipt of the back page?” If the judge writes only “A page is missing,” the sheet should quote that request and offer a question the student can ask the school, “Which page do you need?” Guessing a page fails the challenge.
-
-In both versions, Student owns the open correction until the student records a submission. School verification is due 30 Nov and district verification is due 15 Dec. Inspect the calendar and outbox immediately after the return. The event IDs and dates must match their previous readback and the outbox must still be empty. A local message requires a correction receipt and explicit approval of its exact wording. Run this audience-supplied exercise in live-model mode and report its result separately from the frozen evaluation trials. [Evaluation protocol](evaluation.md)
-
-## Cut for a 2 minute 20 second recording
-
-| Time | Shot to keep |
-| --- | --- |
-| 0:00–0:15 | A submitted case on 1 Oct. Introduce the student’s question and name the school as the current owner. |
-| 0:15–0:45 | The October extension. Hold the original and revised provider readbacks on screen long enough to compare each event’s ID and date. |
-| 0:45–1:15 | Advance to 29 Nov. Have the judge return the case. Show the reason, the student’s simulated correction and the correction receipt. |
-| 1:15–1:40 | The student reviews the local recipient and exact message. Cut from explicit approval to the matching outbox row. |
-| 1:40–2:00 | Acknowledge receipt. Give viewers a moment to name the next owner. Then show the school's separate verification move the case to District. |
-| 2:00–2:20 | The district verification record and the completed handoff sheet. Leave both authority receipts readable in the closing shot. |
-
-For a live review, allow a judge to stop on any record or choose the scope challenge. If a provider readback fails, show the pending effect and the last confirmed value. Resume from that operation once the service recovers. Label any recorded segment at the point where playback begins. Check captions and legibility at the shared video size before submitting.
+Report any later live run with its build revision, fixture, planner mode, observed decisions and provider effects. A static concept board can illustrate the intended brief. The required submission video must show working behaviour. [Event requirements](hackathon.md)
