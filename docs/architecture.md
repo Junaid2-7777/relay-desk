@@ -1,6 +1,6 @@
 # How Relay Desk carries a delegation
 
-A person hands over a goal, decides what Relay may do for them and agrees what evidence will settle it. One desk can carry a refund, an appointment and a bill while their owners, permissions and proof stay separate. This document specifies the proposed local simulator.
+A person can start with one errand in their own words. The same desk can later carry a refund, an appointment and a bill while their owners, permissions and proof stay separate. This document specifies the proposed local simulator.
 
 ```mermaid
 flowchart LR
@@ -16,20 +16,26 @@ flowchart LR
     R --> B
 ```
 
+## Saving one errand
+
+Someone types “The shop said it would refund me. Can you help me check on Friday?” or pastes an edited excerpt. Save an open local errand with their note as its source. On the desk it can read **Shop refund · You wanted to check on Friday 27 Nov** using the Monday fixture clock. An amount, order reference, provider connection and proof rule can all wait. A question prepared for the shop stays an editable local draft.
+
+A personal check date controls what appears when the person next opens the desk. It creates no notification, calendar entry, account polling or outbound message. Reaching Friday leaves the refund unverified. If the person later wants Relay to check an account or act, show the required scope and ask for it then.
+
 ## One delegation record
 
 | Field | What the desk must know |
 | --- | --- |
-| Goal and scope | A user-confirmed outcome, a stable delegation ID and the subject reference, such as one order or invoice. Record the current revision. |
-| Owner and next action | The person, Relay or third party who owes the next step, what would change the owner, and the last receipt supporting that assignment. |
+| Goal and scope | A user-confirmed goal and stable local ID. Add a provider subject reference when one is known. Record the current revision. |
+| Owner and next action | Record who owes the next step and what would change it. Attribute a user-reported promise to their note. An issuer receipt can establish a provider action later. |
 | Time | Due date or time with its source, precision and applicable zone. Store the next check separately. A requested check date can exist even when the external deadline is unknown. |
 | Permission envelope | Permitted reads and writes by tool, purpose, subject, destination, expiry and maximum count. Specify which effects need exact approval. For spending, scope the currency, payee and cap. Every provider read or write needs a matching active grant. |
-| Authority and terminal proof | Name the trusted issuer and the record type, subject, status and required matching fields that together establish completion. A multi-step goal can require more than one receipt. Preserve the native record IDs and revisions. |
+| Authority and terminal proof | For automatic verification, name the issuer and the record type, subject, status and matching fields that establish completion. Until then, keep the errand open. Preserve native IDs and revisions when receipts arrive. |
 | Current evidence | Keep the last successful check per source, last observed event, outstanding question, pending operation and any verified outcome. Stopping or revoking a delegation records why tracking ended. Only satisfying the proof rule earns **Verified**. |
 
 For a new kind of task, the person can choose a registered evidence source and supply its typed receipt fields through the same intake. The rule evaluator supports equality on named fields and conjunctions of receipts. The planner can propose a rule for confirmation. Only the user can expand the grant or change the required proof. When the requested evidence source is unavailable or outside the supported capabilities, retain the goal, owner and check date with **Evidence needed**. The user can delegate the follow-through without adding a connector or inventing a completion signal.
 
-On a cold start, the spoken handoff creates three proposed goals. Show the owner which source and fields each job needs and which actions would become possible. Let them grant, narrow or decline each scope independently. Access to free/busy alone permits neither booking nor a calendar write. A declined ledger read leaves refund verification unavailable while a separately authorized booking can proceed. The Monday one-decision brief assumes these choices were made earlier and all three grants are still current.
+For the three-job cold-start fixture, the spoken handoff creates three proposed goals. Show the owner which source and fields each requested tool needs and which actions would become possible. Let them grant, narrow or decline each scope independently. Access to free/busy alone permits neither booking nor a calendar write. A declined ledger read leaves refund verification unavailable while a separately authorized booking can proceed. The Monday one-decision brief assumes these choices were made earlier and all three grants are still current.
 
 ## What counts as done
 
