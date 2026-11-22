@@ -6,21 +6,19 @@ Relay Desk is a proposed solo entry for **Agents A3 · A personal staff for ever
 
 | Published judging criterion | Question for the proposed entry | Evidence to put in front of a judge |
 | --- | --- | --- |
-| Problem fit & impact | What work could the household stop doing? | A single handover alongside the checks, bookings and decisions it actually removed or retained in the synthetic session. Record observed household feedback separately when available. |
+| Problem fit & impact | What becomes easier for someone with one loose end? | See whether a person can save one open errand and find their next step without connecting an account. In the returning-user session, count the checks the desk can take over and the decisions the person still has to make. Record observed user feedback separately. |
 | Technical depth | Can the desk use a grant across fresh constraints and follow a genuinely new outcome? | Compare free/busy intervals and provider offers, book one eligible visit, then accept an unfamiliar fourth job with a specified authority and proof rule. Show the planner input and independently readable effects. |
 | Reliability & evaluation | Does it stay within authority when facts change? | Change a bill after approval or show a refund credit for another order. Inspect provider records, attempted writes and paired baseline results, including failed trials. |
-| Product & experience | Can someone leave the desk running and return for the one decision only they can make? | Give an uncoached reader the brief with the bill, booked visit and pending refund. Ask what needs a response, what has finished and whether the spending limit changes. |
+| Product & experience | Can a first-time user tell what help they will actually get? | Let a reader describe a refund or paste a redacted sample, decline account access and find the next check unaided. On the later bill screen, ask them to explain what paying once does to the standing limit. |
 | Demo & communication | Can the audience distinguish what the agent did, what the user approved and what a provider confirmed? | Alter a material input in front of the judge. Show the booking and calendar receipts, pending refund evidence and exact invoice decision. Keep simulation and planner mode visible. |
 
 These are the edition’s five published criteria. The evidence in the table is a target for a future working submission. The design audit records why the scholarship-only proposal was revised. [Edition judging rubric](https://hackathon.homingo.co.in/hackathons/edition-01#judging) · [Audit of the previous revision](decision.md) · [Planned walkthrough](demo.md)
 
-## Edition dates
-
-The 2026 build phase runs from **21 November through 6 December**. Submissions open **4 December** and close **6 December at 23:59 IST**. The edition lists shortlisting on 7–12 December and a results phase starting 21 December. [Edition timeline and FAQ](https://hackathon.homingo.co.in/hackathons/edition-01#timeline)
-
 ## Before submission
+
+Homingo’s published entry deadline is **6 December 2026 at 23:59 IST**. [Edition FAQ](https://hackathon.homingo.co.in/hackathons/edition-01#faq)
 
 - [ ] Publish the actual build in a public repository. Test the README setup from a fresh clone and disclose dependencies, data, models and AI tools used.
 - [ ] Record a short working demo and verify signed-out access to both the recording and the repository. Use synthetic accounts, bills, messages, appointments and receipts. Label historical public scholarship evidence when showing the specialist.
 - [ ] Report measured results with failures and denominators. Label any prerecorded planner trace at the point of playback. Keep proposed behaviour distinct from observed effects.
-- [ ] Submit the repository and video from the participant dashboard during the window and reopen the saved entry. A deployed link and pitch deck are optional. [Edition rules and submission requirements](https://hackathon.homingo.co.in/hackathons/edition-01#rules) · [Participant dashboard](https://hackathon.homingo.co.in/me)
+- [ ] Submit the repository and video from the participant dashboard and reopen the saved entry. A deployed link and pitch deck are optional. [Edition rules and submission requirements](https://hackathon.homingo.co.in/hackathons/edition-01#rules) · [Participant dashboard](https://hackathon.homingo.co.in/me)
