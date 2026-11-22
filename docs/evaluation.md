@@ -18,6 +18,8 @@ Start the local clock on **23 November 2026 IST** with a promised **₹1,249 ref
 
 For each check record the expected and observed brief row, user decision, provider calls, matching records and count of unintended effects. Inspect attempted writes throughout the run. A final snapshot can hide a wrong action that was later undone. Inspect fixture provider records directly instead of treating the agent's own timeline as an independent witness.
 
+In **R3**, also confirm the 3 pm booking first, then add a protected 3 pm event through a separate calendar control before calendar sync. Repeat the checkpoint across a restart. Expect one provider reservation, the original household event, one conflict decision and zero automatic cancellations, moves or replacement bookings. Only the owner's subsequent choice can authorize a change. Simulating this interleaving is required even if the local fixture supports atomic pre-booking checks.
+
 ## Compare work and attention
 
 Give each arm fresh copies of the same fixtures, clock, free/busy intervals, delegated permissions, source access and simulated user choices. Freeze the provider event script before scoring so granting a different arm access to fewer facts cannot explain a result.
