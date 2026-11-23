@@ -32,7 +32,7 @@ html { scrollbar-gutter: stable; }
   gap: .75rem;
 }
 .masthead img { display: block; height: auto; max-width: 56%; }
-.desk-date { display: grid; font-size: .875rem; font-variant-numeric: tabular-nums; text-align: end; }
+.desk-date { display: grid; min-width: 0; overflow-wrap: anywhere; font-size: .875rem; font-variant-numeric: tabular-nums; text-align: end; }
 #practice { font-weight: 700; }
 
 .skip {
@@ -114,7 +114,7 @@ button:disabled { cursor: default; opacity: .65; }
 .work-header h2 { border: 0; padding: 0; }
 .household { grid-template-columns: minmax(0, 1.25fr) minmax(0, .85fr); }
 .household h1 { font-size: clamp(2rem, 4vw, 3.6rem); }
-#errands { display: grid; gap: 1.6rem; padding-top: 1.25rem; }
+#errands { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.6rem; padding-top: 1.25rem; }
 .empty {
   margin: 0;
   padding: 1.5rem;
@@ -171,8 +171,13 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 700; font-variant-numeric:
 .permission h4, .permission p { margin: 0; overflow-wrap: anywhere; }
 .permission p + p { margin-top: .35rem; }
 .permission .actions { margin-block: .65rem 0; }
-.setup { padding-block: .5rem 1rem; }
+.setup { padding-block: .5rem 1rem; container-type: inline-size; }
 .setup input, .setup select { width: min(100%, 22rem); margin-bottom: .75rem; }
+.setup input[type=date], .setup input[type=time] { width: min(100%, 12rem); }
+.booking-value { display: none; }
+@container (max-width: 11.75rem) {
+  .booking-value:not(:empty) { display: block; margin: -.55rem 0 .75rem; font-size: .875rem; overflow-wrap: anywhere; }
+}
 [data-evidence] > button { margin-top: .75rem; }
 [data-evidence] > p { margin: .75rem 0 0; }
 .ring.verified { border: 0; border-radius: 0; width: .85rem; height: .45rem; transform: rotate(-45deg); border-left: 2px solid; border-bottom: 2px solid; }
@@ -184,6 +189,8 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 700; font-variant-numeric:
   .desk, .household { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 25rem) {
-  .frame { width: calc(100% - 1.5rem); }
+  .frame { width: calc(100% - 24px); }
   .masthead-inner { min-height: 4rem; }
+  .receipt { padding-inline: clamp(.4rem, 3vw, 1rem); }
+  .receipt .source { padding-inline: clamp(.25rem, 2.4vw, .75rem); }
 }

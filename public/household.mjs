@@ -9,9 +9,12 @@ const bookingInputTime = new Intl.DateTimeFormat('en-CA', {
 export const when = timestamp => activity.format(new Date(timestamp));
 
 function bookingInputValue(timestamp) {
-  if (!timestamp) return '';
+  if (!timestamp) return { date: '', time: '' };
   const parts = Object.fromEntries(bookingInputTime.formatToParts(new Date(timestamp)).map(({ type, value }) => [type, value]));
-  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}.${parts.fractionalSecond}`;
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}:${parts.second}.${parts.fractionalSecond}`
+  };
 }
 
 export function money(amountMinor, currency = 'INR') {
@@ -207,30 +210,42 @@ export function renderPracticeSetup(panel, record, sources, run) {
   const common = [['issuer', 'Issuer identifier'], ['subject', 'Record reference']];
   const variants = {
     receipt: [['type', 'Record type'], ['status', 'Required status']],
-    visit: [['service', 'Service identifier'], ['windowStart', 'Earliest time (IST)', 'datetime-local'],
-      ['windowEnd', 'Latest time (IST)', 'datetime-local']]
+    visit: [['service', 'Service identifier']]
   };
+  const bookingWindows = [['windowStart', 'Earliest'], ['windowEnd', 'Latest']];
+  function appendField(parent, name, label, type, value) {
+    const tag = addText(parent, 'label', label);
+    const input = document.createElement('input');
+    input.id = `setup-${name}-${record.id}`;
+    input.name = name;
+    input.type = type;
+    if (type === 'time') input.step = 'any';
+    if (type === 'text') input.maxLength = 100;
+    input.required = true;
+    input.value = value;
+    tag.htmlFor = input.id;
+    parent.append(input);
+    if (type !== 'text') {
+      const readback = addText(parent, 'output', input.value);
+      readback.className = 'booking-value';
+      readback.setAttribute('aria-hidden', 'true');
+      input.addEventListener('input', () => { readback.textContent = input.value; });
+    }
+  }
   function showFields() {
     fields.replaceChildren();
     if (select.value === 'receipt' && sources.length) {
       addText(fields, 'p', sources.map(source => `${source.label} (${source.issuer})`).join(' · '));
     }
-    for (const [name, label, type = 'text'] of [...common, ...variants[select.value]]) {
-      const tag = addText(fields, 'label', label);
-      const input = document.createElement('input');
-      input.id = `setup-${name}-${record.id}`;
-      input.name = name;
-      input.type = type;
-      input.maxLength = 100;
-      input.required = true;
-      if (type === 'datetime-local') {
-        input.step = 'any';
-        input.value = bookingInputValue(suggestion[name]);
-      } else {
-        input.value = suggestion[name] ?? (name === 'type' ? 'receipt' : '');
+    for (const [name, label] of [...common, ...variants[select.value]]) {
+      appendField(fields, name, label, 'text', suggestion[name] ?? (name === 'type' ? 'receipt' : ''));
+    }
+    if (select.value === 'visit') {
+      for (const [name, label] of bookingWindows) {
+        const { date, time } = bookingInputValue(suggestion[name]);
+        appendField(fields, `${name}Date`, `${label} date`, 'date', date);
+        appendField(fields, `${name}Time`, `${label} time (IST)`, 'time', time);
       }
-      tag.htmlFor = input.id;
-      fields.append(input);
     }
   }
   select.addEventListener('change', showFields);
@@ -238,8 +253,15 @@ export function renderPracticeSetup(panel, record, sources, run) {
   form.addEventListener('submit', event => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(form));
-    for (const name of ['windowStart', 'windowEnd']) {
-      if (values[name]) values[name] += values[name].length === 16 ? ':00+05:30' : '+05:30';
+    if (select.value === 'visit') {
+      for (const [name] of bookingWindows) {
+        const date = values[`${name}Date`];
+        const time = values[`${name}Time`];
+        const normalizedTime = time?.length === 5 ? `${time}:00` : time;
+        delete values[`${name}Date`];
+        delete values[`${name}Time`];
+        values[name] = date && normalizedTime ? `${date}T${normalizedTime}+05:30` : '';
+      }
     }
     run('setup', { ...values, capability: select.value, revision: record.revision }, submit);
   });
