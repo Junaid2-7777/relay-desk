@@ -55,8 +55,9 @@ async function jsonBody(request) {
 }
 
 export function createDeskServer({
-  dataDir, clock, fixtureMode = false, householdMode = false, reset = false, warm = true
+  dataDir, clock, fixtureMode = false, householdMode = false, reset = false, warm = true, planner
 } = {}) {
+  if (planner && !householdMode) throw new TypeError('Use planner proposals in the practice household.');
   if (householdMode) fixtureMode = true;
   dataDir ??= resolve(fixtureMode ? '.relay/demo' : '.relay');
   const refundFixture = fixtureMode ? openRefundFixture({ dataDir, clock }) : undefined;
@@ -66,7 +67,7 @@ export function createDeskServer({
     receipt: { fixture: openReceiptFixture({ dataDir, clock }), run: runReceipt },
     outbox: { fixture: openOutboxFixture({ dataDir, clock }) }
   } : undefined;
-  const desk = openDesk({ dataDir, clock, refundFixture, household });
+  const desk = openDesk({ dataDir, clock, refundFixture, household, planner });
   const server = createServer(async (request, response) => {
     try {
       const { host, origin } = request.headers;
@@ -93,7 +94,7 @@ export function createDeskServer({
         return send(response, 200, desk.checkpoint(checkpointId));
       }
       if (method === 'POST' && pathname === '/api/errands/preview') {
-        return send(response, 200, desk.preview((await jsonBody(request)).note));
+        return send(response, 200, await desk.preview((await jsonBody(request)).note));
       }
       if (method === 'POST' && pathname === '/api/errands') {
         return send(response, 201, desk.save(await jsonBody(request)));

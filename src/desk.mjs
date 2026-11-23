@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { openActionJournal } from './action-journal.mjs';
 import { activeGrant, makeGrant, orderBrief, sameInvoice, scopes, seedHousehold } from './household.mjs';
 import { previewErrand, suggestPracticePlan } from './intake.mjs';
+import { createIntakePlanner } from './intake-planner.mjs';
 import { normalizeReceiptPlan } from './receipt.mjs';
 import { receiptIdentifier } from './receipt-fixture.mjs';
 import { checkRefund, refundGrant, refundSources } from './refund.mjs';
@@ -57,7 +58,8 @@ const followupTerms = Object.freeze({
   subject: 'Check on return-demo-1249'
 });
 
-export function openDesk({ dataDir, clock = () => new Date(), refundFixture, household }) {
+export function openDesk({ dataDir, clock = () => new Date(), refundFixture, household, planner }) {
+  const intakePlanner = household ? createIntakePlanner(planner) : undefined;
   mkdirSync(dataDir, { recursive: true });
   const database = new DatabaseSync(join(dataDir, 'desk.sqlite'));
   database.exec(`
@@ -77,7 +79,10 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
   };
   const list = () => database.prepare('SELECT record FROM errands ORDER BY rowid DESC').all().map(readErrand);
   const today = () => localDay(clock());
-  const preview = note => previewErrand(requiredText(note, 'an errand', 4000), today());
+  function fixedProposal(note, day, sources) {
+    const parsed = previewErrand(note, day);
+    return household ? { ...parsed, practicePlan: suggestPracticePlan(note, sources), plannerMode: 'fixed-rule' } : parsed;
+  }
   const insert = database.prepare('INSERT OR IGNORE INTO errands VALUES (?, ?, ?)');
   const update = database.prepare('UPDATE errands SET record = ?, revision = ? WHERE id = ? AND revision = ?');
   function revise(record, revision) {
@@ -125,7 +130,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     errands: household ? orderBrief(list()) : list(),
     fixture: Boolean(refundFixture),
     household: Boolean(household),
-    ...(household ? { receiptSources: household.receipt.fixture.sources(), plannerMode: 'fixed-rule' } : {})
+    ...(household ? { receiptSources: household.receipt.fixture.sources(), plannerMode: intakePlanner.mode } : {})
   });
   const updateRefund = (id, reference) => {
     const checkpointId = checkpointReference(reference);
@@ -141,32 +146,47 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
 
   return {
     brief,
-    preview,
-    save({ note, goal, checkDate, requestId }) {
+    preview(input) {
+      const note = requiredText(input, 'an errand', 4000);
+      const day = today();
+      const sources = household?.receipt.fixture.sources();
+      const fixed = fixedProposal(note, day, sources);
+      return intakePlanner ? intakePlanner.review(note, day, sources, fixed) : fixed;
+    },
+    save({ note: input, goal, checkDate, requestId, previewId }) {
       if (requestId !== undefined && (typeof requestId !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(requestId))) {
         throw new DeskError('Use a valid save reference.');
       }
-      const proposal = preview(note);
+      const note = requiredText(input, 'an errand', 4000);
+      const existing = requestId ? readErrand(get.get(requestId)) : null;
+      const reviewed = previewId === undefined ? null : intakePlanner?.reviewed(previewId, note);
+      if (previewId !== undefined && !reviewed && !existing) {
+        throw new DeskError('This suggestion expired or the note changed. Review the note again.', 409);
+      }
+      const proposal = reviewed ?? (previewId !== undefined && existing ? existing :
+        fixedProposal(note, today(), household?.receipt.fixture.sources()));
       const record = {
         id: requestId ?? randomUUID(),
         revision: 1,
         kind: proposal.kind,
         goal: requiredText(goal ?? proposal.goal, 'a goal', 4000),
-        note: note.trim(),
+        note,
         checkDate: optionalDate(checkDate === undefined ? proposal.checkDate : checkDate),
         merchantDeadline: null,
         status: 'open',
         owner: proposal.kind === 'refund' ? 'Shop' : null,
         evidence: [],
-        ...(household ? { practiceCase: true, practicePlan: suggestPracticePlan(note, household.receipt.fixture.sources()) } : {})
+        ...(household ? { practiceCase: true, practicePlan: proposal.practicePlan, plannerMode: proposal.plannerMode } : {})
       };
       const saved = insert.run(record.id, record.revision, JSON.stringify(record));
       if (saved.changes) return record;
-      const existing = find(record.id);
-      if (record.note !== existing.note || record.goal !== existing.goal || record.checkDate !== existing.checkDate) {
+      const prior = existing ?? find(record.id);
+      if (record.note !== prior.note || record.goal !== prior.goal || record.checkDate !== prior.checkDate ||
+          (reviewed && prior.practicePlan !== undefined &&
+            (prior.plannerMode !== reviewed.plannerMode || JSON.stringify(prior.practicePlan) !== JSON.stringify(reviewed.practicePlan)))) {
         throw new DeskError('This errand was already saved. Reload the desk to review it.', 409);
       }
-      return existing;
+      return prior;
     },
     edit(id, { goal, checkDate, revision }) {
       const errand = find(id);
@@ -263,7 +283,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       if (!household || !['receipt', 'visit'].includes(capability)) throw new DeskError('Choose a practice capability.');
       return changeCase(id, record => {
         requireRevision(record, revision);
-        if (!record.practicePlan || record.status !== 'open') throw new DeskError('This errand cannot change its agreed plan.', 409);
+        if (!Object.hasOwn(record, 'practicePlan') || record.status !== 'open') throw new DeskError('This errand cannot change its agreed plan.', 409);
         const { practicePlan, ...existing } = record;
         if (capability === 'receipt') {
           const sources = household.receipt.fixture.sources();

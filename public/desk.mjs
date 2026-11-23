@@ -20,6 +20,7 @@ const activityFormat = new Intl.DateTimeFormat('en-IN', {
 let records = [];
 let reviewedNote;
 let saveRequestId;
+let reviewId;
 let deskTime;
 let householdMode = false;
 let receiptSources = [];
@@ -166,7 +167,8 @@ function renderErrand(record) {
       part('tracking').disabled = busy;
     });
   }
-  if (record.visit || record.bill || record.receiptPlan || (record.practicePlan && record.status === 'open')) {
+  const canSetUp = Object.hasOwn(record, 'practicePlan') && record.status === 'open';
+  if (record.visit || record.bill || record.receiptPlan || canSetUp) {
     const panel = part('evidence');
     const source = part('note').closest('details');
     if (record.visit || record.bill) {
@@ -192,7 +194,7 @@ function renderErrand(record) {
         current.focus();
       }
     };
-    if (record.practicePlan) renderPracticeSetup(panel, record, receiptSources, run);
+    if (canSetUp) renderPracticeSetup(panel, record, receiptSources, run);
     else renderHousehold(panel, part('facts'), record, run, deskTime);
   }
   const trackingButton = part('tracking');
@@ -382,12 +384,15 @@ function showErrands() {
   errands.replaceChildren(empty);
 }
 
-function showBrief({ today, now, errands: items, fixture, household, receiptSources: sources = [] }) {
+function showBrief({ today, now, errands: items, fixture, household, plannerMode, receiptSources: sources = [] }) {
   deskTime = now;
   receiptSources = sources;
   element('today').dateTime = today;
   element('today').textContent = dateLabel(today);
   element('practice').hidden = !fixture;
+  const plannerLabel = element('planner-mode');
+  plannerLabel.hidden = !household;
+  plannerLabel.textContent = plannerMode === 'recorded-response' ? 'Recorded responses' : 'Fixed rules';
   checkpointButton.hidden = !household;
   householdMode = household;
   if (household) {
@@ -444,8 +449,10 @@ intake.addEventListener('submit', async event => {
   const fields = element('intake-fields');
   fields.disabled = true;
   try {
-    const { goal, checkDate } = await request('/api/errands/preview', { method: 'POST', body: { note } });
+    const { goal, checkDate, previewId, plannerStatus } = await request('/api/errands/preview', { method: 'POST', body: { note } });
     reviewedNote = note;
+    reviewId = previewId;
+    if (plannerStatus === 'fallback') statusMessage.textContent = 'A local suggestion is ready to review.';
     saveRequestId = crypto.randomUUID();
     element('review-note').textContent = note;
     goalInput.value = goal;
@@ -476,7 +483,7 @@ review.addEventListener('submit', async event => {
   try {
     const record = await request('/api/errands', {
       method: 'POST',
-      body: { note: reviewedNote, goal: goalInput.value, checkDate: checkInput.value, requestId: saveRequestId }
+      body: { note: reviewedNote, goal: goalInput.value, checkDate: checkInput.value, requestId: saveRequestId, previewId: reviewId }
     });
     records = [record, ...records.filter(item => item.id !== record.id)];
     showErrands();

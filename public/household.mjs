@@ -1,8 +1,18 @@
 const activity = new Intl.DateTimeFormat('en-IN', {
   weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata'
 });
+const bookingInputTime = new Intl.DateTimeFormat('en-CA', {
+  year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  second: '2-digit', fractionalSecondDigits: 3, hourCycle: 'h23', timeZone: 'Asia/Kolkata'
+});
 
 export const when = timestamp => activity.format(new Date(timestamp));
+
+function bookingInputValue(timestamp) {
+  if (!timestamp) return '';
+  const parts = Object.fromEntries(bookingInputTime.formatToParts(new Date(timestamp)).map(({ type, value }) => [type, value]));
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}.${parts.fractionalSecond}`;
+}
 
 export function money(amountMinor, currency = 'INR') {
   return new Intl.NumberFormat('en-IN', {
@@ -175,6 +185,7 @@ export function renderHousehold(panel, list, record, run, deskTime) {
 }
 
 export function renderPracticeSetup(panel, record, sources, run) {
+  const suggestion = record.practicePlan ?? {};
   const details = document.createElement('details');
   details.className = 'source evidence';
   addText(details, 'summary', 'Set up a practice check');
@@ -188,7 +199,7 @@ export function renderPracticeSetup(panel, record, sources, run) {
   typeLabel.htmlFor = select.id;
   addText(select, 'option', 'Watch for a receipt').value = 'receipt';
   addText(select, 'option', 'Reserve a free slot').value = 'visit';
-  select.value = record.practicePlan.capability;
+  select.value = suggestion.capability ?? 'receipt';
   const fields = document.createElement('div');
   const submit = addText(form, 'button', 'Save agreed check');
   submit.type = 'submit';
@@ -212,7 +223,12 @@ export function renderPracticeSetup(panel, record, sources, run) {
       input.type = type;
       input.maxLength = 100;
       input.required = true;
-      input.value = record.practicePlan[name] ?? (name === 'type' ? 'receipt' : '');
+      if (type === 'datetime-local') {
+        input.step = 'any';
+        input.value = bookingInputValue(suggestion[name]);
+      } else {
+        input.value = suggestion[name] ?? (name === 'type' ? 'receipt' : '');
+      }
       tag.htmlFor = input.id;
       fields.append(input);
     }
