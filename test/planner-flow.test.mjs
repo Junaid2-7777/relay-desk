@@ -57,6 +57,7 @@ async function start(t, planner, householdMode = true) {
   return {
     preview: draft => request('/api/errands/preview', { note: draft }),
     save: (draft, status = 201) => request('/api/errands', draft, status),
+    setup: (errand, plan) => request(`/api/errands/${errand.id}/setup`, { ...plan, revision: errand.revision }),
     inspect: () => request('/api/inspect'),
     native: () => Promise.all(['refund', 'bill', 'visit', 'receipt', 'outbox'].map(source => request(`/api/fixture/${source}`))),
     restart: () => open(false)
@@ -126,6 +127,25 @@ test('an invalid recorded proposal falls back without carrying an authority fiel
   assert.equal(preview.checkDate, '2026-11-27');
   assert.ok(!JSON.stringify(preview).includes('synthetic-forged-authority'));
   assert.deepEqual(await desk.inspect(), before);
+});
+
+test('a planner can leave the proof unspecified and the person can still agree an exact plan', async t => {
+  const desk = await start(t, {
+    mode: 'recorded-response', async propose() {
+      return { ...proposal, practicePlan: null };
+    }
+  });
+  const native = await desk.native();
+  const preview = await desk.preview(note);
+  const saved = await desk.save({ note, previewId: preview.previewId });
+  assert.equal(saved.practicePlan, null);
+
+  const confirmed = await desk.setup(saved, proposal.practicePlan);
+  assert.equal(confirmed.kind, 'receipt');
+  assert.equal(confirmed.receiptPlan.subject, proposal.practicePlan.subject);
+  assert.equal(confirmed.issue, 'receipt-permission');
+  assert.deepEqual(confirmed.grants, {});
+  assert.deepEqual(await desk.native(), native);
 });
 
 test('a timed-out recorded proposal falls back and aborts the candidate', { timeout: 5000 }, async t => {
