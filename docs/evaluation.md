@@ -16,6 +16,10 @@ The JSON report includes the revision, settings, case and rubric hashes, interpr
 
 To replay another authored synthetic suite, pass its path after `npm run compare:planners --`. Keep each note and recorded proposal separate from the grading fields in the manifest. Authored playback exercises the harness. A live provider run and independently supplied tasks are needed to measure model interpretation.
 
+## Scripted morning baseline
+
+Run `npm run compare:morning` to compare manual follow-up and the fixed-rule desk at the first checkpoint in R1. Each arm starts from its own cold or warm copy of the household. The cold scripts allow calendar availability and decline credit access. The warm scripts leave the revised bill for review. The report shows setup decisions, check clicks, manual lookups and submissions, decisions presented, and independently verified outcomes. The counts describe the scripted session. Participant sessions are needed to measure time and effort.
+
 ## First-use acceptance
 
 Run this small check from ordinary intake with the synthetic clock set to Monday 23 November 2026 IST. Start with an empty desk, no connected services and no model key.
