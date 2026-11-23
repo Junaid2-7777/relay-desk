@@ -8,6 +8,7 @@
     "start": "node src/server.mjs",
     "test": "node --test",
     "evaluate": "node scripts/evaluate.mjs",
+    "compare:planners": "node scripts/compare-planners.mjs",
     "demo": "node src/server.mjs --fixture",
     "reset": "node src/server.mjs --fixture --reset"
   }

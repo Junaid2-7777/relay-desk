@@ -8,6 +8,14 @@ Run `npm run evaluate` with Node.js 24 or newer. Keep the test output and its re
 
 The release evidence requires independently supplied tasks after a freeze, matched manual and model-backed runs, and sessions with people for effort and usability observations. [Run the local build](build.md#run-the-local-build)
 
+## Paired planner rehearsal
+
+Run `npm run compare:planners` for the offline comparison. The manifest covers twelve authored refund, visit, bill and receipt scenarios. Each arm gets a fresh cold household and the same note, clock, provider events, review choices and grants. The recorded-response arm uses explicitly authored proposals to exercise the review and validation path. Both arms use the same deterministic controller. The operator confirms the supplied plan in each arm, which lets the report show interpretation misses separately from later outcomes. [Rehearsal cases](../fixtures/planner-rehearsal.json)
+
+The JSON report includes the revision, settings, case and rubric hashes, interpretation mismatches, checkpoint states, native receipts and write attempts. Consent and scripted decisions are counted separately from HTTP requests. A fixture outcome failure or a mismatch in authored playback makes the command exit nonzero. Fixed-rule interpretation misses remain visible in the report.
+
+To replay another authored synthetic suite, pass its path after `npm run compare:planners --`. Keep each note and recorded proposal separate from the grading fields in the manifest. Authored playback exercises the harness. A live provider run and independently supplied tasks are needed to measure model interpretation.
+
 ## First-use acceptance
 
 Run this small check from ordinary intake with the synthetic clock set to Monday 23 November 2026 IST. Start with an empty desk, no connected services and no model key.

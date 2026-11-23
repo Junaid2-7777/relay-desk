@@ -25,7 +25,7 @@ Saved notes stay in `.relay/desk.sqlite`. Open [Relay Desk on this computer](htt
 
 Use `npm run reset` to start the three-errand practice household on 23 November 2026 IST. Select **Check your errands** to see the morning brief. To start with no permissions, use `npm run reset -- --cold`. To reopen the practice desk, use `npm run demo`. Stop the desk before switching commands. The practice desk uses `.relay/demo` by default.
 
-Run `npm run evaluate` for the automated checks. They cover first-use intake, refund matching, scoped booking, revised bills and selected failures. [Build and verification commands](docs/build.md#run-the-local-build)
+Run `npm run evaluate` for automated checks, or `npm run compare:planners` to replay twelve synthetic scenarios against fixed rules and authored planner responses. The comparison reports each interpretation and provider outcome. [Build and verification commands](docs/build.md#run-the-local-build)
 
 ## When you want Relay to take more off your hands
 
@@ -47,7 +47,7 @@ The evaluation asks someone outside the team to supply an unfamiliar errand afte
 
 ## Project materials
 
-Prepared for **Homingo Hack Days, Agents A3 · A personal staff for everyone**. The studies use synthetic records and amounts. The full household simulation, measured outcomes and submission video are planned. Codex assisted with research, writing, design and implementation. [Official brief](https://hackathon.homingo.co.in/hackathons/edition-01/problem-statements#a3)
+Prepared for **Homingo Hack Days, Agents A3 · A personal staff for everyone**. The practice build uses synthetic records and amounts. Live model evaluation, participant testing and the submission video are planned. Codex assisted with research, writing, design and implementation. [Official brief](https://hackathon.homingo.co.in/hackathons/edition-01/problem-statements#a3)
 
 - [A3 design audit](docs/decision.md) · [Research and provider sources](docs/sources.md) · [Everyday experience](docs/experience.md)
 - [Build order](roadmap.md) · [First build review](docs/build.md) · [Contributor guide](agents.md)

@@ -1,6 +1,6 @@
 # Building the first household desk
 
-The planned build starts with an errand someone can hand over using only a sentence. Then exercise the three-job household fixture, where a judge can inspect a booking, a payment and a credit directly.
+The local build starts with an errand someone can hand over using only a sentence. The three-job practice household lets a judge inspect a booking, a payment and a credit directly.
 
 ## Start with one note
 
@@ -15,6 +15,7 @@ Use Node.js 24 or newer. There are no third-party runtime packages to install.
 - `npm start` opens the ordinary desk on `http://127.0.0.1:4173` with data in `.relay`.
 - `npm run reset` launches the three-errand practice desk with synthetic grants. Select **Check your errands** to run the morning. `npm run reset -- --cold` resets the same household with no grants. `npm run demo` reopens the practice database in `.relay/demo`. Stop the existing process before switching commands.
 - `npm run evaluate` runs the acceptance checks and isolated simulator cases and prints the build revision, fixture and rubric hashes, and duration. Run `node --test test/first-use.test.mjs` to replay just the first saved errand.
+- `npm run compare:planners` runs the fixed rules and authored recorded responses through the same intake, consent and provider checks. [Paired planner rehearsal](evaluation.md#paired-planner-rehearsal)
 - `RELAY_PORT`, `RELAY_DATA_DIR` and `RELAY_CLOCK` override the port, data directory and clock. Supply an ISO timestamp with an explicit offset for the clock.
 
 The practice desk exposes `/api/fixture/refund`, `/api/fixture/visit` and `/api/fixture/bill` for native provider records. `/api/inspect` shows the local errands, permissions and prepared actions. Browser checks covered the first-use flow by keyboard, a 320 CSS pixel viewport and 200% text size in Chromium. The practice brief was also exercised by keyboard, including deferring a payment and verifying a matching synthetic settlement.
