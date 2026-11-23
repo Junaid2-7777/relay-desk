@@ -8,6 +8,7 @@ import { DeskError, openDesk } from './desk.mjs';
 import { openOutboxFixture } from './outbox-fixture.mjs';
 import { runReceipt, ReceiptPlanError } from './receipt.mjs';
 import { openReceiptFixture } from './receipt-fixture.mjs';
+import { createRecordedPlanner } from './recorded-planner.mjs';
 import { openRefundFixture } from './refund-fixture.mjs';
 import { runVisit } from './visit.mjs';
 import { openVisitFixture } from './visit-fixture.mjs';
@@ -159,14 +160,22 @@ export function createDeskServer({
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   const fixtureMode = process.argv.includes('--fixture');
-  const dataDir = process.env.RELAY_DATA_DIR ?? resolve(fixtureMode ? '.relay/demo' : '.relay');
+  const recorded = process.argv.includes('--recorded');
+  if (recorded && !fixtureMode) throw new Error('Use --recorded with the practice household.');
+  const practiceDir = recorded ? '.relay/demo-recorded' : '.relay/demo';
+  const dataDir = process.env.RELAY_DATA_DIR ?? resolve(fixtureMode ? practiceDir : '.relay');
   const fixedTime = process.env.RELAY_CLOCK ?? (fixtureMode ? '2026-11-23T09:00:00+05:30' : undefined);
   const clock = fixedTime ? () => new Date(fixedTime) : undefined;
   if (clock && !Number.isFinite(+clock())) throw new Error('RELAY_CLOCK must be a date or an ISO timestamp.');
+  let planner;
+  if (recorded) {
+    const { cases } = JSON.parse(await readFile(new URL('../fixtures/planner-rehearsal.json', import.meta.url), 'utf8'));
+    planner = createRecordedPlanner(cases.map(({ note, recordedProposal }) => ({ note, recordedProposal })));
+  }
   const port = Number(process.env.RELAY_PORT ?? 4173);
   const server = createDeskServer({
     dataDir, clock, fixtureMode, householdMode: fixtureMode, reset: process.argv.includes('--reset'),
-    warm: !process.argv.includes('--cold')
+    warm: !process.argv.includes('--cold'), planner
   });
   server.listen(port, '127.0.0.1', () => {
     console.log(`Relay Desk is open at http://127.0.0.1:${server.address().port}`);

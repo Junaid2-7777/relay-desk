@@ -1,6 +1,6 @@
 # One refund, then a busier morning
 
-**Planned demonstration · 2 minutes 20 seconds.** Open with one person typing one errand into an empty desk. Then switch to an explicitly labelled example of what the same tool could do with more permission. The product, tools and measurements are proposed. Keep the simulated clock and actual planner mode visible in the eventual recording. Every private message, account, amount and appointment in the fixture is synthetic.
+**Demonstration plan · 2 minutes 20 seconds.** Open with one person typing one errand into an empty desk. Then switch to the practice household and show what the desk can do with scoped permission. Keep the simulated clock and planner mode visible in the recording. Every message, account, amount and appointment in the practice household is synthetic. [Run the local build](build.md#run-the-local-build)
 
 Start with “The shop said it would refund me. Can you help me check on Friday?” The person can type that sentence or paste the relevant line of an edited sample message. Save the open errand and its next check. Pause on what the desk can honestly say at this point. The person has a promise and a day to check. Relay has never read their account.
 

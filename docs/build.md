@@ -14,6 +14,7 @@ Use Node.js 24 or newer. There are no third-party runtime packages to install.
 
 - `npm start` opens the ordinary desk on `http://127.0.0.1:4173` with data in `.relay`.
 - `npm run reset` launches the three-errand practice desk with synthetic grants. Select **Check your errands** to run the morning. `npm run reset -- --cold` resets the same household with no grants. `npm run demo` reopens the practice database in `.relay/demo`. Stop the existing process before switching commands.
+- `npm run reset -- --recorded` starts the authored-response practice desk, and `npm run demo -- --recorded` reopens its own data in `.relay/demo-recorded`. Paste a note from the [rehearsal cases](../fixtures/planner-rehearsal.json) to replay its proposal. Other notes use fixed rules with a visible fallback message.
 - `npm run evaluate` runs the acceptance checks and isolated simulator cases and prints the build revision, fixture and rubric hashes, and duration. Run `node --test test/first-use.test.mjs` to replay just the first saved errand.
 - `npm run compare:planners` runs the fixed rules and authored recorded responses through the same intake, consent and provider checks. [Paired planner rehearsal](evaluation.md#paired-planner-rehearsal)
 - `RELAY_PORT`, `RELAY_DATA_DIR` and `RELAY_CLOCK` override the port, data directory and clock. Supply an ISO timestamp with an explicit offset for the clock.

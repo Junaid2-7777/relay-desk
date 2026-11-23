@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { openBillFixture } from '../src/bill-fixture.mjs';
 import { openOutboxFixture } from '../src/outbox-fixture.mjs';
 import { openReceiptFixture } from '../src/receipt-fixture.mjs';
+import { createRecordedPlanner } from '../src/recorded-planner.mjs';
 import { openRefundFixture } from '../src/refund-fixture.mjs';
 import { createDeskServer } from '../src/server.mjs';
 import { openVisitFixture } from '../src/visit-fixture.mjs';
@@ -178,11 +179,8 @@ async function runArm(testCase, mode) {
   }
 
   try {
-    const recorded = testCase.recordedProposal;
-    const planner = mode === 'recorded-response' ? {
-      mode,
-      propose: async () => structuredClone(recorded)
-    } : undefined;
+    const { note, recordedProposal } = testCase;
+    const planner = mode === 'recorded-response' ? createRecordedPlanner([{ note, recordedProposal }]) : undefined;
     server = createDeskServer({ dataDir, clock, householdMode: true, reset: true, warm: false, planner });
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
