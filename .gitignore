@@ -1,2 +1,4 @@
 .relay/
 node_modules/
+.env
+.env.*
