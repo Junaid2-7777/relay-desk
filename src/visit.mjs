@@ -74,6 +74,44 @@ function readUnderGrant(record, operation, journal, instant, read) {
     permittedAtDispatch(record, current, [operation], +(now ?? instant)) ? read() : undefined);
 }
 
+function selectSlot(record, fixture, journal, instant) {
+  return journal.dispatch(record.id, (current, now) => {
+    const time = +(now ?? instant);
+    const { visit } = record;
+    const previous = journal.latest(record.id, 'reserve');
+    const original = previous?.status === 'blocked' ? null : previous;
+    const permitted = operation => permittedAtDispatch(record, current, [operation], time);
+    if (original) {
+      if (!permitted('slots') || !exactScope(visit, scopeFor(original.payload))) {
+        return { issue: 'reservation-unknown' };
+      }
+      const native = fixture.reservationByKey(original.key);
+      const proof = reservationProof(native, original.payload);
+      if (proof) {
+        journal.mark(original.key, 'confirmed');
+        return { proof };
+      }
+      if (native !== null || original.status === 'confirmed') return { issue: 'reservation-unknown' };
+    }
+
+    const calendarScope = { start: visit.windowStart, end: visit.windowEnd };
+    const busy = permitted('freeBusy') ? fixture.readFreeBusy(calendarScope) : undefined;
+    const slots = permitted('slots') ? fixture.readSlots(visit) : undefined;
+    if (!busy || !slots || !permitted('reserve')) {
+      return { issue: original ? 'reservation-unknown' : 'visit-permission' };
+    }
+    const candidates = slots.filter(slot => eligibleSlot(slot, visit, busy, time));
+    if (original) {
+      const candidate = candidates.find(slot => slot.id === original.payload.slotId && slot.revision === original.payload.revision);
+      if (candidate) return { candidate, retry: original };
+      // The original is absent and ineligible. Retire it under the same lock that guards dispatch.
+      journal.mark(original.key, 'blocked');
+    }
+    const [candidate] = candidates.sort((left, right) => Date.parse(left.start) - Date.parse(right.start) || left.id.localeCompare(right.id));
+    return candidate ? { candidate } : { issue: 'slot-unavailable' };
+  });
+}
+
 function runCalendar(record, reservation, fixture, journal, instant) {
   const booked = withState(record, 'booked', 'calendar-pending', { reservation, calendarEvent: null });
   if (!grantFor(record, 'calendar', instant)) {
@@ -137,62 +175,45 @@ export function runVisit(record, fixture, journal, now) {
   const instant = +new Date(now);
   const unresolved = issue => withState(record, 'open', issue, { reservation: null, calendarEvent: null });
   const { visit } = record;
-  const previous = journal.latest(record.id, 'reserve');
   if (record.reservation) {
+    const previous = journal.latest(record.id, 'reserve');
     if (!previous || !exactScope(visit, scopeFor(previous.payload)) ||
         !reservationProof(record.reservation, previous.payload)) return unresolved('reservation-unknown');
     return runCalendar(record, record.reservation, fixture, journal, instant);
   }
 
-  const mustRecover = previous && previous.status !== 'blocked';
-  if (mustRecover) {
-    if (!grantFor(record, 'slots', instant) || !exactScope(visit, scopeFor(previous.payload))) {
-      return unresolved('reservation-unknown');
-    }
-    const native = readUnderGrant(record, 'slots', journal, instant, () => fixture.reservationByKey(previous.key));
-    if (native === undefined) return unresolved('reservation-unknown');
-    const proof = reservationProof(native, previous.payload);
-    if (proof) {
-      journal.mark(previous.key, 'confirmed');
-      return runCalendar(record, proof, fixture, journal, instant);
-    }
-    if (native || previous.status === 'confirmed') return unresolved('reservation-unknown');
-  }
-
-  const calendarScope = { start: visit.windowStart, end: visit.windowEnd };
-  const busy = readUnderGrant(record, 'freeBusy', journal, instant, () => fixture.readFreeBusy(calendarScope));
-  const slots = readUnderGrant(record, 'slots', journal, instant, () => fixture.readSlots(visit));
-  if (!busy || !slots || !grantFor(record, 'reserve', instant)) {
-    return unresolved(mustRecover ? 'reservation-unknown' : 'visit-permission');
-  }
-  const candidates = slots.filter(slot => eligibleSlot(slot, visit, busy, instant));
-  const candidate = mustRecover
-    ? candidates.find(slot => slot.id === previous.payload.slotId && slot.revision === previous.payload.revision)
-    : candidates.sort((left, right) => Date.parse(left.start) - Date.parse(right.start) || left.id.localeCompare(right.id))[0];
-  if (!candidate) return unresolved(mustRecover ? 'reservation-unknown' : 'slot-unavailable');
+  const { candidate, issue, proof, retry } = selectSlot(record, fixture, journal, instant);
+  if (proof) return runCalendar(record, proof, fixture, journal, instant);
+  if (issue) return unresolved(issue);
 
   const { id: slotId, revision, start, end, feeMinor, currency } = candidate;
-  const key = mustRecover ? previous.key : `visit:${record.id}:reserve:${encodeURIComponent(slotId)}:${revision}`;
-  const request = mustRecover ? previous.payload : { key, ...visit, slotId, revision, start, end, feeMinor, currency };
+  const key = retry?.key ?? `visit:${record.id}:reserve:${encodeURIComponent(slotId)}:${revision}`;
+  const request = retry?.payload ?? { key, ...visit, slotId, revision, start, end, feeMinor, currency };
   const result = dispatchVisit(journal, record, 'reserve', key, request, (current, payload, currentTime, readClock) => {
+    const active = journal.latest(record.id, 'reserve');
+    if (active?.key !== key || !['prepared', 'unknown'].includes(active.status)) {
+      return { status: 'blocked', reason: 'reservation-superseded' };
+    }
     if (!permittedAtDispatch(record, current, bookingGrants, +(currentTime ?? instant))) {
+      journal.mark(key, 'blocked');
       return { status: 'blocked', reason: 'permission' };
     }
-    return fixture.reserve(payload, fresh => {
+    const attempt = fixture.reserve(payload, fresh => {
       const commitTime = +readClock();
       return permittedAtDispatch(record, current, bookingGrants, commitTime) &&
         sameFields(['start', 'end', 'currency'], fresh, payload) && fresh.feeMinor === payload.feeMinor &&
         Date.parse(fresh.start) > commitTime;
     });
+    if (attempt?.status !== 'confirmed') {
+      journal.mark(key, attempt?.status === 'blocked' && attempt.reason !== 'key-conflict' ? 'blocked' : 'unknown');
+    }
+    return attempt;
   });
   if (result?.status === 'blocked' && result.reason !== 'key-conflict') {
-    journal.mark(key, 'blocked');
+    if (result.reason === 'reservation-superseded') return unresolved('reservation-unknown');
     return unresolved(result.reason === 'permission' ? 'visit-permission' : 'slot-unavailable');
   }
-  if (result?.status !== 'confirmed') {
-    journal.mark(key, 'unknown');
-    return unresolved('reservation-unknown');
-  }
+  if (result?.status !== 'confirmed') return unresolved('reservation-unknown');
   const reservation = reservationProof(readUnderGrant(record, 'slots', journal, instant, () => fixture.reservationByKey(key)), request);
   journal.mark(key, reservation ? 'confirmed' : 'unknown');
   return reservation ? runCalendar(record, reservation, fixture, journal, instant) : unresolved('reservation-unknown');

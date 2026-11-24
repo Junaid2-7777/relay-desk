@@ -73,6 +73,51 @@ test('reopening after an interrupted retry recovers the original visit before re
   });
 });
 
+test('a replacement for a proven-absent reservation prevents stale dispatch of the original', t => {
+  const now = new Date('2026-11-23T09:00:00+05:30');
+  const clock = () => now;
+  const dataDir = mkdtempSync(join(tmpdir(), 'relay-visit-replacement-'));
+  const fixture = openVisitFixture({ dataDir, clock });
+  const database = new DatabaseSync(':memory:');
+  t.after(() => {
+    database.close();
+    fixture.close();
+    rmSync(dataDir, { force: true, recursive: true });
+  });
+  fixture.reset();
+  const visit = seedHousehold(now, true).find(record => record.kind === 'visit');
+  const journal = openActionJournal(database, () => visit, action => action(), clock);
+  const replacement = fixture.putSlot({
+    ...mondayVisit, id: 'slot-demo-4pm',
+    start: '2026-11-24T16:00:00+05:30', end: '2026-11-24T17:00:00+05:30'
+  });
+  const protectedEvent = {
+    id: 'calendar-demo-new-conflict', title: 'Synthetic appointment',
+    start: '2026-11-24T15:00:00+05:30', end: '2026-11-24T16:00:00+05:30'
+  };
+  let recovered;
+  const delayed = {
+    ...journal,
+    prepare(...args) {
+      const original = journal.prepare(...args);
+      if (original.operation === 'reserve') {
+        fixture.putCalendarEvent(protectedEvent);
+        recovered = runVisit(visit, fixture, journal, now);
+        fixture.putCalendarEvent({ ...protectedEvent, start: replacement.end, end: mondayVisit.windowEnd });
+      }
+      return original;
+    }
+  };
+
+  runVisit(visit, fixture, delayed, now);
+  assert.equal(recovered.status, 'verified');
+  assert.equal(recovered.reservation.slotId, replacement.id);
+  const native = fixture.inspect();
+  assert.deepEqual(native.reservations, [recovered.reservation]);
+  assert.equal(native.attempts.filter(attempt => attempt.operation === 'reserve').length, 1);
+  assert.deepEqual(runVisit(recovered, fixture, journal, now), recovered);
+});
+
 test('appointment writes require permission inside their provider transaction', async t => {
   for (const [operation, method] of [['reserve', 'reserve'], ['calendar', 'addToCalendar']]) {
     await t.test(operation, t => {
