@@ -27,6 +27,8 @@ The practice desk exposes `/api/fixture/refund`, `/api/fixture/visit` and `/api/
 
 Use **Add errand** in the practice brief to reach the note field or return to an open review. Chrome keyboard checks at mobile and desktop widths confirmed that the link kept the draft fields, and that declining credit access while allowing only calendar availability produced one free/busy read and zero ledger reads, bookings or payments.
 
+On an agreed practice visit, **Edit visit check** is available before booking starts. Changing the provider, service, reference or window requires fresh permissions. Chrome keyboard checks at 320 CSS pixels with 200% text and at desktop width exercised a correction, renewed permissions, a lost reservation reply, and readback of the original reservation and its calendar entry.
+
 **Check your errands** and **Check refund sources** each send a checkpoint reference. If a reply is lost, use the same control again in the open tab. The desk reuses the original refund or issuer check results when available. Once a reply succeeds, the next click starts a fresh check that can see newer evidence. The first click after a page reload also starts a fresh check.
 
 In the practice refund, **Draft a follow-up** shows the synthetic recipient, subject and editable message. **Queue this draft in practice outbox** authorizes those exact words. Inspect the saved queue row at `/api/fixture/outbox`. The refund remains open while waiting for credit. If an authorized credit check already finds the matching posted credit when you approve the draft, the desk verifies the refund and skips the queue.

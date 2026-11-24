@@ -182,6 +182,7 @@ function renderErrand(record) {
   card.dataset.revision = record.revision;
   card.dataset.day = deskDay;
   card.dataset.pendingFollowup = Boolean(record.pendingFollowup);
+  card.dataset.visitPlanEditable = Boolean(record.visitPlanEditable);
   part('goal').textContent = goal;
   part('goal').tabIndex = -1;
   part('goal').id = `goal-${id}`;
@@ -257,7 +258,7 @@ function renderErrand(record) {
       }
     };
     if (!canSetUp) renderHousehold(panel, part('facts'), record, run, deskTime);
-    if (canSetUp || (record.receiptPlan && record.status === 'open')) {
+    if (canSetUp || (record.receiptPlan && record.status === 'open') || record.visitPlanEditable) {
       renderPracticeSetup(panel, record, receiptSources, run, (dirty, details) => {
         const key = `setup-${id}`;
         if (dirty) openEdits.add(key);
@@ -476,7 +477,8 @@ function showErrands(changedId) {
     const cards = ordered.map(record => {
       const existing = prior.get(`errand-${record.id}`);
       const reuse = record.id !== changedId && existing?.dataset.revision === String(record.revision) &&
-        existing.dataset.day === deskDay && existing.dataset.pendingFollowup === String(Boolean(record.pendingFollowup));
+        existing.dataset.day === deskDay && existing.dataset.pendingFollowup === String(Boolean(record.pendingFollowup)) &&
+        existing.dataset.visitPlanEditable === String(Boolean(record.visitPlanEditable));
       return [record, reuse ? existing : renderErrand(record)];
     });
     if (!householdMode) {

@@ -4,7 +4,9 @@ import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
+import { openActionJournal } from '../src/action-journal.mjs';
 import { openReceiptFixture, practiceReceiptSource } from '../src/receipt-fixture.mjs';
 import { createDeskServer } from '../src/server.mjs';
 import { mondayVisit, openVisitFixture } from '../src/visit-fixture.mjs';
@@ -75,6 +77,7 @@ async function rehearsal(t) {
       await open();
     },
     save: note => request('/api/errands', { note }, 201),
+    brief: () => request('/api/desk'),
     setup: (errand, params, status) => request(`/api/errands/${errand.id}/setup`, { revision: errand.revision, ...params }, status),
     allow: (errand, operation) => request(`/api/errands/${errand.id}/household-access`, {
       revision: errand.revision, operation, choice: 'allowed'
@@ -342,4 +345,117 @@ test('R7 operator offers reach a new visit through its own booking and calendar 
   assert.equal(nativeEvent.end, slot.end);
   assert.deepEqual(native.calendar.filter(event => event.id !== nativeEvent.id), initial.calendar);
   assert.deepEqual(native.calendar.find(event => event.id === commitment.id), commitment);
+});
+
+test('correcting an unattempted visit keeps the note and withdraws access to the old terms', async t => {
+  const desk = await rehearsal(t);
+  const provider = desk.provider(openVisitFixture);
+  const scope = {
+    issuer: 'practice-bicycle-works', service: 'dropoff', subject: 'ticket-typo',
+    windowStart: '2026-11-24T16:15:00+05:30', windowEnd: '2026-11-24T18:00:00+05:30'
+  };
+  const plan = { capability: 'visit', ...scope };
+  const seeded = recordFrom(await desk.brief(), 'demo-visit');
+  assert.equal(seeded.visitPlanEditable, undefined);
+  await desk.setup(seeded, plan, 409);
+
+  const note = 'Could you find a free drop-off at Bicycle Works? Can you help me check on Friday?';
+  const saved = await desk.save(note);
+  let configured = await desk.setup(saved, { ...plan, owner: 'Practice Bicycle Works' });
+  assert.equal(configured.visitPlanEditable, true);
+  for (const operation of ['freeBusy', 'slots', 'reserve', 'calendar']) {
+    configured = await desk.allow(configured, operation);
+    assert.equal(configured.visitPlanEditable, true);
+  }
+  const waiting = recordFrom(await desk.checkpoint(), saved.id);
+  assert.equal(waiting.issue, 'slot-unavailable');
+  assert.equal(waiting.visitPlanEditable, true);
+  const before = provider.inspect();
+  const sameWindow = { ...plan, windowStart: '2026-11-24T10:45:00.000Z', windowEnd: '2026-11-24T18:00:00.000+05:30' };
+  assert.deepEqual(await desk.setup(waiting, sameWindow), waiting);
+  assert.deepEqual(provider.inspect(), before);
+
+  const newTerms = { ...plan, subject: 'ticket-72', windowStart: '2026-11-24T16:30:00+05:30' };
+  const corrected = await desk.setup(waiting, newTerms);
+  assert.equal(corrected.revision, waiting.revision + 1);
+  assert.equal(corrected.visitPlanEditable, true);
+  assert.equal(corrected.owner, 'Practice Bicycle Works');
+  assert.equal(corrected.issue, 'visit-permission');
+  assert.equal(corrected.note, note);
+  assert.equal(corrected.goal, saved.goal);
+  assert.equal(corrected.checkDate, saved.checkDate);
+  assert.equal(corrected.visit.subject, newTerms.subject);
+  assert.equal(corrected.visit.windowStart, newTerms.windowStart);
+  for (const [operation, oldGrant] of Object.entries(waiting.grants)) {
+    assert.deepEqual(corrected.grants[operation], { ...oldGrant, status: 'withdrawn', revision: oldGrant.revision + 1, expiresAt: null });
+  }
+  await desk.setup(waiting, plan, 409);
+  await desk.setup(corrected, { capability: 'receipt', ...membershipProof }, 409);
+  assert.deepEqual(provider.inspect(), before);
+
+  await desk.restart(monday);
+  const reopened = recordFrom(await desk.brief(), saved.id);
+  assert.deepEqual(reopened, corrected);
+  const regranted = await desk.allow(reopened, 'slots');
+  assert.deepEqual(regranted.grants.slots.scope, corrected.visit);
+  assert.equal(regranted.grants.slots.revision, corrected.grants.slots.revision + 1);
+});
+
+test('an agreed visit cannot be changed once an original booking intent exists', async t => {
+  const desk = await rehearsal(t);
+  const provider = desk.provider(openVisitFixture);
+  const plan = {
+    capability: 'visit', issuer: 'practice-observatory', service: 'orientation', subject: 'seat-12',
+    windowStart: '2026-11-24T16:15:00+05:30', windowEnd: '2026-11-24T18:00:00+05:30'
+  };
+  const saved = await desk.save('Could you book a free orientation at the practice observatory?');
+  const configured = await desk.setup(saved, plan);
+  const database = desk.provider(({ dataDir }) => new DatabaseSync(join(dataDir, 'desk.sqlite')));
+  const journal = openActionJournal(database, () => configured, action => action(), () => new Date(monday));
+  const key = `visit:${saved.id}:reserve:observatory-offer:1`;
+  journal.prepare(saved.id, 'reserve', key, { ...configured.visit, key });
+  const pending = recordFrom(await desk.brief(), saved.id);
+  assert.equal(pending.status, 'open');
+  assert.equal(pending.visitPlanEditable, false);
+  await desk.setup(pending, { ...plan, subject: 'seat-13' }, 409);
+  journal.mark(key, 'blocked');
+  await desk.setup(pending, { ...plan, subject: 'seat-13' }, 409);
+  assert.equal(journal.latest(saved.id, 'reserve').status, 'blocked');
+  assert.deepEqual(provider.inspect().attempts, []);
+  assert.deepEqual(provider.inspect().reads, []);
+  assert.deepEqual(recordFrom(await desk.brief(), saved.id), pending);
+});
+
+test('an ambiguous confirmation keeps the same native booking and rejects scope changes', async t => {
+  const desk = await rehearsal(t);
+  const provider = desk.provider(openVisitFixture);
+  const plan = {
+    capability: 'visit', issuer: 'practice-rocketry-club', service: 'safety-demo', subject: 'seat-15',
+    windowStart: '2026-11-24T16:15:00+05:30', windowEnd: '2026-11-24T18:00:00+05:30'
+  };
+  const saved = await desk.save('Find a free place in the practice rocketry club demonstration.');
+  await desk.setup(saved, plan);
+  let agreed = recordFrom(await desk.checkpoint('book-seeded-visit'), saved.id);
+  for (const operation of ['freeBusy', 'slots', 'reserve', 'calendar']) agreed = await desk.allow(agreed, operation);
+  const selected = desk.publish('visit-slot', 'practice-safety-demo-free', plan.issuer, plan.service, plan.subject,
+    '2026-11-24T17:00:00+05:30', '2026-11-24T17:30:00+05:30', '0');
+  provider.failNextReservationReply();
+  const pending = recordFrom(await desk.checkpoint('lost-reply'), saved.id);
+  assert.equal(pending.status, 'open');
+  assert.equal(pending.issue, 'reservation-unknown');
+  assert.equal(pending.visitPlanEditable, false);
+  const native = provider.inspect();
+  const booking = native.reservations.find(reservation => reservation.slotId === selected.id);
+  assert.ok(booking);
+  await desk.setup(pending, { ...plan, windowEnd: '2026-11-24T17:45:00+05:30' }, 409);
+  assert.deepEqual(provider.inspect(), native);
+
+  await desk.restart(monday);
+  const recovered = recordFrom(await desk.checkpoint('recover-original'), saved.id);
+  assert.equal(recovered.status, 'verified');
+  assert.equal(recovered.visitPlanEditable, false);
+  assert.deepEqual(recovered.reservation, booking);
+  assert.equal(recovered.calendarEvent.reservationId, booking.id);
+  await desk.setup(recovered, plan, 409);
+  assert.deepEqual(provider.inspect().reservations, native.reservations);
 });

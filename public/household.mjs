@@ -242,12 +242,15 @@ export function renderHousehold(panel, list, record, run, deskTime) {
 }
 
 export function renderPracticeSetup(panel, record, sources, run, onEdit) {
-  const editing = Boolean(record.receiptPlan);
-  const suggestion = record.receiptPlan ?? record.practicePlan ?? {};
+  const editingVisit = record.visitPlanEditable === true;
+  const editing = editingVisit || Boolean(record.receiptPlan);
+  const checkedItem = editingVisit ? 'visit' : 'receipt';
+  const suggestion = editingVisit ? { ...record.visit, capability: 'visit' } : record.receiptPlan ?? record.practicePlan ?? {};
   const details = document.createElement('details');
   details.className = 'source evidence';
-  const summary = addText(details, 'summary', editing ? 'Edit receipt check' : 'Set up a practice check');
-  addText(details, 'p', editing
+  const summary = addText(details, 'summary', editing ? `Edit ${checkedItem} check` : 'Set up a practice check');
+  addText(details, 'p', editingVisit
+    ? 'Changing the provider, service, reference or booking window requires fresh permissions.' : editing
     ? 'Changing the issuer or record reference requires fresh permission to read it.'
     : 'Confirm the details. You can review each permission after saving.');
   const form = document.createElement('form');
@@ -259,7 +262,7 @@ export function renderPracticeSetup(panel, record, sources, run, onEdit) {
   addText(select, 'option', 'Reserve a free slot').value = 'visit';
   select.value = suggestion.capability ?? 'receipt';
   const fields = document.createElement('div');
-  const submit = addText(form, 'button', editing ? 'Save receipt check' : 'Save agreed check');
+  const submit = addText(form, 'button', editing ? `Save ${checkedItem} check` : 'Save agreed check');
   submit.type = 'submit';
   form.prepend(fields);
   if (!editing) {

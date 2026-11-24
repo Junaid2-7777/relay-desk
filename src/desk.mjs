@@ -57,6 +57,12 @@ function visitTime(value) {
   return value;
 }
 
+function sameVisitScope(left, right) {
+  return left?.issuer === right.issuer && left.service === right.service && left.subject === right.subject &&
+    left.zone === right.zone && Date.parse(left.windowStart) === Date.parse(right.windowStart) &&
+    Date.parse(left.windowEnd) === Date.parse(right.windowEnd);
+}
+
 const readErrand = row => row && JSON.parse(row.record);
 const changedContextCode = 'desk-context-changed';
 const followupTerms = Object.freeze({
@@ -175,7 +181,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     return transaction(() => {
       const record = find(id);
       const next = action(record);
-      return next === record ? record : revise(next, record.revision);
+      return projectErrand(next === record ? record : revise(next, record.revision));
     });
   }
   function withRefund(id, action) {
@@ -192,6 +198,14 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     }
   }
   const journal = openActionJournal(database, find, transaction, clock, write);
+  function canEditVisit(record) {
+    return Boolean(record.practiceCase && record.visit && record.status === 'open' &&
+      !record.reservation && !record.calendarEvent && record.issue !== 'reservation-unknown' &&
+      !journal.latest(record.id, 'reserve') && !journal.latest(record.id, 'calendar'));
+  }
+  function projectErrand(record) {
+    return household && record.practiceCase && record.visit ? { ...record, visitPlanEditable: canEditVisit(record) } : record;
+  }
   function pendingFollowup(record) {
     if (!household?.outbox || !record.refund || record.queuedFollowup ||
         record.refund.reference !== refundFixture?.subject.reference) return null;
@@ -202,7 +216,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     deskContext: deskContext(),
     today: today(),
     now: clock().toISOString(),
-    errands: orderChecks(list().map(record => pendingFollowup(record) ? { ...record, pendingFollowup: true } : record), household),
+    errands: orderChecks(list().map(record => pendingFollowup(record) ? { ...record, pendingFollowup: true } : projectErrand(record)), household),
     fixture: Boolean(refundFixture),
     household: Boolean(household),
     ...(household ? { receiptSources: household.receipt.fixture.sources(), plannerMode: intakePlanner.mode } : {})
@@ -293,7 +307,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
         const existing = readErrand(previous);
         if (previous?.intent) {
           if (previous.intent !== intent) throw conflict();
-          return existing;
+          return projectErrand(existing);
         }
 
         const reviewed = previewId === undefined ? null : intakePlanner?.reviewed(previewId, note);
@@ -322,7 +336,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
           if (record.note !== existing.note || record.goal !== existing.goal || record.checkDate !== existing.checkDate ||
               (reviewed && existing.practicePlan !== undefined && (existing.plannerMode !== reviewed.plannerMode ||
                 JSON.stringify(existing.practicePlan) !== JSON.stringify(reviewed.practicePlan)))) throw conflict();
-          return existing;
+          return projectErrand(existing);
         }
 
         if (!insert.run(record.id, record.revision, JSON.stringify(record)).changes) throw conflict();
@@ -333,11 +347,11 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     edit(id, { goal, checkDate, revision }) {
       const errand = find(id);
       if (!Number.isInteger(revision)) throw new DeskError('An errand revision is required.');
-      return revise({
+      return projectErrand(revise({
         ...errand,
         goal: requiredText(goal, 'a goal', 4000),
         checkDate: optionalDate(checkDate)
-      }, revision);
+      }, revision));
     },
     draft(id) {
       const errand = find(id);
@@ -492,8 +506,10 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       if (!household || !['receipt', 'visit'].includes(capability)) throw new DeskError('Choose a practice capability.');
       return changeCase(id, record => {
         requireRevision(record, revision);
-        const editingReceipt = capability === 'receipt' && Boolean(record.receiptPlan);
-        if (record.status !== 'open' || (!editingReceipt && !Object.hasOwn(record, 'practicePlan'))) {
+        const editingReceipt = capability === 'receipt' && Boolean(record.receiptPlan) && !record.visit;
+        const editingVisit = capability === 'visit' && canEditVisit(record);
+        const firstPlan = !record.visit && !record.receiptPlan && Object.hasOwn(record, 'practicePlan');
+        if (record.status !== 'open' || (!editingReceipt && !editingVisit && !firstPlan)) {
           throw new DeskError('This errand cannot change its agreed plan.', 409);
         }
         const { practicePlan, ...existing } = record;
@@ -524,16 +540,24 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
           windowStart: visitTime(windowStart),
           windowEnd: visitTime(windowEnd)
         };
-        if (Date.parse(visit.windowStart) >= Date.parse(visit.windowEnd) || Date.parse(visit.windowEnd) <= +clock()) {
+        const currentLabel = editingVisit && record.visit.issuer === visit.issuer ? record.owner : visit.issuer;
+        const label = owner ? requiredText(owner, 'a provider name', 100) : currentLabel;
+        if (editingVisit && sameVisitScope(record.visit, visit)) return record.owner === label ? record : { ...record, owner: label };
+        const now = clock();
+        if (Date.parse(visit.windowStart) >= Date.parse(visit.windowEnd) || Date.parse(visit.windowEnd) <= +now) {
           throw new DeskError('Choose a booking window that ends in the future.');
         }
+        const previousGrants = editingVisit ? record.grants : {};
+        const grants = Object.fromEntries(Object.entries(previousGrants ?? {}).map(([operation, grant]) => [
+          operation, grant.status === 'withdrawn' ? grant : makeGrant(operation, grant.scope, 'withdrawn', grant, now)
+        ]));
         return {
           ...existing,
           kind: 'visit',
-          owner: owner ? requiredText(owner, 'a provider name', 100) : visit.issuer,
+          owner: label,
           visit,
           issue: 'visit-permission',
-          grants: {}
+          grants
         };
       });
     },

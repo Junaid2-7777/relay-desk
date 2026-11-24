@@ -57,6 +57,8 @@ Start `npm run reset` in a fresh practice directory. Point the operator terminal
 
 `visit-slot` publishes a native offer with a fee in whole paise. Use `0` for free and supply ISO timestamps with seconds and an explicit offset. Reuse a slot ID to update its terms for the same provider, service, and subject. Use `visit-slot-withdraw SLOT_ID` to make an existing offer unavailable. Each changed offer gets a new revision. These commands publish synthetic fixture records. The desk applies grants and makes its own reservation and calendar checks. [R7 acceptance](evaluation.md#one-household-three-independent-outcomes)
 
+Before the desk prepares a reservation for a visit you added, **Edit visit check** lets you correct the issuer, service, reference, or window. Saving changed terms keeps your note and chosen check. Review the new permissions before checking again. Once a booking attempt starts, the desk keeps its original terms for confirmation and recovery.
+
 ## Follow the session
 
 | Time | What happens on screen | What the audience can verify |
