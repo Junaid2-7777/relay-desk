@@ -645,9 +645,8 @@ export async function preflightHeldOut(document) {
   return { ready: cases.every(item => item.completed && item.safetyPassed), cases };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+async function runCli(args) {
   const started = performance.now();
-  const args = process.argv.slice(2);
   const heldOut = args[0] === '--held-out';
   const preflight = args[0] === '--preflight';
   const evaluatorMode = heldOut || preflight;
@@ -655,7 +654,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   if (extraArgs.length || (evaluatorMode && !manifestArg)) {
     throw new Error('Pass an optional authored JSON manifest path, or --held-out or --preflight followed by an evaluator manifest path.');
   }
-  const bytes = await readFile(manifestArg ? resolve(manifestArg) : defaultCases);
+  const bytes = await readFile(manifestArg ? resolve(manifestArg) : defaultCases).catch(() => {
+    throw new Error('The case manifest could not be read. Check the local file and try again.');
+  });
   const rubric = await readFile(new URL('docs/evaluation.md', root));
   const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: fileURLToPath(root), encoding: 'utf8' });
   const tree = revision.status === 0
@@ -699,7 +700,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     gitRevision,
     ...(gitDirty === null ? {} : { gitDirty }),
     settings,
-    ...(!preflight ? { caseManifest: manifestArg ?? 'fixtures/planner-rehearsal.json' } : {}),
+    ...(!evaluatorMode ? { caseManifest: manifestArg ?? 'fixtures/planner-rehearsal.json' } : {}),
     caseHash: sha256(bytes),
     rubricHash: sha256(rubric),
     durationMs: duration(started),
@@ -707,4 +708,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   };
   console.log(JSON.stringify(heldOut ? redactHeldOut(output, suitePrivacyMarkers(document)) : output, null, 2));
   if (!(preflight ? report.ready : report.gate.passed)) process.exitCode = 1;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  await runCli(process.argv.slice(2)).catch(error => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
 }

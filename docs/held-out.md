@@ -4,6 +4,8 @@ Freeze the parser, prompt, workflow settings and scoring rules before asking an 
 
 Record a public `providerVersion` label containing the n8n version, the published workflow revision, and the exact OpenAI model snapshot. Pass the webhook URL and token through the process environment. The runner checks the local commit and records the provider label supplied by the evaluator. The evaluator confirms that the published workflow uses the frozen prompt, schema and settings.
 
+The held-out report identifies the evaluator’s input by its SHA-256 hash. The local directory and filename stay out of the published comparison.
+
 ## Choose twelve cases
 
 Supply one `routine`, one `changed`, and one `blocked` case for each group.

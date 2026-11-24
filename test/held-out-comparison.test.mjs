@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { compareHeldOut, matchedReadbacks, preflightHeldOut, presentedDecision, supportedDecision } from '../scripts/compare-planners.mjs';
 import { summarizeHeldOut, validateHeldOutManifest } from '../scripts/held-out-rubric.mjs';
@@ -161,6 +162,19 @@ function manifest() {
 
   return { schemaVersion: 1, mode: 'held-out', frozenRevision: 'a'.repeat(40), providerVersion: 'synthetic-test-double', cases };
 }
+
+test('an unreadable evaluator manifest keeps local file and directory names out of diagnostics', () => {
+  const path = 'private-observer-directory/synthetic-participant-name.json';
+  for (const mode of ['--held-out', '--preflight']) {
+    const run = spawnSync(process.execPath, ['scripts/compare-planners.mjs', mode, path], {
+      cwd: new URL('../', import.meta.url), encoding: 'utf8'
+    });
+    assert.equal(run.status, 1);
+    assert.equal(run.stdout, '');
+    assert.match(run.stderr, /case manifest could not be read/);
+    assert.doesNotMatch(run.stderr, /private-observer-directory|synthetic-participant-name/);
+  }
+});
 
 test('the evaluator preflight runs fixed rules and reveals only checkpoint numbers and match flags', async () => {
   const suite = manifest();
