@@ -149,7 +149,7 @@ function renderBill(panel, list, record, run, deskTime) {
   if (previousInvoice && previousInvoice.revision !== invoice?.revision) {
     fact(list, invoice ? 'Previous invoice' : 'Last seen invoice', money(previousInvoice.amountMinor, previousInvoice.currency));
   }
-  if (invoice) fact(list, 'Current invoice', money(invoice.amountMinor, invoice.currency));
+  if (invoice) fact(list, reviewing ? 'Invoice under review' : 'Last seen invoice', money(invoice.amountMinor, invoice.currency));
   fact(list, 'Standing limit', money(capMinor, bill.currency));
   if (invoice) {
     fact(terms, 'Invoice', `${invoice.invoiceId} · revision ${invoice.revision}`);
