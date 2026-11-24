@@ -68,14 +68,15 @@ function validReadScope(name, source, scope) {
 
 function fieldsForAuditRow(name, row) {
   const fields = auditFields[name];
-  return name === 'receiptReads' && Object.hasOwn(row ?? {}, 'status') ? [...fields, 'status'] : fields;
+  const outage = (name === 'receiptReads' || name === 'refundReads') && Object.hasOwn(row ?? {}, 'status');
+  return outage ? [...fields, 'status'] : fields;
 }
 
 function validateAudit(audit) {
   return object(audit) && Object.entries(audit).every(([name, rows]) => Object.hasOwn(auditFields, name) &&
     Array.isArray(rows) && rows.every(row => keysAre(row, fieldsForAuditRow(name, row)) &&
       (!scopedReads.includes(name) || validReadScope(name, row.source, row.scope)) &&
-      (name !== 'receiptReads' || !Object.hasOwn(row, 'status') || row.status === 'unavailable') &&
+      (!['receiptReads', 'refundReads'].includes(name) || !Object.hasOwn(row, 'status') || row.status === 'unavailable') &&
       (name !== 'outboxAttempts' || row.scope === 'original-operation')));
 }
 

@@ -121,21 +121,28 @@ function writeSnapshot(providers) {
   return [visit.reservations, visit.calendar, visit.attempts, bill.payments, bill.attempts, outbox.messages, outbox.attempts];
 }
 
+function successfulRefundRead(record, native, source, fields) {
+  const grant = record.refundAccess?.[source];
+  const check = record.checks?.[source];
+  if (grant?.operation !== 'read' || check?.status !== 'checked' || !evidenceTimestamp(check.checkedAt)) return null;
+  const read = native.reads.findLast(row => row.source === source && row.checkedAt === check.checkedAt &&
+    sameFields(row.scope, grant.scope, fields));
+  return read && !Object.hasOwn(read, 'status') ? read.scope : null;
+}
+
 function creditMatches(record, native) {
   const { reference, amountMinor, currency } = record.refund;
-  const creditsGrant = record.refundAccess?.credits;
-  const ledger = creditsGrant?.scope;
-  if (creditsGrant?.operation !== 'read' || ledger?.reference !== reference || !ledger.account) return [];
-  const merchantGrant = record.refundAccess?.merchant;
-  const merchant = merchantGrant?.operation === 'read' && merchantGrant.status === 'allowed' &&
-    record.checks?.merchant?.status === 'checked' ? merchantGrant.scope : null;
+  const ledger = successfulRefundRead(record, native, 'credits', ['account', 'reference']);
+  if (!ledger || ledger.reference !== reference || !ledger.account || !Array.isArray(ledger.linkedCreditIds)) return [];
+  const merchant = successfulRefundRead(record, native, 'merchant', ['issuer', 'thread', 'reference']);
   return native.credits.filter(credit => {
     if (credit.status !== 'posted' || credit.direction !== 'incoming' || credit.account !== ledger.account ||
         credit.amountMinor !== amountMinor || credit.currency !== currency || !evidenceTimestamp(credit.postedAt)) {
       return false;
     }
     if (credit.returnReference === reference) return true;
-    if (credit.returnReference !== null || merchant?.reference !== reference || !merchant.issuer || !merchant.thread) return false;
+    if (credit.returnReference !== null || !ledger.linkedCreditIds.includes(credit.id) ||
+        merchant?.reference !== reference || !merchant.issuer || !merchant.thread) return false;
     const references = new Set(native.links
       .filter(link => link.creditId === credit.id && link.issuer === merchant.issuer && link.thread === merchant.thread)
       .map(link => link.returnReference));
@@ -200,11 +207,8 @@ export function matchedReadbacks(record, native) {
     const creditProof = record.evidence?.find(item => item.source === 'credits');
     const matches = creditMatches(record, native.refund);
     const [credit] = matches;
-    const grantScope = record.refundAccess?.credits?.scope;
     proof.credit = Boolean(creditProof && matches.length === 1 && credit.id === creditProof.reference &&
-      credit.amountMinor === creditProof.amountMinor && credit.currency === creditProof.currency && credit.postedAt === creditProof.postedAt &&
-      native.refund.reads.some(read => !read.unavailable && read.source === 'credits' &&
-        sameFields(read.scope, grantScope, ['account', 'reference']) && read.checkedAt === record.checks?.credits?.checkedAt));
+      credit.amountMinor === creditProof.amountMinor && credit.currency === creditProof.currency && credit.postedAt === creditProof.postedAt);
   }
   if (record.queuedFollowup) {
     const queued = native.outbox.messages.find(row => row.key === record.queuedFollowup.key);
