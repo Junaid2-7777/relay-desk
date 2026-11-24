@@ -27,6 +27,8 @@ Use `npm run reset` to start the three-errand practice household on 23 November 
 
 Run `npm run evaluate` for automated checks, or `npm run compare:planners` to replay twelve synthetic scenarios against fixed rules and authored planner responses. The comparison reports each interpretation and provider outcome. [Build and verification commands](docs/build.md#run-the-local-build)
 
+Run `npm run compare:morning` to compare scripted manual follow-up with fixed rules for the cold and warm practice mornings. [Scripted morning baseline](docs/evaluation.md#scripted-morning-baseline)
+
 ## When you want Relay to take more off your hands
 
 Suppose you’ve asked Relay to watch a return, book a free broadband visit on Tuesday afternoon and pay your electricity bill up to ₹900. Here is the proposed morning brief for one synthetic household.
