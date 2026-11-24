@@ -20,9 +20,9 @@ function bookingInputValue(timestamp) {
 }
 
 export function money(amountMinor, currency = 'INR') {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency', currency, maximumFractionDigits: 2, minimumFractionDigits: 0
-  }).format(amountMinor / 100);
+  if (typeof currency !== 'string' || !/^[A-Z]{3}$/u.test(currency)) return `${amountMinor} minor units (currency unclear)`;
+  const formatter = new Intl.NumberFormat('en-IN', { style: 'currency', currency, minimumFractionDigits: 0 });
+  return formatter.format(amountMinor / 10 ** formatter.resolvedOptions().maximumFractionDigits);
 }
 
 export function addText(parent, tag, text) {
@@ -220,6 +220,10 @@ export function renderHousehold(panel, list, record, run, deskTime) {
   if (record.conflict) fact(list, 'Calendar conflict', `${when(record.conflict.start)} IST`);
   if (record.status !== 'stopped') {
     if (record.issue === 'calendar-conflict') renderVisitConflict(panel, record, run, deskTime);
+    else if (record.issue === 'bill-permission' && record.invoice &&
+             (record.invoice.payee !== record.bill.payee || record.invoice.currency !== record.bill.currency)) {
+      addText(panel, 'p', `Payment is on hold. This invoice asks for ${record.invoice.currency} to ${record.invoice.payee}. This errand covers ${record.bill.currency} to ${record.bill.payee}. Check the change with the biller.`);
+    }
     else if (record.issue === 'calendar-pending' && record.conflictChoice?.choice === 'handle' &&
              record.conflictChoice.reservationId === record.reservation?.id) {
       addText(panel, 'p', 'You chose to contact the provider about rescheduling.');
