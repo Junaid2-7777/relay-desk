@@ -37,6 +37,7 @@ let receiptSources = [];
 let checking = false;
 const openEdits = new Set();
 const localDrafts = new Map();
+const pendingCheckpoints = new Map();
 const editReminder = 'Finish editing your errand before checking.';
 
 function updateCheckpointButton() {
@@ -73,6 +74,15 @@ async function request(path, { method = 'GET', body } = {}) {
   return result;
 }
 
+async function requestCheckpoint(path) {
+  const key = `${deskContext}:${path}`;
+  const checkpointId = pendingCheckpoints.get(key) ?? crypto.randomUUID();
+  pendingCheckpoints.set(key, checkpointId);
+  const result = await request(path, { method: 'POST', body: { checkpointId } });
+  pendingCheckpoints.delete(key);
+  return result;
+}
+
 function validate(fields, message) {
   for (const [field, errorText] of fields) {
     field.removeAttribute('aria-invalid');
@@ -104,12 +114,14 @@ function renderRefund(panel, record, update, errorMessage, setBusy) {
   ];
   const buttons = [];
   const active = grant => grant?.status === 'allowed' && Date.parse(grant.expiresAt) > Date.parse(deskTime);
-  const run = async (endpoint, body, current) => {
+  const run = async (endpoint, current, body) => {
     errorMessage.textContent = '';
     buttons.forEach(button => { button.disabled = true; });
     setBusy(true);
     try {
-      const result = await request(`/api/errands/${record.id}/${endpoint}`, { method: 'POST', body });
+      const path = `/api/errands/${record.id}/${endpoint}`;
+      const result = endpoint === 'check-refund'
+        ? await requestCheckpoint(path) : await request(path, { method: 'POST', body });
       update(result);
     } catch (error) {
       errorMessage.textContent = error.message;
@@ -146,7 +158,7 @@ function renderRefund(panel, record, update, errorMessage, setBusy) {
     const row = document.createElement('div');
     row.className = 'actions';
     const choose = (text, choice) => buttons.push(action(row, text, event =>
-      run('refund-access', { source: key, choice, revision: record.revision }, event.currentTarget)));
+      run('refund-access', event.currentTarget, { source: key, choice, revision: record.revision })));
     if (active(grant)) choose(`Withdraw ${label.toLowerCase()} access`, 'withdrawn');
     else {
       choose(`Allow ${label.toLowerCase()} access`, 'allowed');
@@ -157,7 +169,7 @@ function renderRefund(panel, record, update, errorMessage, setBusy) {
   }
   panel.append(details);
   if (record.status !== 'verified' && record.status !== 'stopped' && Object.values(record.refundAccess).some(active)) {
-    buttons.push(action(panel, 'Check refund sources', event => run('check-refund', {}, event.currentTarget)));
+    buttons.push(action(panel, 'Check refund sources', event => run('check-refund', event.currentTarget)));
   }
 }
 
@@ -553,7 +565,7 @@ async function checkErrands(focusId) {
   const before = new Map(records.map(record => [record.id, record]));
   checkpointStatus.textContent = 'Checking your errands…';
   try {
-    const result = await request('/api/checkpoint', { method: 'POST', body: {} });
+    const result = await requestCheckpoint('/api/checkpoint');
     // A save or action already in flight can return before this checkpoint response.
     const newer = new Map(records.filter(record => before.get(record.id) !== record).map(record => [record.id, record]));
     result.errands = result.errands.map(record => {
