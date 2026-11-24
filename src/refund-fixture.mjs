@@ -139,15 +139,19 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
     writeLink.run(link.issuer, link.thread, link.returnReference, link.creditId);
   }
 
-  function logRead(source, scope) {
-    const read = writeRead.run(source, JSON.stringify(scope), clock().toISOString());
+  function logRead(source, scope, checkedAt) {
+    const read = writeRead.run(source, JSON.stringify(scope), checkedAt);
     if (!unavailableSource.get(source)) return true;
     writeFailedRead.run(read.lastInsertRowid);
     return false;
   }
 
-  function readOrUnavailable(source, read) {
-    const records = transaction(read);
+  function readOrUnavailable(source, authorize, read) {
+    const records = transaction(() => {
+      const now = clock();
+      if (authorize && !authorize(now)) return undefined;
+      return read(now.toISOString());
+    });
     if (records === null) throw new RefundFeedUnavailable(source);
     return records;
   }
@@ -188,17 +192,17 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
       if (available) reconnect.run(source);
       else disconnect.run(source);
     },
-    readMerchant({ issuer, thread, reference }) {
-      return readOrUnavailable('merchant', () => {
-        if (!logRead('merchant', { issuer, thread, reference })) return null;
+    readMerchant({ issuer, thread, reference }, authorize) {
+      return readOrUnavailable('merchant', authorize, checkedAt => {
+        if (!logRead('merchant', { issuer, thread, reference }, checkedAt)) return null;
         return {
           events: plainRows(merchantEvents.all(issuer, thread, reference)),
           links: plainRows(merchantLinks.all(issuer, thread, reference))
         };
       });
     },
-    readCredits({ account, reference, linkedCreditIds = [] }) {
-      return readOrUnavailable('credits', () => {
+    readCredits({ account, reference, linkedCreditIds = [] }, authorize) {
+      return readOrUnavailable('credits', authorize, checkedAt => {
         let confirmedIds = [];
         if (linkedCreditIds.length && account === mondayRefund.account && reference === mondayRefund.reference) {
           const requestedIds = new Set(linkedCreditIds);
@@ -206,7 +210,7 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
             .map(link => link.creditId)
             .filter(id => requestedIds.has(id));
         }
-        if (!logRead('credits', { account, reference, linkedCreditIds: confirmedIds })) return null;
+        if (!logRead('credits', { account, reference, linkedCreditIds: confirmedIds }, checkedAt)) return null;
         return plainRows(scopedCredits.all(account, reference, JSON.stringify(confirmedIds)));
       });
     },
