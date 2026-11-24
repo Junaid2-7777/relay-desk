@@ -273,6 +273,10 @@ export function renderPracticeSetup(panel, record, sources, run, onEdit) {
     visit: [['service', 'Service identifier']]
   };
   const bookingWindows = [['windowStart', 'Earliest'], ['windowEnd', 'Latest']];
+  const initialCapability = select.value;
+  const drafts = new Map();
+  const formValues = () => Object.fromEntries(new FormData(form));
+  let visibleCapability;
   function appendField(parent, name, label, type, value) {
     const tag = addText(parent, 'label', label);
     const input = document.createElement('input');
@@ -293,6 +297,7 @@ export function renderPracticeSetup(panel, record, sources, run, onEdit) {
     }
   }
   function showFields() {
+    visibleCapability = select.value;
     fields.replaceChildren();
     if (select.value === 'receipt' && sources.length) {
       addText(fields, 'p', sources.map(source => `${source.label} (${source.issuer})`).join(' · '));
@@ -307,20 +312,34 @@ export function renderPracticeSetup(panel, record, sources, run, onEdit) {
         appendField(fields, `${name}Time`, `${label} time (IST)`, 'time', time);
       }
     }
+    const saved = drafts.get(visibleCapability);
+    if (!saved) {
+      const values = formValues();
+      drafts.set(visibleCapability, { initial: JSON.stringify(values), values });
+      return;
+    }
+    for (const [name, value] of Object.entries(saved.values)) {
+      const input = form.elements.namedItem(name);
+      input.value = value;
+      if (input.type !== 'text') input.dispatchEvent(new Event('input'));
+    }
   }
-  select.addEventListener('change', showFields);
+  select.addEventListener('change', () => {
+    drafts.get(visibleCapability).values = formValues();
+    showFields();
+  });
   showFields();
-  const formValues = () => JSON.stringify([select.value, ...new FormData(form)]);
-  const initial = formValues();
   const discard = action(form, 'Discard changes', () => {
-    select.value = suggestion.capability ?? 'receipt';
+    drafts.clear();
+    select.value = initialCapability;
     showFields();
     updateDraftState();
     details.open = false;
     summary.focus();
   });
   function updateDraftState() {
-    const dirty = formValues() !== initial;
+    drafts.get(visibleCapability).values = formValues();
+    const dirty = select.value !== initialCapability || [...drafts.values()].some(draft => JSON.stringify(draft.values) !== draft.initial);
     discard.hidden = !dirty;
     onEdit(dirty, details);
   }
@@ -329,7 +348,7 @@ export function renderPracticeSetup(panel, record, sources, run, onEdit) {
   form.addEventListener('change', updateDraftState);
   form.addEventListener('submit', event => {
     event.preventDefault();
-    const values = Object.fromEntries(new FormData(form));
+    const values = formValues();
     if (select.value === 'visit') {
       for (const [name] of bookingWindows) {
         const date = values[`${name}Date`];
