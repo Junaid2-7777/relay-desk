@@ -7,7 +7,7 @@ import { openBillFixture } from './bill-fixture.mjs';
 import { DeskError, openDesk } from './desk.mjs';
 import { createN8nPlannerFromEnv } from './n8n-planner.mjs';
 import { openOutboxFixture } from './outbox-fixture.mjs';
-import { runReceipt, ReceiptPlanError } from './receipt.mjs';
+import { checkReceipt, ReceiptPlanError } from './receipt.mjs';
 import { openReceiptFixture } from './receipt-fixture.mjs';
 import { createRecordedPlanner } from './recorded-planner.mjs';
 import { openRefundFixture } from './refund-fixture.mjs';
@@ -78,7 +78,7 @@ export function createDeskServer({
   const household = householdMode ? {
     bill: { fixture: openBillFixture({ dataDir, clock }), run: runBill },
     visit: { fixture: openVisitFixture({ dataDir, clock }), run: runVisit },
-    receipt: { fixture: openReceiptFixture({ dataDir, clock }), run: runReceipt },
+    receipt: { fixture: openReceiptFixture({ dataDir, clock }), run: checkReceipt },
     outbox: { fixture: openOutboxFixture({ dataDir, clock }) }
   } : undefined;
   const desk = openDesk({ dataDir, clock, refundFixture, household, planner });

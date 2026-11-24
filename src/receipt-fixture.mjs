@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 export const practiceReceiptSource = Object.freeze({ issuer: 'library-practice', label: 'Practice library' });
 export class ReceiptPlanError extends Error {}
+export class ReceiptFeedUnavailable extends Error {}
 
 const identifier = /^[a-z0-9][a-z0-9._:-]{0,99}$/iu;
 
@@ -51,6 +52,12 @@ export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
       subject TEXT NOT NULL,
       checkedAt TEXT NOT NULL
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS receipt_offline (
+      issuer TEXT PRIMARY KEY REFERENCES receipt_sources(issuer) ON DELETE CASCADE
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS receipt_failed_reads (
+      readId INTEGER PRIMARY KEY REFERENCES receipt_reads(id) ON DELETE CASCADE
+    ) STRICT;
   `);
   const insertSource = database.prepare(`
     INSERT INTO receipt_sources VALUES (?, ?)
@@ -68,6 +75,8 @@ export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
     FROM receipt_records WHERE issuer = ? AND subject = ? ORDER BY occurredAt, id
   `);
   const insertRead = database.prepare('INSERT INTO receipt_reads (issuer, subject, checkedAt) VALUES (?, ?, ?)');
+  const offline = database.prepare('SELECT 1 FROM receipt_offline WHERE issuer = ?');
+  const failRead = database.prepare('INSERT INTO receipt_failed_reads VALUES (?)');
   const sources = () => selectSources.all().map(row => ({ ...row }));
 
   function transaction(action) {
@@ -91,6 +100,13 @@ export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
 
   return {
     putSource,
+    setAvailable(input, available) {
+      const issuer = receiptIdentifier(input, 'an issuer identifier');
+      if (typeof available !== 'boolean') throw new ReceiptPlanError('Choose whether this receipt source is available.');
+      if (!issuerExists.get(issuer)) throw new ReceiptPlanError('Register the issuer before changing its availability.');
+      if (available) database.prepare('DELETE FROM receipt_offline WHERE issuer = ?').run(issuer);
+      else database.prepare('INSERT OR IGNORE INTO receipt_offline VALUES (?)').run(issuer);
+    },
     putReceipt(receipt) {
       const issuer = receiptIdentifier(receipt.issuer, 'an issuer identifier');
       const subject = receiptIdentifier(receipt.subject, 'a subject reference');
@@ -103,11 +119,17 @@ export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
     read(scope) {
       const issuer = receiptIdentifier(scope.issuer, 'an issuer identifier');
       const subject = receiptIdentifier(scope.subject, 'a subject reference');
-      return transaction(() => {
+      const receipts = transaction(() => {
         if (!issuerExists.get(issuer)) throw new ReceiptPlanError('This issuer has no registered receipt source.');
-        insertRead.run(issuer, subject, clock().toISOString());
+        const attempt = insertRead.run(issuer, subject, clock().toISOString());
+        if (offline.get(issuer)) {
+          failRead.run(attempt.lastInsertRowid);
+          return null;
+        }
         return scopedReceipts.all(issuer, subject).map(row => ({ ...row }));
       });
+      if (receipts === null) throw new ReceiptFeedUnavailable('The receipt issuer could not be reached.');
+      return receipts;
     },
     sources,
     reset() {
@@ -119,7 +141,10 @@ export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
     inspect: () => ({
       sources: sources(),
       receipts: database.prepare('SELECT * FROM receipt_records ORDER BY issuer, subject, occurredAt, id').all().map(receiptRecord),
-      reads: database.prepare('SELECT issuer, subject, checkedAt FROM receipt_reads ORDER BY id').all().map(row => ({ ...row }))
+      reads: database.prepare(`
+        SELECT issuer, subject, checkedAt, failed.readId IS NOT NULL AS unavailable FROM receipt_reads
+        LEFT JOIN receipt_failed_reads AS failed ON failed.readId = receipt_reads.id ORDER BY receipt_reads.id
+      `).all().map(({ unavailable, ...read }) => unavailable ? { ...read, status: 'unavailable' } : read)
     }),
     close: () => database.close()
   };

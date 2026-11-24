@@ -59,6 +59,7 @@ const issues = {
   'payment-pending': 'The biller accepted the payment. Settlement is pending.',
   'receipt-permission': 'Allow a check of this exact record when you are ready.',
   'receipt-pending': 'Waiting for the required receipt from the issuer.',
+  'receipt-unavailable': 'The issuer could not be reached. Check your errands again to retry.',
   'evidence-needed': 'The practice desk has no source for this issuer. Keep the errand open and check with the issuer directly.'
 };
 

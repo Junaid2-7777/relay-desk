@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { openReceiptFixture, practiceReceiptSource } from '../src/receipt-fixture.mjs';
-import { ReceiptPlanError, matchingReceipt, normalizeReceiptPlan, runReceipt } from '../src/receipt.mjs';
+import { ReceiptPlanError, checkReceipt, matchingReceipt, normalizeReceiptPlan, runReceipt } from '../src/receipt.mjs';
 
 const occurredAt = '2026-11-23T11:00:00+05:30';
 const now = new Date('2026-11-23T06:00:00Z');
@@ -80,4 +80,25 @@ test('grant and proof changes are respected and an unavailable issuer stays open
   const unavailable = { ...record, receiptPlan: { ...plan, issuer: 'unavailable' } };
   assert.equal(runReceipt(unavailable, fixture, journal, now).issue, 'evidence-needed');
   assert.equal(fixture.inspect().reads.length, 2);
+});
+
+test('an issuer read cannot retry under a grant that expired after the first attempt', t => {
+  const fixture = setup(t);
+  fixture.setAvailable(practicePlan.issuer, false);
+  const expiresAt = new Date(+now + 1000);
+  const plan = normalizeReceiptPlan(practicePlan, fixture.sources());
+  const record = {
+    status: 'open', receiptPlan: plan, grants: {
+      receipt: { operation: 'receipt', status: 'allowed', revision: 1, expiresAt: expiresAt.toISOString(),
+        scope: { issuer: plan.issuer, subject: plan.subject } }
+    }
+  };
+  const times = [now, expiresAt];
+  const checked = checkReceipt(record, fixture, () => times.shift());
+  assert.equal(checked.issue, 'receipt-permission');
+  assert.equal(checked.receiptProof, null);
+  assert.equal(fixture.inspect().reads.length, 1);
+  assert.equal(fixture.inspect().reads[0].status, 'unavailable');
+  fixture.reset();
+  assert.deepEqual(fixture.read(plan), []);
 });

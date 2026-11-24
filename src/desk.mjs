@@ -77,6 +77,11 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       id TEXT PRIMARY KEY REFERENCES errands (id) ON DELETE CASCADE,
       intent TEXT NOT NULL
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS receipt_checkpoints (
+      errandId TEXT NOT NULL REFERENCES errands(id) ON DELETE CASCADE,
+      checkpointId TEXT NOT NULL,
+      PRIMARY KEY (errandId, checkpointId)
+    ) STRICT;
   `);
   const get = database.prepare('SELECT record FROM errands WHERE id = ?');
   const getSave = database.prepare('SELECT record, intent FROM errands LEFT JOIN errand_saves USING (id) WHERE id = ?');
@@ -93,6 +98,8 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
   }
   const insert = database.prepare('INSERT OR IGNORE INTO errands VALUES (?, ?, ?)');
   const insertSave = database.prepare('INSERT INTO errand_saves VALUES (?, ?)');
+  const seenReceiptCheck = database.prepare('SELECT 1 FROM receipt_checkpoints WHERE errandId = ? AND checkpointId = ?');
+  const rememberReceiptCheck = database.prepare('INSERT INTO receipt_checkpoints VALUES (?, ?)');
   const update = database.prepare('UPDATE errands SET record = ?, revision = ? WHERE id = ? AND revision = ?');
   function revise(record, revision) {
     const next = { ...record, revision: revision + 1 };
@@ -424,7 +431,14 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
         try {
           if (record.refund) {
             updateRefund(record.id, checkpointId);
-          } else if (record.bill || record.visit || record.receiptPlan) {
+          } else if (record.receiptPlan) {
+            changeCase(record.id, current => {
+              if (checkpointId && seenReceiptCheck.get(current.id, checkpointId)) return current;
+              const next = household.receipt.run(current, household.receipt.fixture, clock);
+              if (checkpointId && current.status === 'open') rememberReceiptCheck.run(current.id, checkpointId);
+              return JSON.stringify(next) === JSON.stringify(current) ? current : next;
+            });
+          } else if (record.bill || record.visit) {
             const { run, fixture } = household[record.kind];
             const next = run(record, fixture, journal, clock());
             if (JSON.stringify(next) !== JSON.stringify(record)) revise(next, record.revision);

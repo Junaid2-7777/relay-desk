@@ -71,7 +71,7 @@ async function rehearsal(t) {
     allow: (errand, operation) => request(`/api/errands/${errand.id}/household-access`, {
       revision: errand.revision, operation, choice: 'allowed'
     }),
-    checkpoint: () => request('/api/checkpoint', {}),
+    checkpoint: checkpointId => request('/api/checkpoint', { checkpointId }),
     inspect: () => request('/api/inspect')
   };
 }
@@ -154,6 +154,47 @@ test('R7 rehearsal retains an unsupported errand with its missing evidence and n
   assert.deepEqual(open.grants ?? {}, {});
   assert.deepEqual(provider.inspect().reads, []);
   assert.deepEqual((await desk.inspect()).actions.filter(action => action.errandId === saved.id), []);
+});
+
+test('a disconnected issuer preserves the last successful check and cannot verify a receipt until reconnection', async t => {
+  const desk = await rehearsal(t);
+  const provider = desk.provider(openReceiptFixture);
+  const saved = await desk.save('Check the practice membership on Friday.');
+  const plan = { ...membershipProof, issuer: 'practice-fitness-office' };
+  const configured = await desk.setup(saved, { ...plan, capability: 'receipt' });
+  assert.equal(configured.issue, 'evidence-needed');
+  provider.putSource({ issuer: plan.issuer, label: 'Practice fitness office' });
+  const available = recordFrom(await desk.checkpoint('discover'), saved.id);
+  assert.equal(available.owner, 'Practice fitness office');
+  assert.equal(available.issue, 'receipt-permission');
+  assert.deepEqual(provider.inspect().reads, []);
+  await desk.allow(available, 'receipt');
+  provider.putReceipt({ ...plan, type: 'acknowledgement', status: 'received', occurredAt: monday, id: 'practice-ack' });
+  const waiting = recordFrom(await desk.checkpoint('initial'), saved.id);
+  assert.deepEqual(waiting.receiptCheck, { checkedAt: monday, lastEventAt: monday });
+  provider.setAvailable(plan.issuer, false);
+  provider.putReceipt({ ...plan, id: 'practice-closure', occurredAt: friday });
+  await desk.restart(friday);
+  const failure = recordFrom(await desk.checkpoint('friday-read'), saved.id);
+  assert.equal(failure.issue, 'receipt-unavailable');
+  assert.equal(failure.status, 'open');
+  assert.equal(failure.receiptProof, null);
+  assert.deepEqual(failure.receiptCheck, waiting.receiptCheck);
+  assert.equal(failure.owner, available.owner);
+  assert.equal(failure.checkDate, saved.checkDate);
+  const failedReads = provider.inspect().reads;
+  assert.deepEqual(failedReads.slice(1).map(({ status, issuer, subject }) => [status, issuer, subject]), [
+    ['unavailable', plan.issuer, plan.subject], ['unavailable', plan.issuer, plan.subject]
+  ]);
+  await desk.restart(friday);
+  provider.setAvailable(plan.issuer, true);
+  assert.deepEqual(recordFrom(await desk.checkpoint('friday-read'), saved.id), failure);
+  assert.deepEqual(provider.inspect().reads, failedReads);
+  const recovered = recordFrom(await desk.checkpoint('manual-retry'), saved.id);
+  assert.equal(recovered.status, 'verified');
+  assert.equal(recovered.receiptProof.id, 'practice-closure');
+  assert.deepEqual(recovered.receiptCheck, { checkedAt: friday, lastEventAt: friday });
+  assert.equal(provider.inspect().reads.length, 4);
 });
 
 test('correcting a receipt preserves the original note and renews access only for a changed scope', async t => {
