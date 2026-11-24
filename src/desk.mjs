@@ -65,13 +65,19 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
   database.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA busy_timeout = 3000;
+    PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS errands (
       id TEXT PRIMARY KEY,
       revision INTEGER NOT NULL,
       record TEXT NOT NULL
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS errand_saves (
+      id TEXT PRIMARY KEY REFERENCES errands (id) ON DELETE CASCADE,
+      intent TEXT NOT NULL
+    ) STRICT;
   `);
   const get = database.prepare('SELECT record FROM errands WHERE id = ?');
+  const getSave = database.prepare('SELECT record, intent FROM errands LEFT JOIN errand_saves USING (id) WHERE id = ?');
   const find = id => {
     const errand = readErrand(get.get(id));
     if (!errand) throw new DeskError('This errand could not be found.', 404);
@@ -84,6 +90,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     return household ? { ...parsed, practicePlan: suggestPracticePlan(note, sources), plannerMode: 'fixed-rule' } : parsed;
   }
   const insert = database.prepare('INSERT OR IGNORE INTO errands VALUES (?, ?, ?)');
+  const insertSave = database.prepare('INSERT INTO errand_saves VALUES (?, ?)');
   const update = database.prepare('UPDATE errands SET record = ?, revision = ? WHERE id = ? AND revision = ?');
   function revise(record, revision) {
     const next = { ...record, revision: revision + 1 };
@@ -158,35 +165,53 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
         throw new DeskError('Use a valid save reference.');
       }
       const note = requiredText(input, 'an errand', 4000);
-      const existing = requestId ? readErrand(get.get(requestId)) : null;
-      const reviewed = previewId === undefined ? null : intakePlanner?.reviewed(previewId, note);
-      if (previewId !== undefined && !reviewed && !existing) {
-        throw new DeskError('This suggestion expired or the note changed. Review the note again.', 409);
-      }
-      const proposal = reviewed ?? (previewId !== undefined && existing ? existing :
-        fixedProposal(note, today(), household?.receipt.fixture.sources()));
-      const record = {
-        id: requestId ?? randomUUID(),
-        revision: 1,
-        kind: proposal.kind,
-        goal: requiredText(goal ?? proposal.goal, 'a goal', 4000),
-        note,
-        checkDate: optionalDate(checkDate === undefined ? proposal.checkDate : checkDate),
-        merchantDeadline: null,
-        status: 'open',
-        owner: proposal.kind === 'refund' ? 'Shop' : null,
-        evidence: [],
-        ...(household ? { practiceCase: true, practicePlan: proposal.practicePlan, plannerMode: proposal.plannerMode } : {})
-      };
-      const saved = insert.run(record.id, record.revision, JSON.stringify(record));
-      if (saved.changes) return record;
-      const prior = existing ?? find(record.id);
-      if (record.note !== prior.note || record.goal !== prior.goal || record.checkDate !== prior.checkDate ||
-          (reviewed && prior.practicePlan !== undefined &&
-            (prior.plannerMode !== reviewed.plannerMode || JSON.stringify(prior.practicePlan) !== JSON.stringify(reviewed.practicePlan)))) {
-        throw new DeskError('This errand was already saved. Reload the desk to review it.', 409);
-      }
-      return prior;
+      const requestedGoal = goal == null ? undefined : requiredText(goal, 'a goal', 4000);
+      const requestedDate = checkDate === undefined ? undefined : optionalDate(checkDate);
+      const intent = requestId && createHash('sha256').update(JSON.stringify({
+        note, goal: requestedGoal, checkDate: requestedDate, previewId
+      })).digest('hex');
+      const conflict = () => new DeskError('This errand was already saved. Reload the desk to review it.', 409);
+
+      return transaction(() => {
+        const previous = requestId ? getSave.get(requestId) : undefined;
+        const existing = readErrand(previous);
+        if (previous?.intent) {
+          if (previous.intent !== intent) throw conflict();
+          return existing;
+        }
+
+        const reviewed = previewId === undefined ? null : intakePlanner?.reviewed(previewId, note);
+        if (previewId !== undefined && !reviewed && !existing) {
+          throw new DeskError('This suggestion expired or the note changed. Review the note again.', 409);
+        }
+        const proposal = reviewed ?? (previewId !== undefined && existing ? existing :
+          fixedProposal(note, today(), household?.receipt.fixture.sources()));
+        const record = {
+          id: requestId ?? randomUUID(),
+          revision: 1,
+          kind: proposal.kind,
+          goal: requestedGoal ?? requiredText(proposal.goal, 'a goal', 4000),
+          note,
+          checkDate: requestedDate === undefined ? optionalDate(proposal.checkDate) : requestedDate,
+          merchantDeadline: null,
+          status: 'open',
+          owner: proposal.kind === 'refund' ? 'Shop' : null,
+          evidence: [],
+          ...(household ? { practiceCase: true, practicePlan: proposal.practicePlan, plannerMode: proposal.plannerMode } : {})
+        };
+
+        // Older rows lack a saved request, so compare the fields still in the record.
+        if (existing) {
+          if (record.note !== existing.note || record.goal !== existing.goal || record.checkDate !== existing.checkDate ||
+              (reviewed && existing.practicePlan !== undefined && (existing.plannerMode !== reviewed.plannerMode ||
+                JSON.stringify(existing.practicePlan) !== JSON.stringify(reviewed.practicePlan)))) throw conflict();
+          return existing;
+        }
+
+        if (!insert.run(record.id, record.revision, JSON.stringify(record)).changes) throw conflict();
+        if (requestId) insertSave.run(record.id, intent);
+        return record;
+      });
     },
     edit(id, { goal, checkDate, revision }) {
       const errand = find(id);

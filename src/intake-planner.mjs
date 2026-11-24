@@ -52,7 +52,7 @@ export function createIntakePlanner(candidate) {
       const proposal = await suggest({ note, today, sources: sourceList }, fixed);
       const previewId = randomUUID();
       if (reviews.size >= maximumReviews) reviews.delete(reviews.keys().next().value);
-      reviews.set(previewId, { note, proposal, expiresAt: performance.now() + reviewLifetimeMs });
+      reviews.set(previewId, { note, proposal: structuredClone(proposal), expiresAt: performance.now() + reviewLifetimeMs });
       return { ...proposal, previewId };
     },
     reviewed(previewId, note) {
@@ -62,7 +62,7 @@ export function createIntakePlanner(candidate) {
         reviews.delete(previewId);
         return null;
       }
-      return entry.proposal;
+      return structuredClone(entry.proposal);
     }
   };
 }

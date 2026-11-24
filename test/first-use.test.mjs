@@ -137,12 +137,20 @@ test('editing a saved errand preserves the original note and rejects a stale edi
   assert.deepEqual(inspection.effects, []);
 });
 
-test('a retried save keeps one errand and rejects a different save with the same reference', async (t) => {
-  const { desk } = await startFreshDesk(t);
-  const body = { note, requestId: '553bf795-b0a3-4f15-b10a-9317e8546fdc' };
-  const save = (fields, status) => desk.request('/api/errands', { method: 'POST', body: fields, status });
-  const saved = await save(body);
+test('a retried save keeps one errand across date rollover and edits', async (t) => {
+  const { desk, open } = await startFreshDesk(t);
+  const body = { note: 'Can you check tomorrow?', requestId: '553bf795-b0a3-4f15-b10a-9317e8546fdc' };
+  const saved = await desk.request('/api/errands', { method: 'POST', body });
+  assert.equal(saved.checkDate, '2026-11-24');
+  await desk.close();
+
+  const reopened = await open(friday);
+  const save = (fields, status) => reopened.request('/api/errands', { method: 'POST', body: fields, status });
   assert.deepEqual(await save(body), saved);
+  const edited = await reopened.request(`/api/errands/${saved.id}`, {
+    method: 'PUT', body: { goal: 'Ask for the outcome', checkDate: '2026-11-30', revision: saved.revision }
+  });
+  assert.deepEqual(await save(body), edited);
   await save({ ...body, checkDate: null }, 409);
-  assert.deepEqual((await desk.request('/api/desk')).errands, [saved]);
+  assert.deepEqual((await reopened.request('/api/desk')).errands, [edited]);
 });

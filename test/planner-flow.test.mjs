@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { createIntakePlanner } from '../src/intake-planner.mjs';
 import { practiceReceiptSource } from '../src/receipt-fixture.mjs';
 import { createDeskServer } from '../src/server.mjs';
 
@@ -15,6 +16,16 @@ const proposal = {
     capability: 'receipt', issuer: practiceReceiptSource.issuer, subject: 'practice-member-126', type: 'membership', status: 'closed'
   }
 };
+
+test('reviewed proposals keep their original plan when a caller edits a returned draft', async () => {
+  const planner = createIntakePlanner({ mode: 'recorded-response', propose: () => proposal });
+  const reviewed = await planner.review(note, '2026-11-23', [practiceReceiptSource], { kind: 'errand' });
+  reviewed.practicePlan.subject = 'different-errand';
+  const original = planner.reviewed(reviewed.previewId, note);
+  assert.deepEqual(original.practicePlan, proposal.practicePlan);
+  original.practicePlan.subject = 'another-errand';
+  assert.deepEqual(planner.reviewed(reviewed.previewId, note).practicePlan, proposal.practicePlan);
+});
 
 async function start(t, planner, householdMode = true) {
   const dataDir = await mkdtemp(join(tmpdir(), 'relay-planner-flow-'));
@@ -111,6 +122,24 @@ test('a recorded proposal survives ordinary save without another planner call, p
   await desk.restart();
   assert.deepEqual(await desk.save(confirmed), saved);
   assert.equal(calls.length, 1);
+});
+
+test('saving the original review can be retried after agreeing its plan and restarting', async t => {
+  let candidate = proposal;
+  const desk = await start(t, { mode: 'recorded-response', propose: () => candidate });
+  const { previewId } = await desk.preview(note);
+  const request = { note, previewId, requestId: 'a141b37d-99e1-438a-a224-08cfb5d78b17' };
+  const saved = await desk.save(request);
+  const agreed = await desk.setup(saved, saved.practicePlan);
+  assert.equal(agreed.receiptPlan.subject, saved.practicePlan.subject);
+  assert.deepEqual(await desk.save(request), agreed);
+
+  candidate = { ...proposal, practicePlan: { ...proposal.practicePlan, subject: 'different-member' } };
+  const alternate = await desk.preview(note);
+  await desk.save({ ...request, previewId: alternate.previewId }, 409);
+  await desk.restart();
+  assert.deepEqual(await desk.save(request), agreed);
+  await desk.save({ ...request, previewId: alternate.previewId }, 409);
 });
 
 test('an invalid recorded proposal falls back without carrying an authority field or its value', async t => {
