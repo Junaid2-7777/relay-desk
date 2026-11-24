@@ -5,9 +5,25 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { openActionJournal } from '../src/action-journal.mjs';
-import { seedHousehold } from '../src/household.mjs';
+import { makeGrant, seedHousehold } from '../src/household.mjs';
 import { mondayVisit, openVisitFixture } from '../src/visit-fixture.mjs';
 import { runVisit } from '../src/visit.mjs';
+
+function openVisitJournal(dataDir, find, clock) {
+  const database = new DatabaseSync(join(dataDir, 'desk.sqlite'));
+  const transaction = callback => {
+    database.exec('BEGIN IMMEDIATE');
+    try {
+      const result = callback();
+      database.exec('COMMIT');
+      return result;
+    } catch (error) {
+      database.exec('ROLLBACK');
+      throw error;
+    }
+  };
+  return { journal: openActionJournal(database, find, transaction, clock), close: () => database.close() };
+}
 
 test('reopening after an interrupted retry recovers the original visit before reserving another slot', t => {
   const now = new Date('2026-11-23T09:00:00+05:30');
@@ -21,22 +37,11 @@ test('reopening after an interrupted retry recovers the original visit before re
   });
 
   function withJournal(action) {
-    const database = new DatabaseSync(join(dataDir, 'desk.sqlite'));
-    const transaction = callback => {
-      database.exec('BEGIN IMMEDIATE');
-      try {
-        const result = callback();
-        database.exec('COMMIT');
-        return result;
-      } catch (error) {
-        database.exec('ROLLBACK');
-        throw error;
-      }
-    };
+    const connection = openVisitJournal(dataDir, () => visit, clock);
     try {
-      action(openActionJournal(database, () => visit, transaction, clock));
+      action(connection.journal);
     } finally {
-      database.close();
+      connection.close();
     }
   }
 
@@ -116,6 +121,73 @@ test('a replacement for a proven-absent reservation prevents stale dispatch of t
   assert.deepEqual(native.reservations, [recovered.reservation]);
   assert.equal(native.attempts.filter(attempt => attempt.operation === 'reserve').length, 1);
   assert.deepEqual(runVisit(recovered, fixture, journal, now), recovered);
+});
+
+test('a stale booking runner cannot erase an ambiguous commit when permission is withdrawn', async t => {
+  for (const pause of ['withdraw slots', 'stop tracking']) {
+    await t.test(pause, t => {
+      let now = new Date('2026-11-23T09:00:00+05:30');
+      const clock = () => now;
+      const dataDir = mkdtempSync(join(tmpdir(), 'relay-visit-concurrent-recovery-'));
+      const firstProvider = openVisitFixture({ dataDir, clock });
+      const secondProvider = openVisitFixture({ dataDir, clock });
+      const original = seedHousehold(now, true).find(record => record.kind === 'visit');
+      let current = original;
+      const first = openVisitJournal(dataDir, () => current, clock);
+      const second = openVisitJournal(dataDir, () => current, clock);
+      t.after(() => {
+        first.close();
+        second.close();
+        firstProvider.close();
+        secondProvider.close();
+        rmSync(dataDir, { force: true, recursive: true });
+      });
+      firstProvider.reset();
+      firstProvider.putSlot({
+        ...mondayVisit, id: 'later-alternative', start: '2026-11-24T16:00:00+05:30', end: '2026-11-24T17:00:00+05:30'
+      });
+      const operations = pause === 'stop tracking' ? Object.keys(original.grants) : ['slots'];
+      const setGrants = status => {
+        const grants = { ...current.grants };
+        for (const operation of operations) grants[operation] = makeGrant(operation, original.visit, status, grants[operation], now);
+        current = { ...current, grants };
+      };
+      const delayed = {
+        ...first.journal,
+        prepare(...args) {
+          const intent = first.journal.prepare(...args);
+          if (intent.operation === 'reserve') {
+            secondProvider.failNextReservationReply();
+            current = runVisit(current, secondProvider, second.journal, now);
+            assert.equal(current.issue, 'reservation-unknown');
+            setGrants('withdrawn');
+            if (pause === 'stop tracking') current = { ...current, status: 'stopped' };
+          }
+          return intent;
+        }
+      };
+
+      runVisit(original, firstProvider, delayed, now);
+      const before = firstProvider.inspect();
+      assert.equal(before.reservations.length, 1);
+      assert.equal(before.attempts.filter(item => item.operation === 'reserve').length, 1);
+      const pending = second.journal.latest(original.id, 'reserve').status;
+      const gated = runVisit(current, secondProvider, second.journal, now);
+      if (pause === 'stop tracking') assert.equal(gated, current);
+      assert.deepEqual(firstProvider.inspect().attempts, before.attempts);
+
+      now = new Date('2026-11-24T09:00:00+05:30');
+      current = { ...current, status: 'open' };
+      setGrants('allowed');
+      const recovered = runVisit(current, secondProvider, second.journal, now);
+      const after = firstProvider.inspect();
+      assert.deepEqual(after.reservations, before.reservations);
+      assert.equal(pending, 'unknown');
+      assert.equal(recovered.status, 'verified');
+      assert.deepEqual(recovered.reservation, before.reservations[0]);
+      assert.equal(after.calendar.filter(event => event.reservationId).length, 1);
+    });
+  }
 });
 
 test('appointment writes require permission inside their provider transaction', async t => {

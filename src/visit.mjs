@@ -222,8 +222,8 @@ export function runVisit(record, fixture, journal, now) {
       return { status: 'blocked', reason: 'reservation-superseded' };
     }
     if (!permittedAtDispatch(record, current, bookingGrants, +(currentTime ?? instant))) {
-      journal.mark(key, 'blocked');
-      return { status: 'blocked', reason: 'permission' };
+      // A different runner may have dispatched this intent before access changed.
+      return { status: 'unknown' };
     }
     const attempt = fixture.reserve(payload, fresh => {
       const commitTime = +readClock();
