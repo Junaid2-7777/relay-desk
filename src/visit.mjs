@@ -199,7 +199,8 @@ function runCalendar(record, reservation, fixture, journal, instant) {
   const result = dispatchVisit(journal, record, 'calendar', key, { key, reservationId: reservation.id }, (current, payload, now, readClock) => {
     if (!permittedAtDispatch(record, current, calendarGrants, +(now ?? instant)) ||
         (current.conflictChoice?.choice === 'handle' && current.conflictChoice.reservationId === reservation.id)) {
-      return { status: 'blocked', reason: 'permission' };
+      // No current authority to establish whether another runner already wrote the entry.
+      return { status: 'unchecked' };
     }
     // Hold the same desk lock for this lookup and write. Another process may have
     // committed the entry after this runner prepared its intent.
@@ -207,35 +208,33 @@ function runCalendar(record, reservation, fixture, journal, instant) {
       fixture.calendarByReservation(reservation.id, authorize));
     if (native !== null) {
       const existing = calendarProof(native, reservation);
+      journal.mark(key, existing ? 'recorded' : 'unknown');
       return existing ? { status: 'already-recorded', event: existing } : { status: 'unknown' };
     }
+    let attempt;
     try {
-      return fixture.addToCalendar(payload, fresh =>
+      attempt = fixture.addToCalendar(payload, fresh =>
         permittedAtDispatch(record, current, calendarGrants, +readClock()) &&
         fresh.reservationId === reservation.id && sameFields(eventFields, fresh, reservation));
     } catch {
-      return { status: 'unknown' };
+      attempt = { status: 'unknown' };
     }
+    const status = attempt?.status;
+    // Even a successful reply still needs an independent calendar readback.
+    journal.mark(key, ['blocked', 'conflict', 'failed'].includes(status) ? status : 'unknown');
+    return attempt;
   });
   if (result?.status === 'already-recorded') {
-    journal.mark(key, 'recorded');
     return presentCalendar(result.event, previousConflict);
   }
-  if (result?.status === 'unknown') {
-    journal.mark(key, 'unknown');
+  if (result?.status === 'unknown' || result?.status === 'unchecked') {
     return { ...booked, issue: 'calendar-unknown' };
   }
-  if (result?.status === 'conflict') {
-    journal.mark(key, 'conflict');
-    return conflicting(result.interval, null, null);
-  }
-  if (result?.status !== 'recorded') {
-    journal.mark(key, result?.status === 'blocked' ? 'blocked' : 'failed');
-    return booked;
-  }
+  if (result?.status === 'conflict') return conflicting(result.interval, null, null);
+  if (result?.status !== 'recorded') return booked;
   const event = calendarProof(readUnderGrant(record, 'calendar', journal, instant, authorize =>
     fixture.calendarByReservation(reservation.id, authorize)), reservation);
-  journal.mark(key, event ? 'recorded' : 'unknown');
+  if (event) journal.mark(key, 'recorded');
   return event ? presentCalendar(event, null) : { ...booked, issue: 'calendar-unknown' };
 }
 

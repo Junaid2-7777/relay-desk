@@ -348,13 +348,14 @@ test('calendar readback reports a protected overlap added just after the calenda
   assert.deepEqual(fixture.inspect().attempts, native.attempts);
 });
 
-test('two runners recover a committed calendar entry without a second calendar write attempt', t => {
+function runCalendarRecoveryRace(t, withdrawAccess) {
   const clock = () => new Date('2026-11-23T09:00:00+05:30');
   const dataDir = mkdtempSync(join(tmpdir(), 'relay-calendar-recovery-'));
   const fixture = openVisitFixture({ dataDir, clock });
   const record = seedHousehold(clock(), true).find(item => item.kind === 'visit');
-  const first = openVisitJournal(dataDir, () => record, clock);
-  const second = openVisitJournal(dataDir, () => record, clock);
+  let current = record;
+  const first = openVisitJournal(dataDir, () => current, clock);
+  const second = openVisitJournal(dataDir, () => current, clock);
   t.after(() => {
     first.close();
     second.close();
@@ -370,18 +371,36 @@ test('two runners recover a committed calendar entry without a second calendar w
   const interleaved = { ...first.journal, prepare(id, operation, ...args) {
     if (operation === 'calendar' && !interrupted) {
       interrupted = runVisit(record, lostReply, second.journal, clock());
+      if (withdrawAccess) current = { ...interrupted, grants: { ...record.grants,
+        calendar: makeGrant('calendar', record.visit, 'withdrawn', record.grants.calendar, clock()) } };
     }
     return first.journal.prepare(id, operation, ...args);
   } };
-  const recovered = runVisit(record, fixture, interleaved, clock());
+  let recovered = runVisit(record, fixture, interleaved, clock());
   assert.equal(interrupted.issue, 'calendar-unknown');
   assert.equal(interrupted.calendarEvent, null);
+  if (withdrawAccess) {
+    assert.equal(recovered.issue, 'calendar-unknown');
+    assert.equal(first.journal.latest(record.id, 'calendar').status, 'unknown');
+    assert.equal(runVisit(current, fixture, first.journal, clock()).issue, 'calendar-unknown');
+    current = { ...current, grants: { ...current.grants,
+      calendar: makeGrant('calendar', record.visit, 'allowed', current.grants.calendar, clock()) } };
+    recovered = runVisit(current, fixture, first.journal, clock());
+  }
   assert.equal(recovered.status, 'verified');
   assert.equal(recovered.calendarEvent.reservationId, interrupted.reservation.id);
   assert.equal(first.journal.latest(record.id, 'calendar').status, 'recorded');
   const native = fixture.inspect();
   assert.deepEqual(native.attempts.map(row => row.operation), ['reserve', 'calendar.add']);
   assert.equal(native.calendar.filter(event => event.reservationId).length, 1);
+}
+
+test('two runners recover a committed calendar entry without a second calendar write attempt', t => {
+  runCalendarRecoveryRace(t, false);
+});
+
+test('a stale runner preserves an unresolved calendar write when its permission is withdrawn', t => {
+  runCalendarRecoveryRace(t, true);
 });
 
 test('a legacy offer without an offset cannot take precedence over a valid zoned booking', t => {
