@@ -79,7 +79,7 @@ function presentPayment(record, payment, fixture, journal, now) {
   const matching = readUnderGrant(record, payment, journal, now, authorize => fixture.readSettlement(payment.paymentRef, authorize));
   const settledAt = evidenceInstant(matching?.settledAt);
   const settlement = matching?.status === 'settled' && matching.paymentRef === payment.paymentRef &&
-    sameInvoice(matching, payment) && settledAt >= evidenceInstant(payment.acceptedAt) ? matching : null;
+    sameInvoice(matching, payment) && settledAt >= evidenceInstant(payment.acceptedAt) && settledAt <= +now ? matching : null;
   const approval = record.approval?.status === 'allowed' && sameInvoice(record.approval, payment)
     ? { ...record.approval, status: 'consumed' }
     : record.approval;

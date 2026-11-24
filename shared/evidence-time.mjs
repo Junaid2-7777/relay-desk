@@ -18,13 +18,13 @@ export function kolkataDay(date) {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-export function latestEvidence(records, timestampField, previous = null) {
+export function latestEvidence(records, timestampField, previous = null, asOf = Infinity) {
   const previousAt = evidenceInstant(previous?.[timestampField]);
-  let latestAt = Number.isFinite(previousAt) ? previousAt : -Infinity;
+  let latestAt = previousAt <= asOf ? previousAt : -Infinity;
   let latest = latestAt === -Infinity ? null : previous;
   for (const record of records) {
     const at = evidenceInstant(record[timestampField]);
-    if (at >= latestAt) {
+    if (at >= latestAt && at <= asOf) {
       latestAt = at;
       latest = record;
     }

@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 import { evidenceInstant, latestEvidence } from '../shared/evidence-time.mjs';
 
-function isPostedCredit(credit, refund) {
+function isPostedCredit(credit, refund, asOf) {
   return typeof credit.id === 'string' && credit.id.length > 0 &&
     credit.account === refund.account && credit.amountMinor === refund.amountMinor &&
     credit.currency === refund.currency && credit.direction === 'incoming' &&
-    credit.status === 'posted' && Number.isFinite(evidenceInstant(credit.postedAt));
+    credit.status === 'posted' && evidenceInstant(credit.postedAt) <= asOf;
 }
 
 function isLinked(credit, refund, links) {
@@ -16,11 +16,11 @@ function isLinked(credit, refund, links) {
   return references.size === 1 && references.has(refund.reference);
 }
 
-export function matchRefundCredit(refund, {credits = [], links = []} = {}) {
+export function matchRefundCredit(refund, {credits = [], links = []} = {}, asOf = Infinity) {
   if (!refund?.reference || !refund.account || !/^[A-Z]{3}$/u.test(refund.currency) ||
       !Number.isSafeInteger(refund.amountMinor) || refund.amountMinor <= 0) return null;
 
-  const matches = credits.filter(credit => isPostedCredit(credit, refund) &&
+  const matches = credits.filter(credit => isPostedCredit(credit, refund, asOf) &&
     (credit.returnReference === refund.reference || isLinked(credit, refund, links)));
   return matches.length === 1 ? matches[0] : null;
 }
@@ -83,7 +83,8 @@ export function checkRefund(record, fixture, now, checkpointId) {
     if (read.status === 'denied') return;
     attempted = true;
     const previous = checks[source];
-    const previousEventAt = Number.isFinite(evidenceInstant(previous?.lastEventAt)) ? previous.lastEventAt : null;
+    const asOf = read.checkedAt ? Date.parse(read.checkedAt) : +now;
+    const previousEventAt = evidenceInstant(previous?.lastEventAt) <= asOf ? previous.lastEventAt : null;
     checks[source] = {
       checkedAt: read.checkedAt ?? previous?.checkedAt ?? null,
       lastEventAt: lastEventAt ?? previousEventAt,
@@ -100,7 +101,7 @@ export function checkRefund(record, fixture, now, checkpointId) {
     if (read.status === 'superseded') return record;
     const merchant = read.records;
     links = merchant?.links ?? [];
-    merchantEvent = latestEvidence(merchant?.events ?? [], 'occurredAt', merchantEvent);
+    merchantEvent = latestEvidence(merchant?.events ?? [], 'occurredAt', merchantEvent, read.checkedAt ? Date.parse(read.checkedAt) : +now);
     saveCheck('merchant', read, merchantEvent?.occurredAt);
   }
   if (allowed('credits')) {
@@ -110,8 +111,9 @@ export function checkRefund(record, fixture, now, checkpointId) {
     });
     if (read.status === 'superseded') return record;
     const credits = read.records;
-    if (credits) credit = matchRefundCredit(subject, { credits, links });
-    const lastEventAt = latestEvidence(credits ?? [], 'postedAt', { postedAt: checks.credits?.lastEventAt })?.postedAt;
+    const asOf = read.checkedAt ? Date.parse(read.checkedAt) : +now;
+    if (credits) credit = matchRefundCredit(subject, { credits, links }, asOf);
+    const lastEventAt = latestEvidence(credits ?? [], 'postedAt', { postedAt: checks.credits?.lastEventAt }, asOf)?.postedAt;
     saveCheck('credits', read, lastEventAt);
   }
   if (!attempted) return record;

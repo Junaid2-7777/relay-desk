@@ -27,6 +27,8 @@ Use Node.js 24 or newer. There are no third-party runtime packages to install.
 
 If a practice reset is interrupted, the practice desk stops serving outcomes and running checks until a reset finishes. Stop any running practice process, run the same `npm run reset` command with your usual flags and data directory, then reload the browser. Saved private notes and drafts survive practice reset, including when both desks use the same data directory.
 
+The desk uses its check time to read dated evidence. Publishing a Tuesday credit, receipt or settlement while the desk is on Monday leaves that outcome pending. Reopen the same practice directory with Tuesday’s `RELAY_CLOCK` and check again to use the dated record. A provider can confirm a future appointment today.
+
 The practice desk exposes `/api/fixture/refund`, `/api/fixture/visit` and `/api/fixture/bill` for native provider records. `/api/inspect` shows the local errands, permissions and prepared actions. Browser checks covered the first-use flow by keyboard, a 320 CSS pixel viewport and 200% text size in Chromium. The practice brief was also exercised by keyboard, including deferring a payment and verifying a matching synthetic settlement. A 320 CSS pixel Chrome check with a loopback n8n test server covered the note-sharing notice, keyboard review, saving, fallback and reloading after a failed desk request.
 
 Use **Add errand** in the practice brief to reach the note field or return to an open review. Chrome keyboard checks at mobile and desktop widths confirmed that the link kept the draft fields, and that declining credit access while allowing only calendar availability produced one free/busy read and zero ledger reads, bookings or payments.

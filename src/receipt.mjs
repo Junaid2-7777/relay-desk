@@ -24,10 +24,10 @@ export function sameReceiptProof(left, right) {
   return sameReceiptScope(left, right) && left.type === right.type && left.status === right.status;
 }
 
-export function matchingReceipt(plan, receipts) {
+export function matchingReceipt(plan, receipts, asOf = Infinity) {
   if (plan?.available !== true) return null;
   const matches = receipts.filter(receipt => sameReceiptProof(plan, receipt) &&
-    isReceiptIdentifier(receipt.id) && Number.isFinite(evidenceInstant(receipt.occurredAt)));
+    isReceiptIdentifier(receipt.id) && evidenceInstant(receipt.occurredAt) <= asOf);
   return matches.length === 1 ? matches[0] : null;
 }
 
@@ -60,9 +60,10 @@ export function checkReceipt(record, fixture, readClock, checkpointId) {
     if (read.status === 'unavailable') continue;
     if (read.status === 'denied') return { ...updated, issue: 'receipt-permission' };
     if (read.status === 'superseded') return record;
-    const proof = matchingReceipt(plan, read.receipts);
+    const asOf = Date.parse(read.checkedAt);
+    const proof = matchingReceipt(plan, read.receipts, asOf);
     const previous = { occurredAt: record.receiptCheck?.lastEventAt };
-    const lastEventAt = latestEvidence(read.receipts, 'occurredAt', previous)?.occurredAt ?? null;
+    const lastEventAt = latestEvidence(read.receipts, 'occurredAt', previous, asOf)?.occurredAt ?? null;
     return {
       ...updated,
       status: proof ? 'verified' : 'open',

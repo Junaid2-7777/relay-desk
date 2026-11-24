@@ -4,7 +4,7 @@ import { activeGrant, makeGrant, scopes, seedHousehold } from '../src/household.
 import { mondayRefund } from '../src/refund-fixture.mjs';
 import { matchRefundCredit, refundAccess, refundGrant, refundScope, refundSources } from '../src/refund.mjs';
 import { mondayVisit } from '../src/visit-fixture.mjs';
-import { zonedInstant } from '../shared/evidence-time.mjs';
+import { evidenceInstant, latestEvidence, zonedInstant } from '../shared/evidence-time.mjs';
 
 export const morning = '2026-11-23T09:00:00+05:30';
 export const cutoff = 'first-morning-checkpoint';
@@ -272,9 +272,9 @@ export function createManualMorning(fixtures, warm, actions = reportActions(), c
     const read = lookup('merchant-refund-thread', () => refundFixture.readForCheck('merchant',
       refundScope(mondayRefund, 'merchant'), { authorize: at => canRefund('merchant', at) }));
     if (read.status !== 'checked') throw new ManualStepError('The shop return thread could not be read.');
-    const { links, events } = read.records;
-    merchantLinks = links;
-    if (events.length) refund.merchantEvent = events.at(-1);
+    merchantLinks = read.records.links;
+    const events = read.records.events.filter(event => evidenceInstant(event.occurredAt) <= Date.parse(read.checkedAt));
+    refund.merchantEvent = latestEvidence(events, 'occurredAt', refund.merchantEvent);
     return { reference: mondayRefund.reference, events: events.map(event => pick(['type', 'occurredAt'], event)) };
   }
 
@@ -285,7 +285,7 @@ export function createManualMorning(fixtures, warm, actions = reportActions(), c
       ...refundScope(mondayRefund, 'credits'), linkedCreditIds
     }, { authorize: at => canRefund('credits', at) && (!linkedCreditIds.length || canRefund('merchant', at)) }));
     if (read.status !== 'checked') throw new ManualStepError('Incoming credits for this return could not be read.');
-    const match = matchRefundCredit(mondayRefund, { credits: read.records, links: linkedCreditIds.length ? merchantLinks : [] });
+    const match = matchRefundCredit(mondayRefund, { credits: read.records, links: linkedCreditIds.length ? merchantLinks : [] }, Date.parse(read.checkedAt));
     refund.status = match ? 'verified' : 'open';
     refund.evidence = match ? [match] : [];
     return { refund: refund.status, reference: mondayRefund.reference, match: pick(['id', 'amountMinor', 'currency', 'postedAt'], match) };

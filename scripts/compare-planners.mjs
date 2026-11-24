@@ -137,7 +137,8 @@ function creditMatches(record, native) {
   const merchant = successfulRefundRead(record, native, 'merchant', ['issuer', 'thread', 'reference']);
   return native.credits.filter(credit => {
     if (credit.status !== 'posted' || credit.direction !== 'incoming' || credit.account !== ledger.account ||
-        credit.amountMinor !== amountMinor || credit.currency !== currency || !evidenceTimestamp(credit.postedAt)) {
+        credit.amountMinor !== amountMinor || credit.currency !== currency || !evidenceTimestamp(credit.postedAt) ||
+        Date.parse(credit.postedAt) > Date.parse(record.checks.credits.checkedAt)) {
       return false;
     }
     if (credit.returnReference === reference) return true;
@@ -193,12 +194,15 @@ export function matchedReadbacks(record, native) {
       proof.settlement = Boolean(settlement && settlement.status === 'settled' && sameFields(settlement, payment, paymentFields) &&
         evidenceTimestamp(settlement.settledAt) && Date.parse(settlement.settledAt) >= Date.parse(payment.acceptedAt) &&
         isDeepStrictEqual(settlement, record.settlement) &&
-        hasRead(native.bill, 'settlement', { paymentRef: payment.paymentRef }));
+        native.bill.reads?.some(read => read.source === 'settlement' &&
+          isDeepStrictEqual(read.scope, { paymentRef: payment.paymentRef }) && !read.unavailable &&
+          evidenceTimestamp(read.checkedAt) && Date.parse(read.checkedAt) >= Date.parse(settlement.settledAt)));
     }
   }
   if (record.receiptPlan && record.status === 'verified') {
     const matches = native.receipt.receipts.filter(row => sameFields(row, record.receiptPlan, ['issuer', 'subject', 'type', 'status']) &&
-      isReceiptIdentifier(row.id) && evidenceTimestamp(row.occurredAt));
+      isReceiptIdentifier(row.id) && evidenceTimestamp(row.occurredAt) &&
+      Date.parse(row.occurredAt) <= Date.parse(record.receiptCheck?.checkedAt));
     const latestRead = native.receipt.reads.findLast(read => sameFields(read, record.receiptPlan, ['issuer', 'subject']));
     proof.receipt = matches.length === 1 && isDeepStrictEqual(pickFields(matches[0], receiptFields), record.receiptProof) &&
       Boolean(latestRead && !Object.hasOwn(latestRead, 'status') && latestRead.checkedAt === record.receiptCheck?.checkedAt);

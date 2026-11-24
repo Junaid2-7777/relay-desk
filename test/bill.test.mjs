@@ -138,6 +138,8 @@ test('the revised bill requires an exact exception and only matching settlement 
   desk.fixture.putSettlement({ ...receipt, payee: 'wrong-payee' });
   assert.equal(desk.check().status, 'accepted');
   desk.fixture.putSettlement(receipt);
+  assert.equal(desk.check().status, 'accepted');
+  desk.moveTime(new Date(later));
   assert.deepEqual(desk.check().settlement, receipt);
   assert.equal(desk.record.status, 'verified');
   assert.equal(desk.fixture.inspect().payments.length, 1);
@@ -255,5 +257,7 @@ test('payment remains pending when settlement time is ambiguous, invalid, or pre
   }
 
   desk.fixture.putSettlement({ ...receipt, settledAt: later });
+  assert.equal(desk.check().status, 'accepted');
+  desk.moveTime(new Date(later));
   assert.equal(desk.check().status, 'verified');
 });

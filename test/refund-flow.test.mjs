@@ -289,6 +289,7 @@ test('refund activity follows issuer instants and ignores malformed evidence', a
   desk.fixture.putCredit(candidate('older-credit', { amountMinor: 1000, postedAt: earlier }));
   desk.fixture.putCredit(candidate('latest-credit', { amountMinor: 1000, postedAt: latest }));
 
+  desk.moveTime(friday);
   const checked = await desk.check();
   assert.deepEqual(checked.merchantEvent, lastUpdate);
   assert.equal(checked.checks.merchant.lastEventAt, latest);

@@ -7,8 +7,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
+import { matchedReadbacks } from '../scripts/compare-planners.mjs';
 import { mondayBill, openBillFixture } from '../src/bill-fixture.mjs';
 import { openOutboxFixture } from '../src/outbox-fixture.mjs';
+import { openReceiptFixture, practiceReceiptSource } from '../src/receipt-fixture.mjs';
 import { mondayRefund, openRefundFixture } from '../src/refund-fixture.mjs';
 import { createDeskServer } from '../src/server.mjs';
 import { mondayVisit, openVisitFixture } from '../src/visit-fixture.mjs';
@@ -63,6 +65,7 @@ async function startHousehold(t, warm = true) {
 
   await open(true);
   return {
+    request,
     async restart(nextTime = time, reset = false) {
       time = nextTime;
       await open(reset);
@@ -118,6 +121,49 @@ function errand(brief, kind) {
   assert.ok(record, `Missing ${kind} errand`);
   return record;
 }
+
+test('posted credits, issuer receipts and settlements verify only once their event time arrives', async t => {
+  const household = await startHousehold(t);
+  const request = { note: 'Look for confirmation from the practice library.' };
+  const saved = await household.request('/api/errands', request, 201);
+  const receipt = { issuer: practiceReceiptSource.issuer, subject: 'library-record-12', type: 'receipt', status: 'closed' };
+  const planned = await household.request(`/api/errands/${saved.id}/setup`, { revision: saved.revision, capability: 'receipt', ...receipt });
+  await household.access(planned, 'receipt', 'allowed');
+  const bill = errand(await household.checkpoint(), 'bill');
+  await household.billChoice(bill, 'approve');
+  const paid = errand(await household.checkpoint(), 'bill').payment;
+  const future = '2026-11-24T09:00:00+05:30';
+  const credit = { id: 'tuesday-credit', ...mondayRefund, returnReference: mondayRefund.reference,
+    direction: 'incoming', status: 'posted', postedAt: future };
+  const refund = household.provider(openRefundFixture);
+  refund.putCredit(credit);
+  refund.putEvent({ id: 'tuesday-update', issuer: mondayRefund.merchantIssuer, thread: mondayRefund.thread,
+    returnReference: mondayRefund.reference, occurredAt: future, type: 'promise' });
+  household.provider(openReceiptFixture).putReceipt({ ...receipt, id: 'tuesday-closure', occurredAt: future });
+  household.provider(openBillFixture).putSettlement({ ...paid, status: 'settled', settledAt: future });
+
+  const early = await household.checkpoint();
+  const earlyRefund = errand(early, 'refund');
+  assert.equal(earlyRefund.status, 'open');
+  assert.notEqual(earlyRefund.merchantEvent?.id, 'tuesday-update');
+  assert.notEqual(earlyRefund.checks.credits.lastEventAt, future);
+  assert.equal(early.errands.find(item => item.id === saved.id).receiptCheck.lastEventAt, null);
+  assert.equal(early.errands.find(item => item.id === saved.id).status, 'open');
+  assert.equal(errand(early, 'bill').status, 'accepted');
+  const earlyNative = {};
+  for (const source of ['bill', 'receipt', 'refund']) earlyNative[source] = await household.native(source);
+  household.moveTime(tuesday);
+  const timely = await household.checkpoint();
+  assert.equal(errand(timely, 'refund').evidence[0].reference, credit.id);
+  assert.equal(timely.errands.find(item => item.id === saved.id).receiptProof.id, 'tuesday-closure');
+  assert.equal(errand(timely, 'bill').settlement.settledAt, future);
+  assert.equal((await household.native('bill')).attempts.length, 1);
+  const futureRefund = { ...errand(timely, 'refund'), checks: earlyRefund.checks };
+  const futureReceipt = { ...timely.errands.find(item => item.id === saved.id), receiptCheck: { checkedAt: monday } };
+  assert.equal(matchedReadbacks(futureRefund, earlyNative).credit, false);
+  assert.equal(matchedReadbacks(futureReceipt, earlyNative).receipt, false);
+  assert.equal(matchedReadbacks(errand(timely, 'bill'), earlyNative).settlement, false);
+});
 
 test('the warm household brings one bill decision, books the free visit and keeps the refund open', async t => {
   const household = await startHousehold(t);
