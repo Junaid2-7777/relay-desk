@@ -58,6 +58,14 @@ export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
     CREATE TABLE IF NOT EXISTS receipt_failed_reads (
       readId INTEGER PRIMARY KEY REFERENCES receipt_reads(id) ON DELETE CASCADE
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS receipt_checkpoint_reads (
+      checkpoint TEXT NOT NULL,
+      attempt INTEGER NOT NULL CHECK (attempt IN (1, 2)),
+      binding TEXT NOT NULL,
+      readId INTEGER NOT NULL UNIQUE REFERENCES receipt_reads(id) ON DELETE CASCADE,
+      receipts TEXT,
+      PRIMARY KEY (checkpoint, attempt)
+    ) STRICT;
   `);
   const insertSource = database.prepare(`
     INSERT INTO receipt_sources VALUES (?, ?)
@@ -77,6 +85,12 @@ export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
   const insertRead = database.prepare('INSERT INTO receipt_reads (issuer, subject, checkedAt) VALUES (?, ?, ?)');
   const offline = database.prepare('SELECT 1 FROM receipt_offline WHERE issuer = ?');
   const failRead = database.prepare('INSERT INTO receipt_failed_reads VALUES (?)');
+  const priorCheck = database.prepare(`
+    SELECT saved.binding, saved.receipts, native.issuer, native.subject, native.checkedAt
+    FROM receipt_checkpoint_reads AS saved JOIN receipt_reads AS native ON native.id = saved.readId
+    WHERE saved.checkpoint = ? AND saved.attempt = ?
+  `);
+  const saveCheck = database.prepare('INSERT INTO receipt_checkpoint_reads VALUES (?, ?, ?, ?, ?)');
   const sources = () => selectSources.all().map(row => ({ ...row }));
 
   function transaction(action) {
@@ -98,6 +112,31 @@ export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
     const source = { issuer: receiptIdentifier(issuer, 'an issuer identifier'), label: label.trim() };
     insertSource.run(source.issuer, source.label);
     return source;
+  }
+
+  function scopedRead(scope, authorize, replay) {
+    const issuer = receiptIdentifier(scope.issuer, 'an issuer identifier');
+    const subject = receiptIdentifier(scope.subject, 'a subject reference');
+    return transaction(() => {
+      if (authorize && authorize() !== true) return { status: 'denied' };
+      if (!issuerExists.get(issuer)) throw new ReceiptPlanError('This issuer has no registered receipt source.');
+      if (replay) {
+        const prior = priorCheck.get(replay.key, replay.attempt);
+        if (prior) {
+          if (prior.issuer !== issuer || prior.subject !== subject || prior.binding !== replay.binding) {
+            return { status: 'superseded' };
+          }
+          return prior.receipts === null ? { status: 'unavailable' }
+            : { status: 'checked', receipts: JSON.parse(prior.receipts), checkedAt: prior.checkedAt };
+        }
+      }
+      const checkedAt = clock().toISOString();
+      const { lastInsertRowid: readId } = insertRead.run(issuer, subject, checkedAt);
+      const receipts = offline.get(issuer) ? null : scopedReceipts.all(issuer, subject).map(row => ({ ...row }));
+      if (receipts === null) failRead.run(readId);
+      if (replay) saveCheck.run(replay.key, replay.attempt, replay.binding, readId, receipts === null ? null : JSON.stringify(receipts));
+      return receipts === null ? { status: 'unavailable' } : { status: 'checked', receipts, checkedAt };
+    });
   }
 
   return {
@@ -122,19 +161,13 @@ export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
       return { issuer, id, subject, type, status, occurredAt: receipt.occurredAt };
     },
     read(scope) {
-      const issuer = receiptIdentifier(scope.issuer, 'an issuer identifier');
-      const subject = receiptIdentifier(scope.subject, 'a subject reference');
-      const receipts = transaction(() => {
-        if (!issuerExists.get(issuer)) throw new ReceiptPlanError('This issuer has no registered receipt source.');
-        const attempt = insertRead.run(issuer, subject, clock().toISOString());
-        if (offline.get(issuer)) {
-          failRead.run(attempt.lastInsertRowid);
-          return null;
-        }
-        return scopedReceipts.all(issuer, subject).map(row => ({ ...row }));
-      });
-      if (receipts === null) throw new ReceiptFeedUnavailable('The receipt issuer could not be reached.');
-      return receipts;
+      const read = scopedRead(scope);
+      if (read.status === 'unavailable') throw new ReceiptFeedUnavailable('The receipt issuer could not be reached.');
+      return read.receipts;
+    },
+    readForCheck(scope, { authorize, replay }) {
+      if (typeof authorize !== 'function') throw new ReceiptPlanError('Confirm the current grant before reading this receipt.');
+      return scopedRead(scope, authorize, replay);
     },
     sources,
     reset() {

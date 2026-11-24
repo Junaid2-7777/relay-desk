@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import { evidenceInstant, latestEvidence } from '../shared/evidence-time.mjs';
 import { activeGrant } from './household.mjs';
-import { isReceiptIdentifier, receiptIdentifier, ReceiptFeedUnavailable } from './receipt-fixture.mjs';
+import { isReceiptIdentifier, receiptIdentifier } from './receipt-fixture.mjs';
 
 export { ReceiptPlanError } from './receipt-fixture.mjs';
 
@@ -35,32 +36,40 @@ function readGrant(record, plan, now) {
   return grant?.operation === 'receipt' && activeGrant(grant, now) && sameReceiptScope(grant.scope, plan) ? grant : null;
 }
 
+const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+
 // The caller holds the errand lock from the grant check through the saved result.
-export function checkReceipt(record, fixture, readClock) {
+export function checkReceipt(record, fixture, readClock, checkpointId) {
   if (record.status === 'verified' || record.status === 'stopped') return record;
   const sources = fixture.sources();
   const plan = normalizeReceiptPlan(record.receiptPlan, sources);
   const owner = sources.find(source => source.issuer === plan.issuer)?.label ?? record.owner ?? plan.issuer;
   const updated = { ...record, owner, receiptPlan: plan, status: 'open', receiptProof: null };
   if (!plan.available) return { ...updated, issue: 'evidence-needed' };
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const now = readClock();
-    if (!readGrant(record, plan, now)) return { ...updated, issue: 'receipt-permission' };
-    try {
-      const receipts = fixture.read({ issuer: plan.issuer, subject: plan.subject });
-      const proof = matchingReceipt(plan, receipts);
-      const previous = { occurredAt: record.receiptCheck?.lastEventAt };
-      const lastEventAt = latestEvidence(receipts, 'occurredAt', previous)?.occurredAt ?? null;
-      return {
-        ...updated,
-        status: proof ? 'verified' : 'open',
-        issue: proof ? null : 'receipt-pending',
-        receiptProof: proof,
-        receiptCheck: { checkedAt: now.toISOString(), lastEventAt }
-      };
-    } catch (error) {
-      if (!(error instanceof ReceiptFeedUnavailable)) throw error;
-    }
+  const grant = readGrant(record, plan, readClock());
+  if (!grant) return { ...updated, issue: 'receipt-permission' };
+  const replay = checkpointId === undefined ? null : {
+    key: fingerprint([record.id, checkpointId]),
+    binding: fingerprint([record.revision, plan.issuer, plan.subject, plan.type, plan.status, grant.revision, grant.expiresAt])
+  };
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const read = fixture.readForCheck({ issuer: plan.issuer, subject: plan.subject }, {
+      authorize: () => Boolean(readGrant(record, plan, readClock())),
+      ...(replay ? { replay: { ...replay, attempt } } : {})
+    });
+    if (read.status === 'unavailable') continue;
+    if (read.status === 'denied') return { ...updated, issue: 'receipt-permission' };
+    if (read.status === 'superseded') return record;
+    const proof = matchingReceipt(plan, read.receipts);
+    const previous = { occurredAt: record.receiptCheck?.lastEventAt };
+    const lastEventAt = latestEvidence(read.receipts, 'occurredAt', previous)?.occurredAt ?? null;
+    return {
+      ...updated,
+      status: proof ? 'verified' : 'open',
+      issue: proof ? null : 'receipt-pending',
+      receiptProof: proof,
+      receiptCheck: { checkedAt: read.checkedAt, lastEventAt }
+    };
   }
   return { ...updated, issue: 'receipt-unavailable' };
 }

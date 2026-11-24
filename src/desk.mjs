@@ -506,7 +506,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
           } else if (record.receiptPlan) {
             changeCase(record.id, current => {
               if (checkpointId && seenReceiptCheck.get(current.id, checkpointId)) return current;
-              const next = household.receipt.run(current, household.receipt.fixture, clock);
+              const next = household.receipt.run(current, household.receipt.fixture, clock, checkpointId);
               if (checkpointId && current.status === 'open') rememberReceiptCheck.run(current.id, checkpointId);
               return JSON.stringify(next) === JSON.stringify(current) ? current : next;
             });

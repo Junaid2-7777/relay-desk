@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
+import { openDesk } from '../src/desk.mjs';
 import { openReceiptFixture, practiceReceiptSource } from '../src/receipt-fixture.mjs';
 import { ReceiptPlanError, checkReceipt, matchingReceipt, normalizeReceiptPlan, runReceipt } from '../src/receipt.mjs';
 
@@ -93,7 +95,7 @@ test('an issuer read cannot retry under a grant that expired after the first att
         scope: { issuer: plan.issuer, subject: plan.subject } }
     }
   };
-  const times = [now, expiresAt];
+  const times = [now, now, expiresAt];
   const checked = checkReceipt(record, fixture, () => times.shift());
   assert.equal(checked.issue, 'receipt-permission');
   assert.equal(checked.receiptProof, null);
@@ -101,4 +103,123 @@ test('an issuer read cannot retry under a grant that expired after the first att
   assert.equal(fixture.inspect().reads[0].status, 'unavailable');
   fixture.reset();
   assert.deepEqual(fixture.read(plan), []);
+});
+
+test('a receipt grant expiring as the provider starts the read prevents even the native lookup', t => {
+  const fixture = setup(t);
+  fixture.putReceipt(closure);
+  const expiresAt = new Date(+now + 1000);
+  let time = now;
+  const plan = normalizeReceiptPlan(practicePlan, fixture.sources());
+  const record = {
+    status: 'open', receiptPlan: plan, grants: {
+      receipt: { operation: 'receipt', status: 'allowed', revision: 1, expiresAt: expiresAt.toISOString(),
+        scope: { issuer: plan.issuer, subject: plan.subject } }
+    }
+  };
+  const delayed = {
+    ...fixture,
+    readForCheck(...args) {
+      time = expiresAt;
+      return fixture.readForCheck(...args);
+    }
+  };
+  const checked = checkReceipt(record, delayed, () => time);
+  assert.equal(checked.issue, 'receipt-permission');
+  assert.equal(checked.receiptProof, null);
+  assert.deepEqual(fixture.inspect().reads, []);
+});
+
+function interruptedDesk(t) {
+  const dataDir = mkdtempSync(join(tmpdir(), 'relay-interrupted-receipt-'));
+  let time = now;
+  const clock = () => time;
+  const fixture = openReceiptFixture({ dataDir, clock });
+  fixture.reset();
+  const household = { receipt: { fixture, run: checkReceipt } };
+  const open = () => openDesk({ dataDir, clock, household });
+  let desk = open();
+  t.after(() => {
+    desk.close();
+    fixture.close();
+    rmSync(dataDir, { force: true, recursive: true });
+  });
+  const saved = desk.save({ note: 'Check my practice membership.' });
+  const plan = desk.setup(saved.id, { ...practicePlan, revision: saved.revision, capability: 'receipt' });
+  const record = desk.householdAccess(saved.id, { revision: plan.revision, operation: 'receipt', choice: 'allowed' });
+  const interruptedCheckpoint = 'interrupted-native-check';
+  return {
+    fixture, record,
+    get desk() { return desk; },
+    moveTime(next) { time = next; },
+    interruptAndReopen() {
+      const injector = new DatabaseSync(join(dataDir, 'desk.sqlite'));
+      try {
+        injector.exec(`CREATE TRIGGER interrupt_receipt_check BEFORE INSERT ON receipt_checkpoints
+          BEGIN SELECT RAISE(ABORT, 'Simulated interruption after provider receipt read'); END`);
+        assert.throws(() => desk.checkpoint(interruptedCheckpoint), /Simulated interruption/);
+        desk.close();
+        injector.exec('DROP TRIGGER interrupt_receipt_check');
+        desk = open();
+      } finally {
+        injector.close();
+      }
+    },
+    replay: () => desk.checkpoint(interruptedCheckpoint).errands[0]
+  };
+}
+
+test('an interrupted named checkpoint preserves its native attempt budget across reconnect and restart', t => {
+  const scenario = interruptedDesk(t);
+  const { fixture } = scenario;
+  fixture.setAvailable(practicePlan.issuer, false);
+  scenario.interruptAndReopen();
+  const attempts = fixture.inspect().reads;
+  assert.deepEqual(attempts.map(({ status }) => status), ['unavailable', 'unavailable']);
+
+  fixture.setAvailable(practicePlan.issuer, true);
+  fixture.putReceipt(closure);
+  assert.equal(scenario.replay().issue, 'receipt-unavailable');
+  assert.deepEqual(fixture.inspect().reads, attempts);
+  const fresh = scenario.desk.checkpoint('fresh-receipt-read').errands[0];
+  assert.deepEqual(fresh.receiptProof, closure);
+  assert.equal(fixture.inspect().reads.length, 3);
+});
+
+test('a saved native result is replayed only for the same active grant and agreed proof', async t => {
+  for (const change of ['same terms', 'proof edited', 'grant withdrawn', 'grant renewed', 'grant expired']) {
+    await t.test(change, t => {
+      const scenario = interruptedDesk(t);
+      const { fixture, record } = scenario;
+      fixture.putReceipt(closure);
+      scenario.interruptAndReopen();
+      const nativeRead = fixture.inspect().reads;
+      const reopened = scenario.desk;
+      if (change === 'proof edited') {
+        reopened.setup(record.id, { ...practicePlan, status: 'cancelled', capability: 'receipt', revision: record.revision });
+      } else if (change === 'grant withdrawn' || change === 'grant renewed') {
+        const withdrawn = reopened.householdAccess(record.id, {
+          revision: record.revision, operation: 'receipt', choice: 'withdrawn'
+        });
+        if (change === 'grant renewed') {
+          reopened.householdAccess(record.id, { revision: withdrawn.revision, operation: 'receipt', choice: 'allowed' });
+        }
+      } else if (change === 'grant expired') {
+        scenario.moveTime(new Date(record.grants.receipt.expiresAt));
+      }
+      fixture.putReceipt({ ...closure, status: 'acknowledged' });
+
+      const replay = scenario.replay();
+      if (change === 'same terms') {
+        assert.equal(replay.status, 'verified');
+        assert.deepEqual(replay.receiptProof, closure);
+        assert.equal(replay.receiptCheck.checkedAt, nativeRead[0].checkedAt);
+      } else {
+        assert.equal(replay.status, 'open');
+        assert.equal(replay.receiptProof, null);
+        assert.equal(replay.receiptCheck ?? null, null);
+      }
+      assert.deepEqual(fixture.inspect().reads, nativeRead);
+    });
+  }
 });
