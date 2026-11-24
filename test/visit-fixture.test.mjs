@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,7 +22,7 @@ function setup(t) {
     rmSync(dataDir, { recursive: true, force: true });
   });
   return {
-    fixture,
+    fixture, dataDir,
     reopen() {
       fixture.close();
       fixture = openVisitFixture({ dataDir, clock });
@@ -29,6 +30,34 @@ function setup(t) {
     }
   };
 }
+
+test('the demo calendar owner can introduce and clear only the rehearsal overlap', t => {
+  const { fixture, dataDir } = setup(t);
+  const publish = (action, status = 0) => {
+    const result = spawnSync(process.execPath, ['scripts/demo-evidence.mjs', action], {
+      cwd: new URL('../', import.meta.url), encoding: 'utf8',
+      env: { ...process.env, RELAY_DATA_DIR: dataDir, RELAY_CLOCK: clock().toISOString() }
+    });
+    assert.equal(result.status, status, result.stderr);
+    return status === 0 ? JSON.parse(result.stdout) : result.stderr;
+  };
+  assert.match(publish('visit-conflict', 1), /Confirm the practice broadband visit/);
+  const original = fixture.inspect().calendar;
+  const slot = fixture.readSlots(slotScope).find(row => row.id === 'slot-demo-3pm');
+  const { reservation } = fixture.reserve(reserveRequest(slot), allowed);
+  assert.match(publish('visit-conflict-moved', 1), /Publish visit-conflict/);
+  const conflict = publish('visit-conflict');
+  assert.deepEqual(fixture.calendarConflictForReservation(reservation.id), { start: slot.start, end: slot.end });
+  assert.deepEqual(publish('visit-conflict'), conflict);
+  const moved = publish('visit-conflict-moved');
+  assert.equal(moved.id, conflict.id);
+  assert.equal(fixture.calendarConflictForReservation(reservation.id), null);
+  assert.deepEqual(publish('visit-conflict-moved'), moved);
+  const native = fixture.inspect();
+  assert.deepEqual(native.calendar.filter(row => row.id !== moved.id), original);
+  assert.deepEqual(native.reservations, [reservation]);
+  assert.equal(native.attempts.length, 1);
+});
 
 test('booking rechecks exact slot, zero fee, visit window and current free/busy', t => {
   const { fixture } = setup(t);

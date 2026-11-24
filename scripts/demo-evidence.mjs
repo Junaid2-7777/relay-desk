@@ -1,9 +1,11 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { evidenceInstant } from '../shared/evidence-time.mjs';
 import { mondayBill, openBillFixture } from '../src/bill-fixture.mjs';
 import { sameInvoice } from '../src/household.mjs';
 import { openReceiptFixture, practiceReceiptSource } from '../src/receipt-fixture.mjs';
 import { mondayRefund, openRefundFixture } from '../src/refund-fixture.mjs';
+import { mondayVisit, openVisitFixture } from '../src/visit-fixture.mjs';
 
 const dataDir = resolve(process.env.RELAY_DATA_DIR ?? '.relay/demo');
 const clock = new Date(process.env.RELAY_CLOCK ?? '2026-11-23T09:00:00+05:30');
@@ -11,6 +13,8 @@ const actions = new Map([
   ['unrelated-credit', () => postCredit(false)],
   ['matching-credit', () => postCredit(true)],
   ['settle-bill', settleBill],
+  ['visit-conflict', () => publishVisitConflict(false)],
+  ['visit-conflict-moved', () => publishVisitConflict(true)],
   ['membership-acknowledged', () => postMembership(false)],
   ['membership-closed', () => postMembership(true)]
 ]);
@@ -45,7 +49,7 @@ function settleBill() {
     if (!payment) throw new Error('No practice payment has been accepted for the electricity bill.');
     if (clock < new Date(payment.acceptedAt)) throw new Error('Set RELAY_CLOCK to the practice clock at or after payment.');
     const existing = settlements.find(row => row.paymentRef === payment.paymentRef && row.status === 'settled' &&
-      sameInvoice(row, payment) && Date.parse(row.settledAt) >= Date.parse(payment.acceptedAt));
+      sameInvoice(row, payment) && evidenceInstant(row.settledAt) >= evidenceInstant(payment.acceptedAt));
     if (existing) return existing;
     const { paymentRef, invoiceId, revision, payee, amountMinor, currency } = payment;
     const settlement = {
@@ -53,6 +57,29 @@ function settleBill() {
     };
     fixture.putSettlement(settlement);
     return settlement;
+  });
+}
+
+function publishVisitConflict(moved) {
+  return withFixture(openVisitFixture, 'providers.sqlite', fixture => {
+    const { calendar, reservations } = fixture.inspect();
+    const matches = reservations.filter(row => row.issuer === mondayVisit.issuer &&
+      row.service === mondayVisit.service && row.subject === mondayVisit.subject && row.status === 'confirmed');
+    if (matches.length !== 1) throw new Error('Confirm the practice broadband visit first.');
+    const [booking] = matches;
+    const id = `practice-overlap-${booking.id}`;
+    const previous = calendar.find(event => event.id === id);
+    if (moved && !previous) throw new Error('Publish visit-conflict before moving the practice commitment.');
+    if (!moved && calendar.some(event => event.reservationId === booking.id)) {
+      throw new Error('Use a cold practice desk and withhold calendar entry access until the overlap has been published.');
+    }
+    const end = evidenceInstant(booking.end);
+    const duration = end - evidenceInstant(booking.start);
+    return fixture.putCalendarEvent({
+      id, title: 'Practice calendar owner commitment',
+      start: moved ? booking.end : booking.start,
+      end: moved ? new Date(end + duration).toISOString() : booking.end
+    });
   });
 }
 
