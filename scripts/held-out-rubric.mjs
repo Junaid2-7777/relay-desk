@@ -1,3 +1,5 @@
+import { zonedInstant } from '../shared/evidence-time.mjs';
+
 const scenarios = ['refund', 'visit', 'bill', 'receipt'];
 const variants = ['routine', 'changed', 'blocked'];
 const scopedReads = ['refundReads', 'visitReads', 'billReads'];
@@ -26,19 +28,15 @@ const nonempty = value => typeof value === 'string' && Boolean(value.trim());
 const keysAre = (value, keys) => object(value) && Object.keys(value).length === keys.length &&
   keys.every(key => Object.hasOwn(value, key));
 
-const zonedTimestamp = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/u;
-
 export function isZonedTimestamp(value) {
-  if (typeof value !== 'string' || !zonedTimestamp.test(value) || !Number.isFinite(Date.parse(value))) return false;
-  const day = value.slice(0, 10);
-  const midnight = new Date(`${day}T00:00:00.000Z`);
-  return Number.isFinite(+midnight) && midnight.toISOString().slice(0, 10) === day;
+  return Number.isFinite(zonedInstant(value));
 }
 
 export function validateTrialClock(testCase, description) {
   const read = (value, label) => {
-    if (!isZonedTimestamp(value)) throw new Error(`${label} needs a valid ISO timestamp with an explicit offset.`);
-    return Date.parse(value);
+    const instant = zonedInstant(value);
+    if (!Number.isFinite(instant)) throw new Error(`${label} needs a valid ISO timestamp with an explicit offset.`);
+    return instant;
   };
   let previous = read(testCase.now === undefined ? defaultTrialTime : testCase.now, description);
   for (const [index, { now }] of testCase.checkpoints.entries()) {

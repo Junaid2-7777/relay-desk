@@ -84,6 +84,22 @@ test('booking rechecks exact slot, zero fee, visit window and current free/busy'
   assert.deepEqual(fixture.inspect().calendar[0], protectedEvent);
 });
 
+test('the provider rejects ambiguous or impossible intervals and accepts explicit offsets without seconds', t => {
+  const { fixture } = setup(t);
+  const valid = { ...mondayVisit, id: 'offset-minute-offer', start: '2026-11-24T08:45Z', end: '2026-11-24T14:45+05:30' };
+  for (const start of ['2026-11-24T08:45:00', '2026-11-31T08:45:00Z', '2026-11-24T08:45:00+05:99']) {
+    assert.throws(() => fixture.putSlot({ ...valid, start }), /explicit time-zone offsets/);
+  }
+  assert.throws(() => fixture.putCalendarEvent({
+    id: 'ambiguous-native-event', start: '2026-11-24T09:00:00', end: '2026-11-24T09:15:00', title: 'Undated zone'
+  }), /explicit time-zone offsets/);
+  const slot = fixture.putSlot(valid);
+  const { status, reservation } = fixture.reserve(reserveRequest(slot), allowed);
+  assert.equal(status, 'confirmed');
+  assert.equal(reservation.start, valid.start);
+  assert.equal(reservation.end, valid.end);
+});
+
 test('a lost booking reply and failed calendar write recover the original receipt once', t => {
   const setupResult = setup(t);
   let fixture = setupResult.fixture;

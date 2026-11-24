@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { zonedInstant } from '../shared/evidence-time.mjs';
 
 export const mondayVisit = Object.freeze({
   issuer: 'provider-demo-broadband',
@@ -22,12 +23,14 @@ const interval = ({ start, end }) => ({ start, end });
 const blocked = reason => ({ status: 'blocked', reason });
 
 function validInterval(start, end) {
-  return typeof start === 'string' && typeof end === 'string' && Date.parse(start) < Date.parse(end);
+  return zonedInstant(start) < zonedInstant(end);
 }
 
 function intervalBounds({ start, end }) {
-  if (!validInterval(start, end)) throw new TypeError('A valid start and end are required.');
-  return [Date.parse(start), Date.parse(end)];
+  const from = zonedInstant(start);
+  const to = zonedInstant(end);
+  if (!(from < to)) throw new TypeError('A valid start and end with explicit time-zone offsets are required.');
+  return [from, to];
 }
 
 export function openVisitFixture({ dataDir, clock = () => new Date() }) {
@@ -172,8 +175,8 @@ export function openVisitFixture({ dataDir, clock = () => new Date() }) {
       if (!slot.active || bookedSlot.get(slotId)) return finish(blocked('slot-unavailable'));
       if (slot.revision !== revision) return finish(blocked('slot-revised'));
       if (slot.feeMinor !== 0) return finish(blocked('slot-fee'));
-      if (!validInterval(windowStart, windowEnd) ||
-          Date.parse(slot.start) < Date.parse(windowStart) || Date.parse(slot.end) > Date.parse(windowEnd)) {
+      if (!validInterval(slot.start, slot.end) || !validInterval(windowStart, windowEnd) ||
+          zonedInstant(slot.start) < zonedInstant(windowStart) || zonedInstant(slot.end) > zonedInstant(windowEnd)) {
         return finish(blocked('outside-window'));
       }
       if (busy(slot).length) return finish(blocked('calendar-conflict'));
@@ -207,6 +210,7 @@ export function openVisitFixture({ dataDir, clock = () => new Date() }) {
       }
       const reservation = typeof reservationId === 'string' ? rowRecord(findReservation.get(reservationId)) : null;
       if (!reservation) return finish(blocked('reservation-missing'));
+      if (!validInterval(reservation.start, reservation.end)) return finish(blocked('reservation-invalid'));
       if (authorize(Object.freeze({ ...reservation, key, reservationId })) !== true) return finish(blocked('permission'));
       if (findCalendarByReservation.get(reservationId)) return finish(blocked('reservation-recorded'));
       const [conflict] = busy(reservation);

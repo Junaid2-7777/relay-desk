@@ -347,3 +347,37 @@ test('calendar readback reports a protected overlap added just after the calenda
   assert.deepEqual(runVisit(visit, fixture, connection.journal, clock()), visit);
   assert.deepEqual(fixture.inspect().attempts, native.attempts);
 });
+
+test('a legacy offer without an offset cannot take precedence over a valid zoned booking', t => {
+  const clock = () => new Date('2026-11-23T09:00:00+05:30');
+  const dataDir = mkdtempSync(join(tmpdir(), 'relay-visit-legacy-zone-'));
+  const fixture = openVisitFixture({ dataDir, clock });
+  const record = seedHousehold(clock(), true).find(item => item.kind === 'visit');
+  const connection = openVisitJournal(dataDir, () => record, clock);
+  t.after(() => {
+    connection.close();
+    fixture.close();
+    rmSync(dataDir, { force: true, recursive: true });
+  });
+  fixture.reset();
+  const slot = fixture.putSlot({
+    ...mondayVisit, id: 'legacy-offset-free-offer', start: '2026-11-24T09:00:00Z', end: '2026-11-24T09:20:00Z'
+  });
+  // Model an older fixture record whose timezone was implicitly taken from the process.
+  const withoutOffset = value => {
+    const date = new Date(value);
+    return new Date(+date - date.getTimezoneOffset() * 60_000).toISOString().slice(0, -1);
+  };
+  const database = new DatabaseSync(join(dataDir, 'providers.sqlite'));
+  try {
+    database.prepare("UPDATE visit_slots SET record = json_set(record, '$.start', ?, '$.end', ?) WHERE id = ?")
+      .run(withoutOffset(slot.start), withoutOffset(slot.end), slot.id);
+  } finally {
+    database.close();
+  }
+  const verified = runVisit(record, fixture, connection.journal, clock());
+  assert.equal(verified.status, 'verified');
+  assert.equal(verified.reservation.slotId, 'slot-demo-3pm');
+  assert.deepEqual(fixture.inspect().reservations, [verified.reservation]);
+  assert.ok(!fixture.inspect().attempts.some(attempt => attempt.operationKey.includes(slot.id)));
+});

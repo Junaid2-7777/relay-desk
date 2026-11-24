@@ -1,3 +1,4 @@
+import { evidenceInstant, zonedInstant } from '../shared/evidence-time.mjs';
 import { activeGrant } from './household.mjs';
 
 const scopeFields = ['issuer', 'service', 'subject', 'zone', 'windowStart', 'windowEnd'];
@@ -36,11 +37,15 @@ function permittedAtDispatch(record, current, operations, instant) {
 }
 
 function eligibleSlot(slot, visit, busy, instant) {
-  const start = Date.parse(slot.start);
-  const end = Date.parse(slot.end);
+  const start = zonedInstant(slot.start);
+  const end = zonedInstant(slot.end);
   return sameFields(subjectFields, slot, visit) && slot.active === true && slot.feeMinor === 0 &&
-    start > instant && start >= Date.parse(visit.windowStart) && end <= Date.parse(visit.windowEnd) && start < end &&
-    !busy.some(interval => Date.parse(interval.start) < end && Date.parse(interval.end) > start);
+    start > instant && start >= zonedInstant(visit.windowStart) && end <= zonedInstant(visit.windowEnd) && start < end &&
+    !busy.some(interval => {
+      const occupiedStart = zonedInstant(interval.start);
+      const occupiedEnd = zonedInstant(interval.end);
+      return !(occupiedStart < occupiedEnd) || (occupiedStart < end && occupiedEnd > start);
+    });
 }
 
 function reservationProof(native, expected) {
@@ -48,7 +53,8 @@ function reservationProof(native, expected) {
       !sameFields(subjectFields, native, expected) || native.key !== expected.key ||
       native.slotId !== expected.slotId || native.revision !== expected.revision ||
       native.start !== expected.start || native.end !== expected.end ||
-      native.currency !== expected.currency || native.feeMinor !== 0) return null;
+      native.currency !== expected.currency || native.feeMinor !== 0 ||
+      !(zonedInstant(native.start) < zonedInstant(native.end)) || !Number.isFinite(evidenceInstant(native.confirmedAt))) return null;
   const { id, key, issuer, service, subject, zone, slotId, revision, start, end, feeMinor, currency, status, confirmedAt } = native;
   return { id, key, issuer, service, subject, zone, slotId, revision, start, end, feeMinor, currency, status, confirmedAt };
 }
@@ -132,7 +138,7 @@ function selectSlot(record, fixture, journal, instant) {
       // The original is absent and ineligible. Retire it under the same lock that guards dispatch.
       journal.mark(original.key, 'blocked');
     }
-    const [candidate] = candidates.sort((left, right) => Date.parse(left.start) - Date.parse(right.start) || left.id.localeCompare(right.id));
+    const [candidate] = candidates.sort((left, right) => zonedInstant(left.start) - zonedInstant(right.start) || left.id.localeCompare(right.id));
     return candidate ? { candidate } : { issue: 'slot-unavailable' };
   });
 }
@@ -214,6 +220,9 @@ export function runVisit(record, fixture, journal, now) {
   const instant = +new Date(now);
   const unresolved = issue => withState(record, 'open', issue, { reservation: null, calendarEvent: null });
   const { visit } = record;
+  if (!(zonedInstant(visit.windowStart) < zonedInstant(visit.windowEnd))) {
+    return unresolved(record.reservation ? 'reservation-unknown' : 'slot-unavailable');
+  }
   if (record.reservation) {
     const previous = journal.latest(record.id, 'reserve');
     if (!previous || !exactScope(visit, scopeFor(previous.payload)) ||
@@ -243,7 +252,7 @@ export function runVisit(record, fixture, journal, now) {
       const commitTime = +readClock();
       return permittedAtDispatch(record, current, bookingGrants, commitTime) &&
         sameFields(['start', 'end', 'currency'], fresh, payload) && fresh.feeMinor === payload.feeMinor &&
-        Date.parse(fresh.start) > commitTime;
+        zonedInstant(fresh.start) > commitTime;
     });
     if (attempt?.status !== 'confirmed') {
       journal.mark(key, attempt?.status === 'blocked' && attempt.reason !== 'key-conflict' ? 'blocked' : 'unknown');

@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { zonedInstant } from '../shared/evidence-time.mjs';
 import { openActionJournal } from './action-journal.mjs';
 import { invoiceGrant } from './bill.mjs';
 import { orderChecks } from '../shared/brief-order.mjs';
@@ -51,9 +52,7 @@ function checkpointReference(value) {
 }
 
 function visitTime(value) {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/u.test(value) ||
-      !Number.isFinite(Date.parse(value))) throw new DeskError('Choose a valid start and end for the booking window.');
-  optionalDate(value.slice(0, 10));
+  if (!Number.isFinite(zonedInstant(value))) throw new DeskError('Choose a valid start and end for the booking window.');
   return value;
 }
 

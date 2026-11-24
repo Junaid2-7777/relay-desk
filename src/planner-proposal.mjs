@@ -1,3 +1,5 @@
+import { zonedInstant } from '../shared/evidence-time.mjs';
+
 export class PlannerProposalError extends Error {
   constructor() {
     super('The planner returned an invalid proposal.');
@@ -9,7 +11,7 @@ const proposalFields = ['goal', 'checkDate', 'practicePlan'];
 const receiptFields = ['capability', 'issuer', 'subject', 'type', 'status'];
 const visitFields = ['capability', 'issuer', 'subject', 'service', 'windowStart', 'windowEnd'];
 const dayPattern = /^\d{4}-\d{2}-\d{2}$/u;
-const windowTimePattern = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/u;
+const overpreciseFraction = /\.\d{4}/u;
 const identifierPattern = /^[a-z0-9][a-z0-9._:-]{0,99}$/iu;
 const maximumWindow = 31 * 24 * 60 * 60 * 1000;
 
@@ -44,8 +46,7 @@ function identifier(value) {
 
 function windowTime(value) {
   if (value === null || value === '') return '';
-  if (typeof value !== 'string' || !windowTimePattern.test(value) ||
-      !validDay(value.slice(0, 10)) || !Number.isFinite(Date.parse(value))) throw new PlannerProposalError();
+  if (!Number.isFinite(zonedInstant(value)) || overpreciseFraction.test(value)) throw new PlannerProposalError();
   return value;
 }
 
@@ -65,7 +66,7 @@ function practicePlan(value) {
     const windowStart = windowTime(value.windowStart);
     const windowEnd = windowTime(value.windowEnd);
     if (windowStart && windowEnd) {
-      const span = Date.parse(windowEnd) - Date.parse(windowStart);
+      const span = zonedInstant(windowEnd) - zonedInstant(windowStart);
       if (span <= 0 || span > maximumWindow) throw new PlannerProposalError();
     }
     return {
