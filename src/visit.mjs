@@ -69,10 +69,15 @@ function dispatchVisit(journal, record, operation, key, payload, action) {
   return journal.dispatch(record.id, (current, now, readClock) => action(current, prepared.payload, now, readClock));
 }
 
+function readWithGrant(record, current, operation, instant, read) {
+  const authorize = at => permittedAtDispatch(record, current, [operation], +at);
+  return authorize(instant) ? read(authorize) : undefined;
+}
+
 function readUnderGrant(record, operation, journal, instant, read) {
   if (!grantFor(record, operation, instant)) return undefined;
   return journal.dispatch(record.id, (current, now) =>
-    permittedAtDispatch(record, current, [operation], +(now ?? instant)) ? read() : undefined);
+    readWithGrant(record, current, operation, +(now ?? instant), read));
 }
 
 export function confirmVisitConflict(record, fixture, journal, clock) {
@@ -82,9 +87,11 @@ export function confirmVisitConflict(record, fixture, journal, clock) {
   const now = +clock();
   if (!original || !exactScope(record.visit, scopeFor(original.payload)) || !reservationProof(reservation, original.payload) ||
       !grantFor(record, 'slots', now) || !grantFor(record, 'freeBusy', now)) return null;
-  const native = reservationProof(fixture.reservationByKey(original.key), original.payload);
-  if (native?.id !== reservation.id || !grantFor(record, 'freeBusy', +clock())) return null;
-  const interval = fixture.calendarConflictForReservation(native.id);
+  const native = reservationProof(readWithGrant(record, record, 'slots', now, authorize =>
+    fixture.reservationByKey(original.key, authorize)), original.payload);
+  if (native?.id !== reservation.id) return null;
+  const interval = readWithGrant(record, record, 'freeBusy', +clock(), authorize =>
+    fixture.calendarConflictForReservation(native.id, authorize));
   if (!sameFields(intervalFields, conflict, interval)) return null;
   return { reservationId: native.id, start: interval.start, end: interval.end };
 }
@@ -100,7 +107,8 @@ function selectSlot(record, fixture, journal, instant) {
       if (!permitted('slots') || !exactScope(visit, scopeFor(original.payload))) {
         return { issue: 'reservation-unknown' };
       }
-      const native = fixture.reservationByKey(original.key);
+      const native = readWithGrant(record, current, 'slots', time, authorize =>
+        fixture.reservationByKey(original.key, authorize));
       const proof = reservationProof(native, original.payload);
       if (proof) {
         journal.mark(original.key, 'confirmed');
@@ -110,8 +118,9 @@ function selectSlot(record, fixture, journal, instant) {
     }
 
     const calendarScope = { start: visit.windowStart, end: visit.windowEnd };
-    const busy = permitted('freeBusy') ? fixture.readFreeBusy(calendarScope) : undefined;
-    const slots = permitted('slots') ? fixture.readSlots(visit) : undefined;
+    const busy = readWithGrant(record, current, 'freeBusy', time, authorize =>
+      fixture.readFreeBusy(calendarScope, authorize));
+    const slots = readWithGrant(record, current, 'slots', time, authorize => fixture.readSlots(visit, authorize));
     if (!busy || !slots || !permitted('reserve')) {
       return { issue: original ? 'reservation-unknown' : 'visit-permission' };
     }
@@ -131,8 +140,8 @@ function runCalendar(record, reservation, fixture, journal, instant) {
   const conflictChoice = record.conflictChoice?.reservationId === reservation.id ? record.conflictChoice : null;
   const previousConflict = record.reservation?.id === reservation.id ? record.conflict : null;
   const booked = withState(record, 'booked', 'calendar-pending', { reservation, calendarEvent: null, conflictChoice });
-  const readConflict = () => readUnderGrant(record, 'freeBusy', journal, instant, () =>
-    fixture.calendarConflictForReservation(reservation.id));
+  const readConflict = () => readUnderGrant(record, 'freeBusy', journal, instant, authorize =>
+    fixture.calendarConflictForReservation(reservation.id, authorize));
   function conflicting(conflict, calendarEvent = null) {
     const choice = sameFields(intervalFields, conflict, previousConflict) &&
       sameFields(intervalFields, conflictChoice, conflict) ? conflictChoice : null;
@@ -152,7 +161,8 @@ function runCalendar(record, reservation, fixture, journal, instant) {
 
   const previous = journal.latest(record.id, 'calendar');
   if (previous && previous.payload.reservationId !== reservation.id) return booked;
-  const native = readUnderGrant(record, 'calendar', journal, instant, () => fixture.calendarByReservation(reservation.id));
+  const native = readUnderGrant(record, 'calendar', journal, instant, authorize =>
+    fixture.calendarByReservation(reservation.id, authorize));
   if (native === undefined) return booked;
   const existing = calendarProof(native, reservation);
   if (native && !existing) return booked;
@@ -191,8 +201,8 @@ function runCalendar(record, reservation, fixture, journal, instant) {
     journal.mark(key, result?.status === 'blocked' ? 'blocked' : 'failed');
     return booked;
   }
-  const event = calendarProof(readUnderGrant(record, 'calendar', journal, instant, () =>
-    fixture.calendarByReservation(reservation.id)), reservation);
+  const event = calendarProof(readUnderGrant(record, 'calendar', journal, instant, authorize =>
+    fixture.calendarByReservation(reservation.id, authorize)), reservation);
   journal.mark(key, event ? 'recorded' : 'failed');
   return event ? withState(booked, 'verified', null, { calendarEvent: event }) : booked;
 }
@@ -241,7 +251,8 @@ export function runVisit(record, fixture, journal, now) {
     return unresolved(result.reason === 'permission' ? 'visit-permission' : 'slot-unavailable');
   }
   if (result?.status !== 'confirmed') return unresolved('reservation-unknown');
-  const reservation = reservationProof(readUnderGrant(record, 'slots', journal, instant, () => fixture.reservationByKey(key)), request);
+  const reservation = reservationProof(readUnderGrant(record, 'slots', journal, instant, authorize =>
+    fixture.reservationByKey(key, authorize)), request);
   journal.mark(key, reservation ? 'confirmed' : 'unknown');
   return reservation ? runCalendar(record, reservation, fixture, journal, instant) : unresolved('reservation-unknown');
 }

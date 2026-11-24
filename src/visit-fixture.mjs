@@ -140,9 +140,11 @@ export function openVisitFixture({ dataDir, clock = () => new Date() }) {
     return result;
   }
 
-  function read(source, scope, records) {
+  function read(source, scope, records, authorize) {
     return transaction(() => {
-      saveRead.run(source, JSON.stringify(scope), timestamp());
+      const now = clock();
+      if (authorize && authorize(now) !== true) return undefined;
+      saveRead.run(source, JSON.stringify(scope), now.toISOString());
       return records();
     });
   }
@@ -243,23 +245,23 @@ export function openVisitFixture({ dataDir, clock = () => new Date() }) {
     },
     putSlot,
     putCalendarEvent,
-    readSlots({ issuer, service, subject }) {
-      return read('slots', { issuer, service, subject }, () => slotsForScope.all(issuer, service, subject).map(rowRecord));
+    readSlots({ issuer, service, subject }, authorize) {
+      return read('slots', { issuer, service, subject }, () => slotsForScope.all(issuer, service, subject).map(rowRecord), authorize);
     },
-    readFreeBusy({ start, end }) {
-      return read('freeBusy', { start, end }, () => busy({ start, end }).map(interval));
+    readFreeBusy({ start, end }, authorize) {
+      return read('freeBusy', { start, end }, () => busy({ start, end }).map(interval), authorize);
     },
     reserve,
-    reservationByKey: key => read('reservation', { key }, () => rowRecord(findReservationByKey.get(key))),
+    reservationByKey: (key, authorize) => read('reservation', { key }, () => rowRecord(findReservationByKey.get(key)), authorize),
     addToCalendar,
-    calendarByReservation: reservationId => read('calendar', { reservationId }, () =>
-      rowRecord(findCalendarByReservation.get(reservationId))),
-    calendarConflictForReservation: reservationId => read('calendarConflict', { reservationId }, () => {
+    calendarByReservation: (reservationId, authorize) => read('calendar', { reservationId }, () =>
+      rowRecord(findCalendarByReservation.get(reservationId)), authorize),
+    calendarConflictForReservation: (reservationId, authorize) => read('calendarConflict', { reservationId }, () => {
       const reservation = rowRecord(findReservation.get(reservationId));
       if (!reservation) return null;
       const conflict = busy(reservation).find(event => event.reservationId !== reservationId);
       return conflict ? interval(conflict) : null;
-    }),
+    }, authorize),
     failNextReservationReply: () => queueFault.run('reservation-reply'),
     failNextCalendarWrite: () => queueFault.run('calendar-write'),
     inspect() {

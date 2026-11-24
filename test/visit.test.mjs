@@ -227,3 +227,40 @@ test('appointment writes require permission inside their provider transaction', 
     });
   }
 });
+
+test('visit discovery and readback stop if the provider waits past the read grant', async t => {
+  for (const method of ['readSlots', 'reservationByKey']) {
+    await t.test(method, t => {
+      let now = new Date('2026-11-23T09:00:00+05:30');
+      const expiresAt = '2026-11-23T04:00:00.000Z';
+      const clock = () => now;
+      const dataDir = mkdtempSync(join(tmpdir(), 'relay-visit-read-expiry-'));
+      const fixture = openVisitFixture({ dataDir, clock });
+      const record = seedHousehold(now, true).find(item => item.kind === 'visit');
+      const connection = openVisitJournal(dataDir, () => record, clock);
+      t.after(() => {
+        connection.close();
+        fixture.close();
+        rmSync(dataDir, { force: true, recursive: true });
+      });
+      fixture.reset();
+      record.grants.slots.expiresAt = expiresAt;
+      const delayed = {
+        ...fixture,
+        [method](...args) {
+          now = new Date(expiresAt);
+          return fixture[method](...args);
+        }
+      };
+
+      const result = runVisit(record, delayed, connection.journal, now);
+      const native = fixture.inspect();
+      const discovery = method === 'readSlots';
+      assert.deepEqual(native.reads.map(({ source }) => source), discovery ? ['freeBusy'] : ['freeBusy', 'slots']);
+      assert.equal(result.issue, discovery ? 'visit-permission' : 'reservation-unknown');
+      assert.equal(result.reservation, null);
+      assert.equal(native.reservations.length, discovery ? 0 : 1);
+      assert.equal(native.calendar.filter(event => event.reservationId).length, 0);
+    });
+  }
+});
