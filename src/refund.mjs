@@ -1,4 +1,4 @@
-import { evidenceInstant, latestEvidence } from './evidence-time.mjs';
+import { evidenceInstant, latestEvidence } from '../shared/evidence-time.mjs';
 import { RefundFeedUnavailable } from './refund-fixture.mjs';
 
 function isPostedCredit(credit, refund) {

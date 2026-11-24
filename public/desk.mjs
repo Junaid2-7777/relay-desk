@@ -1,4 +1,5 @@
 import { orderChecks, reviewNeeded } from '../shared/brief-order.mjs';
+import { evidenceInstant } from '../shared/evidence-time.mjs';
 import { action, addText, fact, renderHousehold, renderPracticeSetup, statusLabel } from './household.mjs';
 
 const element = id => document.getElementById(id);
@@ -112,7 +113,10 @@ function renderRefund(panel, record, update, errorMessage, setBusy) {
     if (checked) {
       if (checked.status === 'unavailable') addText(section, 'p', 'Unable to check this source.');
       if (checked.checkedAt) addText(section, 'p', `Last successful check ${activityFormat.format(new Date(checked.checkedAt))} IST`);
-      if (checked.lastEventAt) addText(section, 'p', `Last event ${activityFormat.format(new Date(checked.lastEventAt))} IST`);
+      if (checked.lastEventAt) {
+        const instant = evidenceInstant(checked.lastEventAt);
+        addText(section, 'p', Number.isFinite(instant) ? `Last event ${activityFormat.format(instant)} IST` : 'Last event time unavailable.');
+      }
     }
     if (key === 'merchant' && record.merchantEvent) {
       addText(section, 'p', record.merchantEvent.type === 'promise' ? 'Shop promised the refund.' : 'Shop updated the return.');

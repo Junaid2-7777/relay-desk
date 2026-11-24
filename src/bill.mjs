@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { evidenceInstant } from './evidence-time.mjs';
+import { evidenceInstant } from '../shared/evidence-time.mjs';
 import { activeGrant, sameInvoice } from './household.mjs';
 
 function sameSubject(left, right) {

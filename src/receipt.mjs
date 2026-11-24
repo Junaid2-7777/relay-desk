@@ -1,4 +1,4 @@
-import { evidenceInstant, latestEvidence } from './evidence-time.mjs';
+import { evidenceInstant, latestEvidence } from '../shared/evidence-time.mjs';
 import { activeGrant } from './household.mjs';
 import { isReceiptIdentifier, receiptIdentifier } from './receipt-fixture.mjs';
 
