@@ -25,7 +25,9 @@ export function openActionJournal(database, find, transaction, clock, write = ac
 
   return {
     latest: (errandId, operation) => decode(latest.get(errandId, operation)),
-    prepare: (errandId, operation, key, payload) => transaction(() => {
+    prepare: (errandId, operation, key, payload, authorize) => transaction(() => {
+      const now = clock();
+      if (authorize && authorize(find(errandId), now) !== true) return null;
       const outstanding = latest.get(errandId, operation);
       if (outstanding && outstanding.key !== key && ['prepared', 'unknown', 'committed', 'confirmed', 'recorded'].includes(outstanding.status)) {
         const error = new Error('Reconcile the original operation before preparing another.');
@@ -33,7 +35,7 @@ export function openActionJournal(database, find, transaction, clock, write = ac
         throw error;
       }
       const encoded = JSON.stringify(payload);
-      insert.run(key, errandId, operation, encoded, clock().toISOString());
+      insert.run(key, errandId, operation, encoded, now.toISOString());
       const row = get.get(key);
       if (row.errandId !== errandId || row.operation !== operation || row.payload !== encoded) {
         throw new Error('The operation key belongs to different terms.');

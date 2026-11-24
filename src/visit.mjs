@@ -64,8 +64,9 @@ function withState(record, status, issue = null, proof = {}) {
   return { ...record, status, issue, conflict: null, conflictChoice: null, ...proof };
 }
 
-function dispatchVisit(journal, record, operation, key, payload, action) {
-  const prepared = journal.prepare(record.id, operation, key, payload);
+function dispatchVisit(journal, record, operation, key, payload, action, authorizePreparation) {
+  const prepared = journal.prepare(record.id, operation, key, payload, authorizePreparation);
+  if (!prepared) return undefined;
   return journal.dispatch(record.id, (current, now, readClock) => action(current, prepared.payload, now, readClock));
 }
 
@@ -227,6 +228,8 @@ export function runVisit(record, fixture, journal, now) {
   const { id: slotId, revision, start, end, feeMinor, currency } = candidate;
   const key = retry?.key ?? `visit:${record.id}:reserve:${encodeURIComponent(slotId)}:${revision}`;
   const request = retry?.payload ?? { key, ...visit, slotId, revision, start, end, feeMinor, currency };
+  const authorizePreparation = (current, time) => current.revision === record.revision &&
+    permittedAtDispatch(record, current, bookingGrants, +time);
   const result = dispatchVisit(journal, record, 'reserve', key, request, (current, payload, currentTime, readClock) => {
     const active = journal.latest(record.id, 'reserve');
     if (active?.key !== key || !['prepared', 'unknown'].includes(active.status)) {
@@ -246,7 +249,7 @@ export function runVisit(record, fixture, journal, now) {
       journal.mark(key, attempt?.status === 'blocked' && attempt.reason !== 'key-conflict' ? 'blocked' : 'unknown');
     }
     return attempt;
-  });
+  }, authorizePreparation);
   if (result?.status === 'blocked' && result.reason !== 'key-conflict') {
     if (result.reason === 'reservation-superseded') return unresolved('reservation-unknown');
     return unresolved(result.reason === 'permission' ? 'visit-permission' : 'slot-unavailable');

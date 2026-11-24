@@ -123,6 +123,47 @@ test('a replacement for a proven-absent reservation prevents stale dispatch of t
   assert.deepEqual(runVisit(recovered, fixture, journal, now), recovered);
 });
 
+test('an old checkpoint cannot prepare an intent after the user corrects the booking scope', t => {
+  const clock = () => new Date('2026-11-23T09:00:00+05:30');
+  const dataDir = mkdtempSync(join(tmpdir(), 'relay-visit-correction-race-'));
+  const fixture = openVisitFixture({ dataDir, clock });
+  const original = seedHousehold(clock(), true).find(item => item.kind === 'visit');
+  const correctedScope = { ...original.visit, subject: 'corrected-household-reference' };
+  let current = original;
+  const connection = openVisitJournal(dataDir, () => current, clock);
+  const { journal } = connection;
+  t.after(() => {
+    connection.close();
+    fixture.close();
+    rmSync(dataDir, { force: true, recursive: true });
+  });
+  fixture.reset();
+  fixture.putSlot({
+    ...correctedScope, id: 'corrected-subject-slot',
+    start: '2026-11-24T16:00:00+05:30', end: '2026-11-24T17:00:00+05:30'
+  });
+  const delayed = {
+    ...journal,
+    prepare(...args) {
+      assert.equal(journal.latest(original.id, 'reserve'), null);
+      current = { ...original, revision: original.revision + 1, visit: correctedScope, grants: {} };
+      return journal.prepare(...args);
+    }
+  };
+  runVisit(original, fixture, delayed, clock());
+  assert.deepEqual(fixture.inspect().attempts, []);
+  const afterCorrection = journal.latest(original.id, 'reserve');
+
+  const grants = Object.fromEntries(Object.keys(original.grants).map(operation =>
+    [operation, makeGrant(operation, correctedScope, 'allowed', null, clock())]));
+  current = { ...current, revision: current.revision + 1, grants };
+  const booked = runVisit(current, fixture, journal, clock());
+  assert.equal(booked.status, 'verified');
+  assert.equal(booked.reservation.subject, correctedScope.subject);
+  assert.deepEqual(fixture.inspect().reservations, [booked.reservation]);
+  assert.equal(afterCorrection, null);
+});
+
 test('a stale booking runner cannot erase an ambiguous commit when permission is withdrawn', async t => {
   for (const pause of ['withdraw slots', 'stop tracking']) {
     await t.test(pause, t => {
