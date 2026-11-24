@@ -54,6 +54,23 @@ test('a refund source checks permission at the actual read and retry time', t =>
   assert.deepEqual(fixture.inspect().reads.map(row => [row.source, row.status]), [['merchant', 'unavailable']]);
 });
 
+test('a future link in a merchant response never enters the desk’s ledger request', () => {
+  const now = new Date(checkedAt);
+  const refundAccess = Object.fromEntries(['merchant', 'credits'].map(source =>
+    [source, refundGrant(mondayRefund, source, 'allowed', null, now)]));
+  const requests = [];
+  const fixture = {
+    subject: mondayRefund,
+    readForCheck(source, scope) {
+      requests.push({ source, scope });
+      const links = [{ ...merchantLink, issuedAt: '2026-11-24T03:30:00.000Z' }];
+      return { status: 'checked', checkedAt, records: source === 'merchant' ? { links, events: [] } : [] };
+    }
+  };
+  assert.equal(checkRefund({ status: 'open', checks: {}, evidence: [], refundAccess }, fixture, now).status, 'open');
+  assert.deepEqual(requests.at(-1), { source: 'credits', scope: { ...ledgerScope, linkedCreditIds: [] } });
+});
+
 test('the provider bounds credits by account and independently authorized references', t => {
   const dataDir = mkdtempSync(join(tmpdir(), 'relay-refund-fixture-'));
   const fixture = openRefundFixture({ dataDir, clock: () => new Date(checkedAt) });
