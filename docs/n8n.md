@@ -11,6 +11,12 @@ The browser sends the planner mode shown when the desk opened with each review. 
 3. In **Propose an errand**, select the n8n OpenAI credential that holds your API key. The import pins `gpt-5.4-mini-2026-03-17`. If your project uses another model, choose a Responses API model with JSON Schema support and record its snapshot and settings before comparison. Leave tools disconnected and response storage disabled. [n8n OpenAI credentials](https://docs.n8n.io/integrations/builtin/credentials/openai/) · [Pinned model](https://developers.openai.com/api/docs/models/gpt-5.4-mini)
 4. Publish or activate the workflow and copy its **Production URL**. The template disables saving production and manual execution data in n8n. Check the imported workflow settings before running the practice cases. [n8n Webhook URLs](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/#webhook-urls) · [n8n workflow settings](https://docs.n8n.io/workflows/settings/)
 
+## Check the connection
+
+Run `npm run check:n8n` to inspect the shipped template and validate local webhook settings offline. It reports which variables are set without showing their values. A usable template exits `0` when the webhook settings are valid or the URL or token is still missing. An unusable template or invalid settings with both required variables supplied exit `1`.
+
+After publishing the workflow and setting the webhook variables, run `npm run check:n8n -- --live` to send one fixed synthetic note through the ordinary planner adapter and validator. It exits `0` only if the webhook returns a valid n8n proposal. A fixed-rule fallback, unusable template, or invalid live configuration exits `1`. Invalid command arguments exit `2`. The command keeps the endpoint, credentials, and upstream response out of its output. A successful probe verifies the webhook round trip and proposal shape. Use the held-out comparison to evaluate planning quality. [Held-out comparison](held-out.md)
+
 ## Open the practice desk
 
 Set `RELAY_N8N_WEBHOOK_URL` and `RELAY_N8N_WEBHOOK_TOKEN` in the environment of the desk process. The URL must use HTTPS or loopback HTTP. `RELAY_N8N_TIMEOUT_MS` sets the proposal deadline in milliseconds and defaults to 12000.

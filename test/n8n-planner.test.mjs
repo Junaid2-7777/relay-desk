@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import test from 'node:test';
 import { createN8nPlannerFromEnv } from '../src/n8n-planner.mjs';
 import { validatePlannerProposal } from '../src/planner-proposal.mjs';
@@ -66,6 +67,7 @@ async function setup(t, handle, { household = true, timeoutMs } = {}) {
 
   return {
     messages,
+    webhookUrl: `${webhook}/planner`,
     async switchToN8n() {
       const port = server.address().port;
       await close(server);
@@ -193,4 +195,77 @@ test('the workflow passes one complete proposal through and rejects refusal or p
   assert.throws(() => read('incomplete'), /one complete proposal/);
   assert.throws(() => read('completed', [{ type: 'message', content: [{ type: 'refusal', refusal: 'Synthetic refusal' }] }]),
     /one complete proposal/);
+});
+
+test('the readiness command contacts the webhook once only with --live and keeps upstream data out of output', async t => {
+  const sentinel = 'synthetic-upstream-secret';
+  let returned = { ...proposal, goal: sentinel };
+  const { messages, webhookUrl } = await setup(t, response => {
+    response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(returned));
+  });
+  const script = fileURLToPath(new URL('../scripts/check-n8n.mjs', import.meta.url));
+  const env = { ...process.env, RELAY_N8N_WEBHOOK_URL: webhookUrl, RELAY_N8N_WEBHOOK_TOKEN: token, RELAY_N8N_TIMEOUT_MS: '2000' };
+  const exec = promisify(execFile);
+  async function run(args = [], overrides = {}) {
+    try {
+      return { status: 0, ...await exec(process.execPath, [script, ...args], { env: { ...env, ...overrides }, timeout: 5000 }) };
+    } catch (error) {
+      return { status: error.code, stdout: error.stdout, stderr: error.stderr };
+    }
+  }
+
+  const offline = await run();
+  assert.equal(offline.status, 0);
+  assert.match(offline.stdout, /Header Auth webhook/);
+  assert.match(offline.stdout, /local webhook settings are valid/);
+  assert.match(offline.stdout, /inside n8n/);
+  assert.match(offline.stdout, /Offline check complete/);
+  assert.deepEqual(messages, []);
+
+  const missing = await run([], { RELAY_N8N_WEBHOOK_TOKEN: '' });
+  assert.equal(missing.status, 0);
+  assert.match(missing.stdout, /RELAY_N8N_WEBHOOK_TOKEN is missing/);
+  assert.deepEqual(messages, []);
+
+  const malformedOffline = [];
+  for (const overrides of [
+    { RELAY_N8N_WEBHOOK_URL: 'http://invalid-synthetic-endpoint.example' },
+    { RELAY_N8N_WEBHOOK_TOKEN: 'synthetic malformed token' },
+    { RELAY_N8N_TIMEOUT_MS: '30001' }
+  ]) {
+    const result = await run([], overrides);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /supplied webhook settings are invalid/);
+    assert.deepEqual(messages, []);
+    malformedOffline.push(result);
+  }
+
+  const valid = await run(['--live']);
+  assert.equal(valid.status, 0);
+  assert.match(valid.stdout, /valid planner proposal for one synthetic note/);
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].authorization, `Bearer ${token}`);
+  assert.deepEqual(messages[0].body, {
+    note: 'Track my membership with Practice library reference member-readiness until it is closed. Can you check on Friday?',
+    today: '2026-11-23', sources: [practiceReceiptSource]
+  });
+
+  returned = { ...proposal, grant: sentinel };
+  const fallback = await run(['--live']);
+  assert.equal(fallback.status, 1);
+  assert.match(fallback.stderr, /could not be used as a planner proposal/);
+  assert.equal(messages.length, 2);
+
+  const ineligible = await run(['--live'], { RELAY_N8N_WEBHOOK_URL: 'http://invalid-synthetic-endpoint.example' });
+  assert.equal(ineligible.status, 1);
+  assert.match(ineligible.stderr, /valid webhook settings/);
+  const invalidArgs = await run(['--live', '--again']);
+  assert.equal(invalidArgs.status, 2);
+  assert.match(invalidArgs.stderr, /Usage/);
+  assert.equal(messages.length, 2);
+
+  for (const { stdout, stderr } of [offline, missing, ...malformedOffline, valid, fallback, ineligible, invalidArgs]) {
+    assert.ok([webhookUrl, token, sentinel, 'http://invalid-synthetic-endpoint.example', 'synthetic malformed token'].every(value =>
+      !(stdout + stderr).includes(value)));
+  }
 });

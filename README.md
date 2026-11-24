@@ -25,7 +25,7 @@ Saved notes stay in `.relay/desk.sqlite`. Open [Relay Desk on this computer](htt
 
 Use `npm run reset` to start the three-errand practice household on 23 November 2026 IST. Select **Check your errands** to see the morning brief. To start with no permissions, use `npm run reset -- --cold`. To reopen the practice desk, use `npm run demo`. Stop the desk before switching commands. The practice desk uses `.relay/demo` by default.
 
-The optional n8n workflow gives the practice desk a model-backed intake. Import it into n8n and attach your OpenAI credential when you are ready to run synthetic cases. [Connect the practice planner](docs/n8n.md)
+Run `npm run check:n8n` to check the optional planner setup offline. When you are ready to try model-backed intake, import the workflow into n8n and attach your OpenAI credential there. [Connect the practice planner](docs/n8n.md)
 
 Run `npm run evaluate` for automated checks, or `npm run compare:planners` to replay twelve synthetic scenarios against fixed rules and authored planner responses. The comparison reports each interpretation and provider outcome. [Build and verification commands](docs/build.md#run-the-local-build)
 
