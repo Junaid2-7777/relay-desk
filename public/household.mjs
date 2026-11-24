@@ -100,6 +100,8 @@ function permissions(record) {
   ];
 }
 
+const activeAt = (grant, deskTime) => grant?.status === 'allowed' && Date.parse(grant.expiresAt) > Date.parse(deskTime);
+
 function renderAccess(panel, record, run, deskTime) {
   const entries = permissions(record);
   if (!entries.length) return;
@@ -108,7 +110,7 @@ function renderAccess(panel, record, run, deskTime) {
   addText(details, 'summary', 'Permissions');
   for (const [operation, label, description] of entries) {
     const grant = record.grants[operation];
-    const active = grant?.status === 'allowed' && Date.parse(grant.expiresAt) > Date.parse(deskTime);
+    const active = activeAt(grant, deskTime);
     const section = document.createElement('section');
     section.className = 'permission';
     addText(section, 'h4', label);
@@ -134,8 +136,8 @@ function renderAccess(panel, record, run, deskTime) {
   panel.append(details);
 }
 
-function renderBill(panel, list, record, run) {
-  const { invoice, previousInvoice, capMinor, bill, payment, settlement } = record;
+function renderBill(panel, list, record, run, deskTime) {
+  const { invoice, previousInvoice, capMinor, bill, payment, settlement, approval, grants } = record;
   if (previousInvoice) fact(list, 'Previous invoice', money(previousInvoice.amountMinor, previousInvoice.currency));
   if (invoice) {
     fact(list, 'Current invoice', money(invoice.amountMinor, invoice.currency));
@@ -144,15 +146,25 @@ function renderBill(panel, list, record, run) {
   }
   fact(list, 'Standing limit', money(capMinor, bill.currency));
   if (reviewNeeded(record) && invoice) {
-    const approved = record.approval?.status === 'allowed';
-    addText(panel, 'p', approved
-      ? 'One-time payment approved. Check your errands to apply it.'
-      : `A one-time payment applies to this invoice revision. Your standing limit stays at ${money(capMinor, bill.currency)}.`);
-    if (!approved) {
+    const canReview = activeAt(grants.invoice, deskTime);
+    const canPay = canReview && activeAt(grants.payment, deskTime) &&
+      invoice.payee === bill.payee && invoice.currency === bill.currency;
+    const approved = canPay && activeAt(approval, deskTime) && approval.grantRevision === grants.payment.revision &&
+      ['invoiceId', 'revision', 'payee', 'currency', 'amountMinor'].every(field => approval[field] === invoice[field]);
+    if (approved) {
+      addText(panel, 'p', 'One-time payment approved. Check your errands to apply it.');
+    } else if (!canReview) {
+      addText(panel, 'p', 'Allow invoice and receipt access in Permissions to review this bill.');
+    } else {
       const choices = document.createElement('div');
       choices.className = 'actions';
-      action(choices, `Pay ${money(invoice.amountMinor, invoice.currency)} once`, event =>
-        run('bill-choice', { choice: 'approve', revision: record.revision }, event.currentTarget, true)).className = 'primary';
+      if (canPay) {
+        addText(panel, 'p', `A one-time payment applies to this invoice revision. Your standing limit stays at ${money(capMinor, bill.currency)}.`);
+        action(choices, `Pay ${money(invoice.amountMinor, invoice.currency)} once`, event =>
+          run('bill-choice', { choice: 'approve', revision: record.revision }, event.currentTarget, true)).className = 'primary';
+      } else {
+        addText(panel, 'p', 'Review bill payment access in Permissions to approve this invoice.');
+      }
       action(choices, 'Leave unpaid', event =>
         run('bill-choice', { choice: 'defer', revision: record.revision }, event.currentTarget));
       panel.append(choices);
@@ -171,7 +183,7 @@ export function renderHousehold(panel, list, record, run, deskTime) {
   if (record.calendarEvent) fact(list, 'Calendar entry', 'Confirmed in the practice calendar');
   if (record.conflict) fact(list, 'Calendar conflict', `${when(record.conflict.start)} IST`);
   if (record.status !== 'stopped' && record.issue && issues[record.issue]) addText(panel, 'p', issues[record.issue]);
-  if (record.bill) renderBill(panel, list, record, run);
+  if (record.bill) renderBill(panel, list, record, run, deskTime);
   if (record.receiptPlan) {
     const { issuer, subject, type, status } = record.receiptPlan;
     fact(list, 'Issuer', issuer);

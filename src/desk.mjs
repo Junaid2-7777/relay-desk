@@ -277,6 +277,9 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       }
       return withRefund(id, record => {
         requireRevision(record, revision);
+        if (record.status === 'stopped' && choice === 'allowed') {
+          throw new DeskError('Resume tracking before allowing access.', 409);
+        }
         const previous = record.refundAccess[source];
         const grant = refundGrant(refundFixture.subject, source, choice, previous, clock());
         return { ...record, refundAccess: { ...record.refundAccess, [source]: grant } };
@@ -287,22 +290,20 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       if (!['stop', 'resume'].includes(choice)) throw new DeskError('Choose whether to track this errand.');
       return changeCase(id, record => {
         requireRevision(record, revision);
-        if (choice === 'resume') {
-          if (record.status !== 'stopped') return record;
-          const { stoppedStatus, ...rest } = record;
-          return { ...rest, status: stoppedStatus ?? 'open' };
-        }
-        if (record.status === 'stopped' || record.status === 'verified') return record;
+        const resume = choice === 'resume';
+        if (resume ? record.status !== 'stopped' : ['stopped', 'verified'].includes(record.status)) return record;
         const withdraw = grants => Object.fromEntries(Object.entries(grants).map(([source, grant]) =>
           [source, grant.status === 'allowed' ? { ...grant, status: 'withdrawn', revision: grant.revision + 1, expiresAt: null } : grant]));
-        return {
-          ...record,
-          stoppedStatus: record.status,
-          status: 'stopped',
+        const { stoppedStatus, ...rest } = record;
+        const withoutAccess = {
+          ...rest,
           ...(record.grants ? { grants: withdraw(record.grants) } : {}),
           ...(record.refundAccess ? { refundAccess: withdraw(record.refundAccess) } : {}),
           ...(record.approval ? { approval: null } : {})
         };
+        return resume
+          ? { ...withoutAccess, status: stoppedStatus ?? 'open' }
+          : { ...withoutAccess, status: 'stopped', stoppedStatus: record.status };
       });
     },
     setup(id, { revision, capability, issuer, subject, service, owner, type, status, windowStart, windowEnd }) {
@@ -360,6 +361,9 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       }
       return changeCase(id, record => {
         requireRevision(record, revision);
+        if (record.status === 'stopped' && choice === 'allowed') {
+          throw new DeskError('Resume tracking before allowing access.', 409);
+        }
         const offered = scopes(record);
         if (!Object.hasOwn(offered, operation)) throw new DeskError('This errand has no such permission.');
         const grant = makeGrant(operation, offered[operation], choice, record.grants[operation], clock());
@@ -371,7 +375,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       return changeCase(id, record => {
         requireRevision(record, revision);
         const now = clock();
-        if (!record.bill || record.issue !== 'bill-review' || !activeGrant(record.grants.invoice, now)) {
+        if (!record.bill || record.status !== 'open' || record.issue !== 'bill-review' || !activeGrant(record.grants.invoice, now)) {
           throw new DeskError('There is no invoice ready for review.', 409);
         }
         const invoice = household.bill.fixture.readInvoice(record.bill.invoiceId);

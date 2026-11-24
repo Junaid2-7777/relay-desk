@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { mondayBill, openBillFixture } from '../src/bill-fixture.mjs';
 import { mondayRefund, openRefundFixture } from '../src/refund-fixture.mjs';
@@ -64,6 +65,14 @@ async function startHousehold(t, warm = true) {
       await open(reset);
     },
     moveTime(next) { time = next; },
+    persistLegacyErrand(record) {
+      const database = new DatabaseSync(join(dataDir, 'desk.sqlite'));
+      try {
+        database.prepare('UPDATE errands SET record = ? WHERE id = ?').run(JSON.stringify(record), record.id);
+      } finally {
+        database.close();
+      }
+    },
     provider(openFixture) {
       const connection = openFixture({ dataDir, clock });
       connections.push(connection);
@@ -73,12 +82,12 @@ async function startHousehold(t, warm = true) {
     checkpoint: () => request('/api/checkpoint', {}),
     inspect: () => request('/api/inspect'),
     native: provider => request(`/api/fixture/${provider}`),
-    access: (errand, operation, choice) => request(`/api/errands/${errand.id}/household-access`, {
+    access: (errand, operation, choice, status) => request(`/api/errands/${errand.id}/household-access`, {
       operation, choice, revision: errand.revision
-    }),
-    refundAccess: (errand, source, choice) => request(`/api/errands/${errand.id}/refund-access`, {
+    }, status),
+    refundAccess: (errand, source, choice, status) => request(`/api/errands/${errand.id}/refund-access`, {
       source, choice, revision: errand.revision
-    }),
+    }, status),
     tracking: (errand, choice) => request(`/api/errands/${errand.id}/tracking`, {
       choice, revision: errand.revision
     }),
@@ -303,11 +312,62 @@ test('stopping an open errand withdraws its permissions and leaves its evidence 
   assert.equal(stopped.note, refund.note);
   assert.equal(stopped.checkDate, refund.checkDate);
   assert.equal(stopped.refundAccess.credits.status, 'withdrawn');
+  await household.refundAccess(stopped, 'merchant', 'allowed', 409);
+  await household.refundAccess(stopped, 'credits', 'allowed', 409);
   assert.deepEqual(errand(await household.checkpoint(), 'refund'), stopped);
-  const resumed = await household.tracking(stopped, 'resume');
+  const withdrawn = await household.refundAccess(stopped, 'credits', 'withdrawn');
+  await household.restart();
+  const resumed = await household.tracking(withdrawn, 'resume');
   assert.equal(resumed.status, 'open');
   assert.equal(resumed.refundAccess.merchant.status, 'withdrawn');
+  assert.equal(resumed.refundAccess.credits.status, 'withdrawn');
+  assert.deepEqual(errand(await household.checkpoint(), 'refund'), resumed);
   assert.deepEqual((await household.native('refund')).reads, reads);
+});
+
+test('a stopped bill can withdraw access but cannot allow access or make a bill choice', async t => {
+  const household = await startHousehold(t);
+  const bill = errand(await household.checkpoint(), 'bill');
+  const approved = await household.billChoice(bill, 'approve');
+  const stopped = await household.tracking(approved, 'stop');
+  const native = await household.native('bill');
+  assert.equal(stopped.approval, null);
+  await household.access(stopped, 'invoice', 'allowed', 409);
+  await household.access(stopped, 'payment', 'allowed', 409);
+  await household.billChoice(stopped, 'approve', 409);
+  await household.billChoice(stopped, 'defer', 409);
+  assert.deepEqual(errand(await household.checkpoint(), 'bill'), stopped);
+  const withdrawn = await household.access(stopped, 'payment', 'withdrawn');
+  await household.restart();
+  const resumed = await household.tracking(withdrawn, 'resume');
+  assert.equal(resumed.grants.invoice.status, 'withdrawn');
+  assert.equal(resumed.grants.payment.status, 'withdrawn');
+  assert.equal(errand(await household.checkpoint(), 'bill').issue, 'bill-permission');
+  assert.deepEqual(await household.native('bill'), native);
+});
+
+test('resuming a legacy stopped case withdraws access granted by an earlier build', async t => {
+  const household = await startHousehold(t);
+  const brief = await household.checkpoint();
+  const approved = await household.billChoice(errand(brief, 'bill'), 'approve');
+  const refund = errand(brief, 'refund');
+  const stoppedBill = await household.tracking(approved, 'stop');
+  const stoppedRefund = await household.tracking(refund, 'stop');
+  household.persistLegacyErrand({ ...stoppedBill, grants: approved.grants, approval: approved.approval });
+  household.persistLegacyErrand({ ...stoppedRefund, refundAccess: refund.refundAccess });
+  const beforeBill = await household.native('bill');
+  const beforeRefund = await household.native('refund');
+
+  await household.restart();
+  const persisted = await household.desk();
+  const resumedBill = await household.tracking(errand(persisted, 'bill'), 'resume');
+  const resumedRefund = await household.tracking(errand(persisted, 'refund'), 'resume');
+  assert.equal(resumedBill.approval, null);
+  assert.ok(Object.values(resumedBill.grants).every(grant => grant.status === 'withdrawn'));
+  assert.ok(Object.values(resumedRefund.refundAccess).every(grant => grant.status === 'withdrawn'));
+  await household.checkpoint();
+  assert.deepEqual(await household.native('bill'), beforeBill);
+  assert.deepEqual(await household.native('refund'), beforeRefund);
 });
 
 test('the review queues one exact local follow-up and a matching credit retires an unsent draft', async t => {
