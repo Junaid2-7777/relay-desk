@@ -59,9 +59,9 @@ async function startHousehold(t, warm = true) {
 
   await open(true);
   return {
-    async restart(nextTime = time) {
+    async restart(nextTime = time, reset = false) {
       time = nextTime;
-      await open();
+      await open(reset);
     },
     moveTime(next) { time = next; },
     provider(openFixture) {
@@ -346,4 +346,21 @@ test('the review queues one exact local follow-up and a matching credit retires 
     assert.equal(result.queuedFollowup, undefined);
     assert.deepEqual((await household.native('outbox')).messages, []);
   });
+});
+
+test('a practice reset clears the refund follow-up journal as well as the native outbox', async t => {
+  const household = await startHousehold(t);
+  const original = errand(await household.desk(), 'refund');
+  const draft = await household.draft(original);
+  const queued = await household.queue(original, draft);
+  assert.equal(queued.queuedFollowup.text, draft.text);
+
+  await household.restart(monday, true);
+  const reset = errand(await household.desk(), 'refund');
+  assert.deepEqual((await household.native('outbox')).messages, []);
+  assert.ok(!(await household.inspect()).actions.some(action => action.errandId === reset.id));
+  const newDraft = { ...draft, text: 'Please confirm the refund reference.' };
+  const updated = await household.queue(reset, newDraft);
+  assert.equal(updated.queuedFollowup.text, newDraft.text);
+  assert.deepEqual((await household.native('outbox')).messages, [updated.queuedFollowup]);
 });

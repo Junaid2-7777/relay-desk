@@ -401,7 +401,10 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
         checks: {},
         evidence: []
       };
-      return seed(record);
+      return transaction(() => {
+        journal.reset(record.id);
+        return seed(record);
+      });
     },
     resetHousehold(warm) {
       transaction(() => {
