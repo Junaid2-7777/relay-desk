@@ -249,32 +249,40 @@ test('correcting a receipt preserves the original note and renews access only fo
   await desk.setup(verified, plan, 409);
 });
 
-test('R7 rehearsal books a new free seat only under its own provider, service and subject grants', async t => {
+test('R7 operator offers reach a new visit through its own booking and calendar permissions', async t => {
   const desk = await rehearsal(t);
   const provider = desk.provider(openVisitFixture);
-  const note = 'Book a free Tuesday orientation seat at my community centre.';
+  const note = 'Could you find a free Tuesday equipment induction at the practice tool library?';
   const scope = {
-    issuer: 'practice-community-centre',
-    service: 'member-orientation',
-    subject: 'household-orientation-seat',
+    issuer: 'practice-tool-library',
+    service: 'equipment-induction',
+    subject: 'seat-47',
     zone: 'Asia/Kolkata',
     windowStart: '2026-11-24T16:15:00+05:30',
     windowEnd: '2026-11-24T18:00:00+05:30'
   };
-  const slot = provider.putSlot({
-    id: 'rehearsal-new-orientation-slot',
-    issuer: scope.issuer,
-    service: scope.service,
-    subject: scope.subject,
-    zone: scope.zone,
-    start: '2026-11-24T17:00:00+05:30',
-    end: '2026-11-24T17:30:00+05:30'
-  });
+  const time = hour => `2026-11-24T${hour}:00+05:30`;
+  const offer = (id, start, end, fee = '0', issuer = scope.issuer) => desk.publish('visit-slot', id, issuer, scope.service,
+    scope.subject, time(start), time(end), fee);
+  const commitment = desk.publish('calendar-commitment', 'practice-tool-library-commitment', time('16:25'), time('16:40'),
+    'Synthetic protected commitment');
+  assert.equal(commitment.protected, true);
+  offer('practice-induction-outside-window', '16:00', '16:10');
+  offer('practice-induction-busy', '16:25', '16:35');
+  assert.equal(offer('practice-induction-paid', '16:45', '16:55', '10000').feeMinor, 10000);
+  const removed = offer('practice-induction-withdrawn', '16:50', '17:00');
+  const withdrawn = desk.publish('visit-slot-withdraw', removed.id);
+  assert.deepEqual(withdrawn, { ...removed, active: false, revision: removed.revision + 1 });
+  assert.deepEqual(desk.publish('visit-slot-withdraw', removed.id), withdrawn);
+  offer('practice-induction-other-provider', '16:15', '16:25', '0', 'another-practice-library');
+  assert.deepEqual(provider.inspect().attempts, []);
+  assert.deepEqual(provider.inspect().reads, []);
+
   const saved = await desk.save(note);
-  const configured = await desk.setup(saved, { capability: 'visit', owner: 'Practice community centre', ...scope });
+  const configured = await desk.setup(saved, { capability: 'visit', ...scope });
   assert.deepEqual(configured.visit, scope);
   assert.equal(configured.note, note);
-  assert.equal(configured.owner, 'Practice community centre');
+  assert.equal(configured.owner, scope.issuer);
   assert.deepEqual(configured.grants ?? {}, {});
 
   const first = await desk.checkpoint();
@@ -289,28 +297,49 @@ test('R7 rehearsal books a new free seat only under its own provider, service an
   assert.deepEqual(initial.attempts.map(attempt => attempt.operation), ['reserve', 'calendar.add']);
   assert.ok(!initial.reads.some(read => read.scope.issuer === scope.issuer));
 
-  for (const operation of ['freeBusy', 'slots', 'calendar', 'reserve']) {
+  for (const operation of ['freeBusy', 'slots', 'reserve']) {
     orientation = await desk.allow(orientation, operation);
     assert.deepEqual(orientation.grants[operation].scope, scope);
   }
+  const noSafeOffer = recordFrom(await desk.checkpoint(), saved.id);
+  assert.equal(noSafeOffer.status, 'open');
+  assert.equal(noSafeOffer.issue, 'slot-unavailable');
+  assert.deepEqual(provider.inspect().reservations, initial.reservations);
+  assert.deepEqual(provider.inspect().attempts, initial.attempts);
+  assert.ok(!provider.inspect().reads.some(read => read.scope.issuer === 'another-practice-library'));
 
-  const completed = recordFrom(await desk.checkpoint(), saved.id);
-  assert.equal(completed.status, 'verified');
-  const native = provider.inspect();
-  assert.equal(native.reservations.length, 2);
-  assert.equal(native.calendar.length, initial.calendar.length + 1);
-  assert.deepEqual(native.reservations.filter(reservation => reservation.subject === scope.subject), [completed.reservation]);
-  const reservation = completed.reservation;
+  const slot = offer('practice-induction-free', '17:00', '17:30');
+  assert.deepEqual(offer(slot.id, '17:00', '17:30'), slot);
+  assert.deepEqual(provider.inspect().slots.find(candidate => candidate.id === slot.id), slot);
+  const booked = recordFrom(await desk.checkpoint(), saved.id);
+  assert.equal(booked.status, 'booked');
+  assert.equal(booked.issue, 'calendar-pending');
+  assert.equal(booked.calendarEvent, null);
+  const reservation = booked.reservation;
   assert.equal(reservation.issuer, scope.issuer);
   assert.equal(reservation.service, scope.service);
+  assert.equal(reservation.subject, scope.subject);
   assert.equal(reservation.slotId, slot.id);
   assert.equal(reservation.start, slot.start);
   assert.equal(reservation.end, slot.end);
   assert.equal(reservation.feeMinor, 0);
+  const beforeCalendar = provider.inspect();
+  assert.deepEqual(beforeCalendar.reservations, [...initial.reservations, reservation]);
+  assert.deepEqual(beforeCalendar.calendar, initial.calendar);
+  assert.ok(!beforeCalendar.reads.some(read => read.source === 'calendar' && read.scope.reservationId === reservation.id));
+
+  await desk.allow(booked, 'calendar');
+  const completed = recordFrom(await desk.checkpoint(), saved.id);
+  assert.equal(completed.status, 'verified');
+  assert.deepEqual(completed.reservation, reservation);
+  const native = provider.inspect();
+  assert.deepEqual(native.reservations, beforeCalendar.reservations);
+  assert.equal(native.calendar.length, initial.calendar.length + 1);
   const nativeEvent = native.calendar.find(event => event.reservationId === reservation.id);
   assert.ok(nativeEvent);
   assert.equal(nativeEvent.id, completed.calendarEvent.id);
   assert.equal(nativeEvent.start, slot.start);
   assert.equal(nativeEvent.end, slot.end);
   assert.deepEqual(native.calendar.filter(event => event.id !== nativeEvent.id), initial.calendar);
+  assert.deepEqual(native.calendar.find(event => event.id === commitment.id), commitment);
 });

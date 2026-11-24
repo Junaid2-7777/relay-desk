@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { evidenceInstant } from '../shared/evidence-time.mjs';
 import { mondayBill, openBillFixture } from '../src/bill-fixture.mjs';
 import { sameInvoice } from '../src/household.mjs';
-import { openReceiptFixture, practiceReceiptSource } from '../src/receipt-fixture.mjs';
+import { openReceiptFixture, practiceReceiptSource, receiptIdentifier } from '../src/receipt-fixture.mjs';
 import { mondayRefund, openRefundFixture } from '../src/refund-fixture.mjs';
 import { mondayVisit, openVisitFixture } from '../src/visit-fixture.mjs';
 
@@ -13,6 +13,9 @@ const actions = new Map([
   ['unrelated-credit', [() => postCredit(false)]],
   ['matching-credit', [() => postCredit(true)]],
   ['settle-bill', [settleBill]],
+  ['visit-slot', [publishVisitSlot, 'SLOT_ID', 'ISSUER', 'SERVICE', 'SUBJECT', 'START', 'END', 'FEE_MINOR']],
+  ['visit-slot-withdraw', [withdrawVisitSlot, 'SLOT_ID']],
+  ['calendar-commitment', [publishCommitment, 'EVENT_ID', 'START', 'END', 'TITLE']],
   ['visit-conflict', [() => publishVisitConflict(false)]],
   ['visit-conflict-moved', [() => publishVisitConflict(true)]],
   ['membership-acknowledged', [() => postMembership(false)]],
@@ -62,6 +65,49 @@ function settleBill() {
     fixture.putSettlement(settlement);
     return settlement;
   });
+}
+
+function interval(start, end) {
+  if (!(evidenceInstant(start) < evidenceInstant(end))) {
+    throw new Error('Use an ordered start and end with ISO seconds and an explicit time-zone offset.');
+  }
+  return { start, end };
+}
+
+function publishVisitSlot(slotId, issuer, service, subject, start, end, fee) {
+  const id = receiptIdentifier(slotId, 'a slot identifier');
+  const identity = {
+    issuer: receiptIdentifier(issuer, 'a provider identifier'),
+    service: receiptIdentifier(service, 'a service identifier'),
+    subject: receiptIdentifier(subject, 'a subject reference')
+  };
+  const feeMinor = Number(fee);
+  if (!/^\d+$/u.test(fee) || !Number.isSafeInteger(feeMinor)) throw new Error('Give the slot fee in whole paise. Use 0 for a free offer.');
+  const offer = { id, ...identity, ...interval(start, end), zone: mondayVisit.zone, active: true, feeMinor, currency: 'INR' };
+  return withFixture(openVisitFixture, 'providers.sqlite', fixture => {
+    const previous = fixture.inspect().slots.find(slot => slot.id === id);
+    if (previous && Object.entries(identity).some(([field, value]) => previous[field] !== value)) {
+      throw new Error('Use a new slot identifier for a different provider, service or subject.');
+    }
+    if (previous && Object.entries(offer).every(([field, value]) => previous[field] === value)) return previous;
+    return fixture.putSlot({ ...offer, revision: (previous?.revision ?? 0) + 1 });
+  });
+}
+
+function withdrawVisitSlot(slotId) {
+  const id = receiptIdentifier(slotId, 'a slot identifier');
+  return withFixture(openVisitFixture, 'providers.sqlite', fixture => {
+    const slot = fixture.inspect().slots.find(item => item.id === id);
+    if (!slot) throw new Error('Publish the practice slot before withdrawing it.');
+    return slot.active ? fixture.putSlot({ ...slot, active: false, revision: slot.revision + 1 }) : slot;
+  });
+}
+
+function publishCommitment(eventId, start, end, title) {
+  const id = receiptIdentifier(eventId, 'a calendar event identifier');
+  if (!title.trim()) throw new Error('Give the synthetic commitment a title.');
+  const event = { id, ...interval(start, end), title: title.trim() };
+  return withFixture(openVisitFixture, 'providers.sqlite', fixture => fixture.putCalendarEvent(event));
 }
 
 function publishVisitConflict(moved) {

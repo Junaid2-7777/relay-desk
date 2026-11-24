@@ -34,6 +34,29 @@ Use a running practice desk and a second terminal pointed at its practice direct
 3. Run `npm run demo:evidence -- receipt-offline practice-centre`, then publish the matching record with `npm run demo:evidence -- receipt-record practice-centre key-17 key-return received proof-1`. Check the desk again. It shows the issuer outage and preserves the previous successful check. The fixture's native read log at `/api/fixture/receipt` shows the two failed attempts.
 4. Run `npm run demo:evidence -- receipt-online practice-centre` and check again. The card shows the matching receipt `proof-1`. Compare its issuer and reference with the native record. The receipt timestamp comes from the operator’s `RELAY_CLOCK`.
 
+## Book through a different practice provider
+
+Start `npm run reset` in a fresh practice directory. Point the operator terminal at the same `RELAY_DATA_DIR` and use the default Monday 23 November 2026 clock. The evaluator can choose a new synthetic issuer, service, reference, and appointment window. This example uses a free equipment induction at a practice tool library.
+
+1. Publish a household commitment, a free offer that overlaps it, and a paid offer within the requested window.
+
+   ```console
+   npm run demo:evidence -- calendar-commitment induction-conflict 2026-11-24T16:25:00+05:30 2026-11-24T16:40:00+05:30 "Practice household commitment"
+   npm run demo:evidence -- visit-slot induction-busy practice-tool-library equipment-induction seat-47 2026-11-24T16:25:00+05:30 2026-11-24T16:35:00+05:30 0
+   npm run demo:evidence -- visit-slot induction-paid practice-tool-library equipment-induction seat-47 2026-11-24T16:45:00+05:30 2026-11-24T16:55:00+05:30 10000
+   ```
+
+2. Enter “Could you find a free Tuesday equipment induction at the practice tool library?” in ordinary intake. Review and save the errand. In **Set up a practice check**, choose **Reserve a free slot**. Enter `practice-tool-library` as the issuer, `seat-47` as the record reference, and `equipment-induction` as the service. Set the earliest and latest times on Tuesday 24 November to 4:15 pm and 6:00 pm IST, then save the agreed check. Check the errands before granting access. The existing broadband permission covers its own visit. The new errand stays open without a provider read or reservation.
+3. Open the new errand’s **Permissions** and allow **Calendar availability**, **Provider availability**, and **Free booking**. Check again. The paid and busy offers leave the errand open. Publish the free replacement and check again.
+
+   ```console
+   npm run demo:evidence -- visit-slot induction-free practice-tool-library equipment-induction seat-47 2026-11-24T17:00:00+05:30 2026-11-24T17:30:00+05:30 0
+   ```
+
+4. The provider confirms one free 5 pm reservation while calendar entry is pending. Allow **Calendar entry** and check again. The brief now shows the calendar entry. In `/api/fixture/visit`, match the offer and reservation on issuer, service, reference, and time. The linked calendar row uses the same reservation ID and times. The protected commitment remains at 4:25 pm.
+
+`visit-slot` publishes a native offer with a fee in whole paise. Use `0` for free and supply ISO timestamps with seconds and an explicit offset. Reuse a slot ID to update its terms for the same provider, service, and subject. Use `visit-slot-withdraw SLOT_ID` to make an existing offer unavailable. Each changed offer gets a new revision. These commands publish synthetic fixture records. The desk applies grants and makes its own reservation and calendar checks. [R7 acceptance](evaluation.md#one-household-three-independent-outcomes)
+
 ## Follow the session
 
 | Time | What happens on screen | What the audience can verify |
