@@ -139,7 +139,7 @@ test('a one-time approval that expires before the provider commits cannot debit 
   const invoice = desk.check();
   const expiresAt = '2026-11-23T05:31:00.000Z';
   desk.update({ approval: { ...approve(invoice), expiresAt } });
-  desk.check({
+  const blocked = desk.check({
     ...desk.fixture,
     pay(...args) {
       desk.moveTime(new Date(expiresAt));
@@ -148,6 +148,50 @@ test('a one-time approval that expires before the provider commits cannot debit 
   });
 
   const { payments, attempts } = desk.fixture.inspect();
+  assert.equal(blocked.approval, null);
   assert.deepEqual(payments, []);
   assert.deepEqual(attempts.map(({ status, code }) => [status, code]), [['blocked', 'not-authorized']]);
+});
+
+test('a stale checkpoint cannot dispatch a retired payment after a new invoice is paid', t => {
+  const desk = setup(t, { seedInvoices: false });
+  const original = { ...mondayBill, revision: 1, amountMinor: 85000 };
+  const replacement = { ...mondayBill, revision: 2, amountMinor: 87000 };
+  desk.fixture.putInvoice(original);
+  let latest;
+  const stale = {
+    ...desk.journal,
+    prepare(...args) {
+      const entry = desk.journal.prepare(...args);
+      desk.fixture.putInvoice(replacement);
+      latest = runBill(desk.record, desk.fixture, desk.journal, now);
+      return entry;
+    }
+  };
+
+  desk.check(desk.fixture, stale);
+  const { attempts, payments } = desk.fixture.inspect();
+  assert.equal(latest.status, 'accepted');
+  assert.deepEqual(payments, [latest.payment]);
+  assert.deepEqual(attempts.map(({ revision, status }) => [revision, status]), [[replacement.revision, 'committed']]);
+  assert.equal(desk.check().payment.key, latest.payment.key);
+});
+
+test('payment remains pending when settlement time is ambiguous, invalid, or precedes acceptance', t => {
+  const desk = setup(t);
+  const invoice = desk.check();
+  desk.update({ approval: approve(invoice) });
+  const { paymentRef, invoiceId, revision, payee, amountMinor, currency } = desk.check().payment;
+  const receipt = { paymentRef, invoiceId, revision, payee, amountMinor, currency, status: 'settled' };
+
+  for (const settledAt of [
+    '2026-11-22T05:30:00.000Z', '2026-11-24T05:30:00',
+    '2026-11-24T24:00:00.000Z', '2026-11-31T05:30:00.000Z'
+  ]) {
+    desk.fixture.putSettlement({ ...receipt, settledAt });
+    assert.equal(desk.check().status, 'accepted');
+  }
+
+  desk.fixture.putSettlement({ ...receipt, settledAt: later });
+  assert.equal(desk.check().status, 'verified');
 });

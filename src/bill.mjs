@@ -1,6 +1,15 @@
 import { createHash } from 'node:crypto';
 import { activeGrant, sameInvoice } from './household.mjs';
 
+const zonedTimestamp = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/u;
+
+function receiptTime(value) {
+  if (typeof value !== 'string' || !zonedTimestamp.test(value)) return NaN;
+  const day = value.slice(0, 10);
+  const midnight = new Date(`${day}T00:00:00.000Z`);
+  return Number.isFinite(+midnight) && midnight.toISOString().slice(0, 10) === day ? Date.parse(value) : NaN;
+}
+
 function sameSubject(left, right) {
   return left && right && left.invoiceId === right.invoiceId && left.payee === right.payee && left.currency === right.currency;
 }
@@ -41,22 +50,41 @@ function paymentIntent(id, { invoiceId, revision, payee, amountMinor, currency }
 
 function isNativePayment(payment, intent) {
   return payment?.status === 'accepted' && payment.key === intent.key && sameInvoice(payment, intent) &&
-    typeof payment.paymentRef === 'string' && payment.paymentRef.length > 0 && Number.isFinite(Date.parse(payment.acceptedAt));
+    typeof payment.paymentRef === 'string' && payment.paymentRef.length > 0 && Number.isFinite(receiptTime(payment.acceptedAt));
+}
+
+function canReadInvoice(record, current, terms, now, readTime) {
+  const original = invoiceGrant(record, terms, now);
+  const fresh = invoiceGrant(current, terms, readTime);
+  return original && fresh && fresh.revision === original.revision && current.status !== 'stopped';
 }
 
 function readUnderGrant(record, terms, journal, now, read) {
-  const original = invoiceGrant(record, terms, now);
-  if (!original) return null;
+  return journal.dispatch(record.id, (current, currentTime) =>
+    canReadInvoice(record, current, terms, now, currentTime ?? now) ? { value: read() } : null);
+}
+
+function recoverPayment(record, fixture, journal, now) {
   return journal.dispatch(record.id, (current, currentTime) => {
-    const fresh = invoiceGrant(current, terms, currentTime ?? now);
-    return fresh && fresh.revision === original.revision && current.status !== 'stopped' ? { value: read() } : null;
+    const original = journal.latest(record.id, 'pay');
+    if (!original || original.status === 'blocked') return null;
+    if (!canReadInvoice(record, current, original.payload, now, currentTime ?? now)) return { issue: 'payment-unknown' };
+    const payment = fixture.paymentByKey(original.key);
+    if (isNativePayment(payment, original.payload)) {
+      journal.mark(original.key, 'committed');
+      return { payment };
+    }
+    if (payment !== null || original.status === 'committed') return { issue: 'payment-unknown' };
+    journal.mark(original.key, 'blocked');
+    return null;
   });
 }
 
 function presentPayment(record, payment, fixture, journal, now) {
   const matching = readUnderGrant(record, payment, journal, now, () => fixture.readSettlement(payment.paymentRef))?.value;
+  const settledAt = receiptTime(matching?.settledAt);
   const settlement = matching?.status === 'settled' && matching.paymentRef === payment.paymentRef &&
-    sameInvoice(matching, payment) && Date.parse(matching.settledAt) >= Date.parse(payment.acceptedAt) ? matching : null;
+    sameInvoice(matching, payment) && settledAt >= receiptTime(payment.acceptedAt) ? matching : null;
   const approval = record.approval?.status === 'allowed' && sameInvoice(record.approval, payment)
     ? { ...record.approval, status: 'consumed' }
     : record.approval;
@@ -77,19 +105,9 @@ export function runBill(record, fixture, journal, clockNow) {
   if (record.status === 'verified' || record.status === 'stopped') return record;
   if (record.payment) return presentPayment(record, record.payment, fixture, journal, now);
 
-  const original = journal.latest(record.id, 'pay');
-  if (original && original.status !== 'blocked') {
-    const readback = readUnderGrant(record, original.payload, journal, now, () => fixture.paymentByKey(original.key));
-    if (!readback) return openWith(record, 'payment-unknown');
-    const payment = readback.value;
-    if (payment) {
-      if (!isNativePayment(payment, original.payload)) return openWith(record, 'payment-unknown');
-      journal.mark(original.key, 'committed');
-      return presentPayment(record, payment, fixture, journal, now);
-    }
-    if (original.status === 'committed') return openWith(record, 'payment-unknown');
-    journal.mark(original.key, 'blocked');
-  }
+  const recovered = recoverPayment(record, fixture, journal, now);
+  if (recovered?.payment) return presentPayment(record, recovered.payment, fixture, journal, now);
+  if (recovered?.issue) return openWith(record, recovered.issue);
 
   const readGrant = invoiceGrant(record, record.bill, now);
   const result = readUnderGrant(record, record.bill, journal, now, () => fixture.readInvoice(record.bill.invoiceId));
@@ -111,36 +129,46 @@ export function runBill(record, fixture, journal, clockNow) {
   const payload = paymentIntent(record.id, invoice);
   const prepared = journal.prepare(record.id, 'pay', payload.key, payload);
   if (prepared.status !== 'prepared') return openWith(updated, 'payment-unknown');
-  let payment;
+  let outcome;
   try {
-    payment = journal.dispatch(record.id, (current, currentTime, readClock) => {
+    outcome = journal.dispatch(record.id, (current, currentTime, readClock) => {
+      const active = journal.latest(record.id, 'pay');
+      if (active?.key !== payload.key || active.status !== 'prepared') return { issue: 'payment-unknown' };
       const time = currentTime ?? now;
       const currentRead = invoiceGrant(current, payload, time);
       const currentSpend = paymentGrant(current, payload, time);
       if (!currentRead || !currentSpend || currentRead.revision !== readGrant.revision ||
-          currentSpend.revision !== spendGrant.revision || current.status === 'stopped' || sameInvoice(current.deferred, payload)) return null;
+          currentSpend.revision !== spendGrant.revision || current.status === 'stopped' || sameInvoice(current.deferred, payload)) {
+        journal.mark(payload.key, 'blocked');
+        return { issue: 'bill-permission' };
+      }
 
-      return fixture.pay(payload, (terms, totals) => {
-        const commitTime = readClock();
-        return activeGrant(currentRead, commitTime) && activeGrant(currentSpend, commitTime) &&
-          sameInvoice(terms, payload) && allowsAmount(current, terms, currentSpend, commitTime) &&
-          allowsSpend(terms, currentSpend.scope, totals);
-      });
+      let payment;
+      try {
+        payment = fixture.pay(payload, (terms, totals) => {
+          const commitTime = readClock();
+          return activeGrant(currentRead, commitTime) && activeGrant(currentSpend, commitTime) &&
+            sameInvoice(terms, payload) && allowsAmount(current, terms, currentSpend, commitTime) &&
+            allowsSpend(terms, currentSpend.scope, totals);
+        });
+      } catch (error) {
+        const blocked = knownFailure(error);
+        journal.mark(payload.key, blocked ? 'blocked' : 'unknown');
+        return blocked ? { issue: 'bill-review', rejected: true } : { issue: 'payment-unknown' };
+      }
+      if (!isNativePayment(payment, payload)) {
+        journal.mark(payload.key, 'unknown');
+        return { issue: 'payment-unknown' };
+      }
+      journal.mark(payload.key, 'committed');
+      return { payment };
     });
-  } catch (error) {
-    const blocked = knownFailure(error);
-    journal.mark(payload.key, blocked ? 'blocked' : 'unknown');
-    return openWith(updated, blocked ? 'bill-review' : 'payment-unknown');
-  }
-
-  if (!payment) {
-    journal.mark(payload.key, 'blocked');
-    return openWith(updated, 'bill-permission');
-  }
-  if (!isNativePayment(payment, payload)) {
-    journal.mark(payload.key, 'unknown');
+  } catch {
     return openWith(updated, 'payment-unknown');
   }
-  journal.mark(payload.key, 'committed');
-  return presentPayment(updated, payment, fixture, journal, now);
+
+  if (outcome.issue) {
+    return openWith(outcome.rejected ? { ...updated, approval: null } : updated, outcome.issue);
+  }
+  return presentPayment(updated, outcome.payment, fixture, journal, now);
 }
