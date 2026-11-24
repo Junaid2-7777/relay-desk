@@ -4,7 +4,7 @@
 
 **The local desk runs the three-errand practice household.** The recorded walkthrough saves a private note with a Friday check date, then shows the practice household’s revised bill, verified free visit and open refund. A matching credit published by the fixture operator verifies the refund on the next check. [Run the desk](docs/build.md#run-the-local-build) · [Watch the working demo](docs/demo.md#recorded-walkthrough)
 
-**Next evidence · Run the live planner comparison and participant sessions.** The opt-in n8n workflow, paired runner and audit are implemented and exercised with a local mock. The live run needs a published workflow, an OpenAI credential and cases supplied by an evaluator after the freeze. The observer can run the first-use, cold and warm participant tasks on the local desk today. [Connect n8n](docs/n8n.md) · [Held-out comparison](docs/held-out.md) · [Participant worksheet](docs/participant-session.md)
+**Next evidence · Run the live planner comparison and participant sessions.** An evaluator can check twelve independent cases against a frozen checkout before connecting the planner. The live comparison needs the published n8n workflow and its OpenAI credential. For participant sessions, the desk, manual comparison, read-only observer and anonymous worksheet summary all run locally. [Offline evaluator check](docs/held-out.md#check-the-manifest-offline) · [Connect n8n](docs/n8n.md) · [Participant worksheet](docs/participant-session.md)
 
 ## Build order
 

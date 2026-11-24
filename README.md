@@ -11,7 +11,7 @@
 
 > The shop said it would refund me. Can you help me check on Friday?
 
-That’s enough to start. Relay keeps the note and the day you want to check. When you come back on Friday, you can see what the shop promised and whether the refund is still open. You can prepare a draft message to the shop locally. Saving the note requires only the words you want to keep.
+That’s enough to start. Relay keeps the note and the day you want to check. When you come back on Friday, you can see what the shop promised, record what you learned, or prepare a draft message. Your notes and drafts stay on this computer. A second promise from the shop leaves the refund open.
 
 **Current stage · Local desk and synthetic household.** [Watch the working demo](docs/demo.md#recorded-walkthrough) · [Current milestone](roadmap.md#current-stage) · [Five-slide pitch](docs/relay-desk-pitch.pptx)
 
