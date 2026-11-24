@@ -1,3 +1,5 @@
+import { reviewNeeded } from '../shared/brief-order.mjs';
+
 const activity = new Intl.DateTimeFormat('en-IN', {
   weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata'
 });
@@ -44,9 +46,6 @@ export function fact(list, name, text) {
   value.textContent = text;
   list.append(title, value);
 }
-
-export const reviewNeeded = record => record.status !== 'stopped' &&
-  (record.issue === 'bill-review' || record.issue === 'calendar-conflict');
 
 const issues = {
   'visit-permission': 'Review access to check and book the visit.',

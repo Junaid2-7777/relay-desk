@@ -1,4 +1,5 @@
-import { action, addText, fact, renderHousehold, renderPracticeSetup, reviewNeeded, statusLabel } from './household.mjs';
+import { orderChecks, reviewNeeded } from '../shared/brief-order.mjs';
+import { action, addText, fact, renderHousehold, renderPracticeSetup, statusLabel } from './household.mjs';
 
 const element = id => document.getElementById(id);
 const intake = element('intake');
@@ -27,6 +28,7 @@ let reviewedNote;
 let saveRequestId;
 let reviewId;
 let deskTime;
+let deskDay;
 let pagePlannerMode;
 let householdMode = false;
 let receiptSources = [];
@@ -139,6 +141,7 @@ function renderErrand(record) {
   const { id, goal, note, kind, checkDate, merchantDeadline } = record;
   card.id = `errand-${id}`;
   card.dataset.revision = record.revision;
+  card.dataset.day = deskDay;
   part('goal').textContent = goal;
   part('goal').tabIndex = -1;
   part('goal').id = `goal-${id}`;
@@ -147,14 +150,16 @@ function renderErrand(record) {
   part('status').textContent = statusLabel(record);
   card.classList.toggle('review-needed', reviewNeeded(record));
   if (record.status === 'verified') card.querySelector('.ring').classList.add('verified');
-  fact(part('facts'), 'Your check date', checkDate ? dateLabel(checkDate) : 'Choose when to check');
+  const due = !householdMode && record.status === 'open' && checkDate && checkDate <= deskDay;
+  const dateTitle = due ? (checkDate === deskDay ? 'Check today' : 'Check overdue') : 'Your check date';
+  fact(part('facts'), dateTitle, checkDate ? dateLabel(checkDate) : 'Choose when to check');
+  if (due && kind === 'refund') fact(part('facts'), 'What to check', 'Look for the posted credit for this return.');
   if (kind === 'refund') {
     fact(part('facts'), 'Merchant deadline', merchantDeadline ? dateLabel(merchantDeadline) : 'Unknown');
   }
   const replaceCard = (result, showEvidence = false) => {
     records = records.map(item => item.id === id ? result : item);
-    if (householdMode) showErrands();
-    else card.replaceWith(renderErrand(result));
+    showErrands(id);
     const updated = element(card.id);
     if (showEvidence) {
       const panel = updated.querySelector('[data-evidence] details');
@@ -350,20 +355,20 @@ function renderErrand(record) {
   return card;
 }
 
-function showErrands() {
+function showErrands(changedId) {
   if (records.length) {
     const prior = new Map([...errands.querySelectorAll('article')].map(card => [card.id, card]));
-    const cards = records.map(record => {
+    const ordered = orderChecks([...records], householdMode);
+    const cards = ordered.map(record => {
       const existing = prior.get(`errand-${record.id}`);
-      return [record, existing?.dataset.revision === String(record.revision) ? existing : renderErrand(record)];
+      const reuse = record.id !== changedId && existing?.dataset.revision === String(record.revision) && existing.dataset.day === deskDay;
+      return [record, reuse ? existing : renderErrand(record)];
     });
     if (!householdMode) {
       errands.replaceChildren(...cards.map(([, card]) => card));
       return;
     }
     const open = cards.filter(([record]) => !['verified', 'stopped'].includes(record.status))
-      .sort(([left], [right]) => Number(reviewNeeded(right)) - Number(reviewNeeded(left)) ||
-        (left.checkDate ?? '9999-12-31').localeCompare(right.checkDate ?? '9999-12-31') || left.id.localeCompare(right.id))
       .map(([, card]) => card);
     const verified = cards.filter(([record]) => record.status === 'verified').map(([, card]) => card);
     if (verified.length) {
@@ -395,6 +400,7 @@ function showBrief({ today, now, errands: items, fixture, household, plannerMode
   pagePlannerMode ??= mode;
   if (mode !== pagePlannerMode) throw new Error('The planner changed. Reload the desk to review where your note will go.');
   deskTime = now;
+  deskDay = today;
   receiptSources = sources;
   element('today').dateTime = today;
   element('today').textContent = dateLabel(today);

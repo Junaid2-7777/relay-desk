@@ -3,7 +3,8 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openActionJournal } from './action-journal.mjs';
-import { activeGrant, makeGrant, orderBrief, sameInvoice, scopes, seedHousehold } from './household.mjs';
+import { orderChecks } from '../shared/brief-order.mjs';
+import { activeGrant, makeGrant, sameInvoice, scopes, seedHousehold } from './household.mjs';
 import { previewErrand, suggestPracticePlan } from './intake.mjs';
 import { createIntakePlanner } from './intake-planner.mjs';
 import { normalizeReceiptPlan } from './receipt.mjs';
@@ -134,7 +135,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
   const brief = () => ({
     today: today(),
     now: clock().toISOString(),
-    errands: household ? orderBrief(list()) : list(),
+    errands: orderChecks(list(), household),
     fixture: Boolean(refundFixture),
     household: Boolean(household),
     ...(household ? { receiptSources: household.receipt.fixture.sources(), plannerMode: intakePlanner.mode } : {})

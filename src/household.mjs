@@ -75,15 +75,3 @@ export function sameInvoice(a, b) {
   return Boolean(a && b && a.invoiceId === b.invoiceId && a.revision === b.revision &&
     a.payee === b.payee && a.amountMinor === b.amountMinor && a.currency === b.currency);
 }
-
-function group(record) {
-  if (['verified', 'stopped'].includes(record.status)) return 2;
-  if (record.issue === 'bill-review' || record.issue === 'calendar-conflict') return 0;
-  return 1;
-}
-
-export function orderBrief(records) {
-  return records.sort((left, right) => group(left) - group(right) ||
-    (left.checkDate ?? '9999-12-31').localeCompare(right.checkDate ?? '9999-12-31') ||
-    left.id.localeCompare(right.id));
-}
