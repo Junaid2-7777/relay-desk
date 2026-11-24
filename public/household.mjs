@@ -1,4 +1,5 @@
-import { calendarConflictChoice, reviewNeeded } from '../shared/brief-order.mjs';
+import { billDecision, grantActiveAt, reviewNeeded, visitConflictDecision } from '../shared/brief-order.mjs';
+import { zonedInstant } from '../shared/evidence-time.mjs';
 
 const activity = new Intl.DateTimeFormat('en-IN', {
   weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata'
@@ -63,17 +64,23 @@ const issues = {
   'evidence-needed': 'The practice desk has no source for this issuer. Keep the errand open and check with the issuer directly.'
 };
 
-export function statusLabel(record) {
+export function statusLabel(record, deskTime) {
   if (record.status === 'stopped') return 'Tracking stopped';
   if (record.kind === 'visit') {
-    if (record.issue === 'calendar-conflict') return 'Visit booked · calendar conflict';
+    if (record.issue === 'calendar-conflict' && record.reservation) {
+      return visitConflictDecision(record, deskTime)?.canChoose
+        ? 'Visit booked · calendar conflict' : 'Visit booked · calendar check paused';
+    }
     if (record.reservation) return 'Provider confirmed';
     return 'Waiting for a visit';
   }
   if (record.kind === 'bill') {
-    if (record.issue === 'bill-review') return 'Needs your review';
     if (record.status === 'verified') return 'Bill settled';
     if (record.status === 'accepted') return 'Payment accepted';
+    const decision = billDecision(record, deskTime);
+    if (decision?.approved) return 'Payment approved';
+    if (decision?.canApprove) return 'Needs your review';
+    if (record.issue === 'bill-review') return decision?.canDefer ? 'Payment on hold' : 'Invoice check paused';
     return record.issue === 'bill-deferred' ? 'Left unpaid' : 'Bill open';
   }
   if (record.kind === 'refund') return record.status === 'verified' ? 'Refund verified' : 'Waiting for credit';
@@ -101,8 +108,6 @@ function permissions(record) {
   ];
 }
 
-const activeAt = (grant, deskTime) => grant?.status === 'allowed' && Date.parse(grant.expiresAt) > Date.parse(deskTime);
-
 function renderAccess(panel, record, run, deskTime) {
   const entries = permissions(record);
   if (!entries.length) return;
@@ -110,8 +115,8 @@ function renderAccess(panel, record, run, deskTime) {
   details.className = 'source evidence';
   addText(details, 'summary', 'Permissions');
   for (const [operation, label, description] of entries) {
-    const grant = record.grants[operation];
-    const active = activeAt(grant, deskTime);
+    const grant = record.grants?.[operation];
+    const active = grantActiveAt(grant, deskTime);
     const section = document.createElement('section');
     section.className = 'permission';
     addText(section, 'h4', label);
@@ -138,8 +143,9 @@ function renderAccess(panel, record, run, deskTime) {
 }
 
 function renderBill(panel, list, record, run, deskTime) {
-  const { invoice, previousInvoice, capMinor, bill, payment, settlement, approval, grants } = record;
-  const reviewing = reviewNeeded(record) && invoice;
+  const { invoice, previousInvoice, capMinor, bill, payment, settlement } = record;
+  const decision = billDecision(record, deskTime);
+  const reviewing = decision?.canApprove && !decision.approved;
   const terms = reviewing ? document.createElement('dl') : list;
   if (reviewing) {
     list.classList.add('bill-amounts');
@@ -155,25 +161,22 @@ function renderBill(panel, list, record, run, deskTime) {
     fact(terms, 'Invoice', `${invoice.invoiceId} · revision ${invoice.revision}`);
     fact(terms, 'Payee', `${invoice.payeeLabel} · ${invoice.payee}`);
   }
-  if (reviewing) {
-    const canReview = activeAt(grants.invoice, deskTime);
-    const canPay = canReview && activeAt(grants.payment, deskTime) &&
-      invoice.payee === bill.payee && invoice.currency === bill.currency;
-    const approved = canPay && activeAt(approval, deskTime) && approval.grantRevision === grants.payment.revision &&
-      ['invoiceId', 'revision', 'payee', 'currency', 'amountMinor'].every(field => approval[field] === invoice[field]);
-    if (approved) {
+  if (decision) {
+    if (decision.approved) {
       addText(panel, 'p', 'One-time payment approved. Check your errands to apply it.');
-    } else if (!canReview) {
+    } else if (!decision.canDefer) {
       addText(panel, 'p', 'Allow invoice and receipt access in Permissions to review this bill.');
     } else {
       const choices = document.createElement('div');
       choices.className = 'actions bill-actions';
-      if (canPay) {
+      if (decision.canApprove) {
         addText(panel, 'p', `Pay once for this revision. Future bills keep the ${money(capMinor, bill.currency)} limit.`);
         action(choices, `Pay ${money(invoice.amountMinor, invoice.currency)} once`, event =>
           run('bill-choice', { choice: 'approve', revision: record.revision }, event.currentTarget, true)).className = 'primary';
-      } else {
+      } else if (decision.exception) {
         addText(panel, 'p', 'Review bill payment access in Permissions to approve this invoice.');
+      } else {
+        addText(panel, 'p', 'Check your errands to refresh the invoice before deciding whether to pay.');
       }
       action(choices, 'Leave unpaid', event =>
         run('bill-choice', { choice: 'defer', revision: record.revision }, event.currentTarget));
@@ -185,18 +188,18 @@ function renderBill(panel, list, record, run, deskTime) {
 }
 
 function renderVisitConflict(panel, record, run, deskTime) {
-  const choice = calendarConflictChoice(record);
+  const decision = visitConflictDecision(record, deskTime);
+  const choice = decision?.choice;
   if (choice === 'handle') addText(panel, 'p', 'You chose to contact the provider about rescheduling.');
   if (choice === 'watch') addText(panel, 'p', 'You chose to keep checking the booked time.');
-  addText(panel, 'p', 'Your confirmed visit and the overlapping calendar commitment stay in place.');
-
-  const needed = [['slots', 'provider availability'], ['freeBusy', 'calendar availability']]
-    .filter(([operation]) => !activeAt(record.grants[operation], deskTime)).map(([, label]) => label);
-  if (needed.length) {
-    addText(panel, 'p', `Allow ${needed.join(' and ')} in Permissions to review this overlap.`);
+  if (!decision?.canChoose) {
+    const needed = decision?.missing.map(operation => operation === 'slots' ? 'provider availability' : 'calendar availability');
+    addText(panel, 'p', needed?.length ? `Allow ${needed.join(' and ')} in Permissions to review the last seen overlap.`
+      : 'Check your errands to confirm the overlap.');
     return;
   }
 
+  addText(panel, 'p', 'Your confirmed visit and the overlapping calendar commitment stay in place.');
   addText(panel, 'p', choice === 'watch'
     ? 'At the next check, Relay can add this visit if the time frees up and calendar access is allowed.'
     : 'If you keep checking, Relay can add this visit when the time frees up and calendar access is allowed.');
@@ -210,14 +213,18 @@ function renderVisitConflict(panel, record, run, deskTime) {
 }
 
 export function renderHousehold(panel, list, record, run, deskTime) {
-  const showOwner = record.owner && !(record.bill && reviewNeeded(record) && record.invoice?.payeeLabel === record.owner);
+  const showOwner = record.owner && !(record.bill && reviewNeeded(record, deskTime) && record.invoice?.payeeLabel === record.owner);
   if (showOwner) fact(list, 'Responsible for this errand', record.owner);
   if (record.reservation) {
     fact(list, 'Booked for', `${when(record.reservation.start)} IST`);
     fact(list, 'Provider confirmation', record.reservation.id);
   }
   if (record.calendarEvent) fact(list, 'Calendar entry', 'Confirmed in the practice calendar');
-  if (record.conflict) fact(list, 'Calendar conflict', `${when(record.conflict.start)} IST`);
+  if (record.conflict) {
+    const label = visitConflictDecision(record, deskTime)?.canChoose ? 'Calendar conflict' : 'Last seen calendar conflict';
+    const instant = zonedInstant(record.conflict.start);
+    if (Number.isFinite(instant)) fact(list, label, `${when(instant)} IST`);
+  }
   if (record.status !== 'stopped') {
     if (record.issue === 'calendar-conflict') renderVisitConflict(panel, record, run, deskTime);
     else if (record.issue === 'bill-permission' && record.invoice &&

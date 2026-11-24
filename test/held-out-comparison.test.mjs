@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { compareHeldOut, matchedReadbacks, preflightHeldOut, supportedDecision } from '../scripts/compare-planners.mjs';
+import { compareHeldOut, matchedReadbacks, preflightHeldOut, presentedDecision, supportedDecision } from '../scripts/compare-planners.mjs';
 import { summarizeHeldOut, validateHeldOutManifest } from '../scripts/held-out-rubric.mjs';
 
 const owners = { refund: 'Demo shop', visit: 'Demo broadband provider', bill: 'City Electric', receipt: 'mock-unconnected' };
@@ -303,31 +303,116 @@ test('readback grading rejects ambiguous receipts, substituted settlement terms 
   const followup = { key: 'queued-1', status: 'queued' };
   assert.deepEqual(matchedReadbacks({ status: 'verified', queuedFollowup: followup }, { outbox: { messages: [followup] } }),
     { queuedMessage: true, claimedOutcome: false });
-
-  const decision = { status: 'open', issue: 'bill-review', bill, invoice,
-    grants: {
-      invoice: { status: 'allowed', scope: bill, expiresAt: '2026-11-23T03:31:00Z' },
-      payment: { status: 'allowed', scope: bill, expiresAt: '2026-11-23T03:31:00Z' }
-    } };
-  assert.equal(supportedDecision(decision, { bill: { invoices: [invoice] } }, '2026-11-23T03:30:00Z'), true);
-  assert.equal(supportedDecision(decision, { bill: { invoices: [invoice, { ...invoice, revision: 3 }] } }, '2026-11-23T03:30:00Z'), false);
-  assert.equal(supportedDecision({ ...decision, grants: { invoice: decision.grants.invoice } }, { bill: { invoices: [invoice] } }, checkedAt), false);
 });
 
-test('the conflict decision requires current scoped reads and a native overlap with the booking', () => {
+test('a mandatory bill decision needs typed access, an over-cap invoice and real scoped lookup', () => {
+  const bill = { invoiceId: 'electricity-2026-11', payee: 'city-electric', currency: 'INR' };
+  const invoice = { ...bill, revision: 2, amountMinor: 118000, payeeLabel: 'City Electric' };
+  const checkedAt = '2026-11-23T03:30:00Z';
+  const expiresAt = '2026-11-23T03:31:00Z';
+  const capMinor = 90000;
+  const grants = {
+    invoice: { operation: 'invoice', revision: 2, status: 'allowed', scope: bill, expiresAt },
+    payment: { operation: 'payment', revision: 4, status: 'allowed', scope: { payee: bill.payee, currency: bill.currency, capMinor, maxCount: 1 }, expiresAt }
+  };
+  const decision = { status: 'open', issue: 'bill-review', bill, invoice, capMinor, grants };
+  const lookup = { source: 'invoice', scope: { invoiceId: bill.invoiceId }, checkedAt };
+  const native = { bill: { invoices: [invoice], reads: [lookup], payments: [] } };
+  assert.equal(presentedDecision(decision, checkedAt), 'bill-review');
+  assert.equal(supportedDecision(decision, native, checkedAt), true);
+
+  for (const variant of [
+    { ...decision, status: 'accepted' },
+    { ...decision, grants: { invoice: grants.invoice } },
+    { ...decision, grants: { ...grants, payment: { ...grants.payment, operation: 'invoice' } } },
+    { ...decision, grants: { ...grants, invoice: { ...grants.invoice, operation: 'payment' } } },
+    { ...decision, grants: { ...grants, invoice: { ...grants.invoice, expiresAt: checkedAt } } },
+    { ...decision, grants: { ...grants, payment: { ...grants.payment, scope: { ...grants.payment.scope, currency: 'USD' } } } },
+    { ...decision, capMinor: undefined },
+    { ...decision, deferred: invoice }
+  ]) {
+    assert.equal(presentedDecision(variant, checkedAt), null);
+    assert.equal(supportedDecision(variant, native, checkedAt), false);
+  }
+  for (const amountMinor of [capMinor - 1, capMinor]) {
+    const withinCap = { ...invoice, amountMinor };
+    assert.equal(presentedDecision({ ...decision, invoice: withinCap }, checkedAt), null);
+    assert.equal(supportedDecision({ ...decision, invoice: withinCap }, { bill: { ...native.bill, invoices: [withinCap] } }, checkedAt), false);
+  }
+  for (const billNative of [
+    { ...native.bill, invoices: [invoice, { ...invoice, revision: 3 }] },
+    { ...native.bill, payments: undefined },
+    { ...native.bill, reads: [] },
+    { ...native.bill, reads: [{ ...lookup, checkedAt: expiresAt }] },
+    { ...native.bill, reads: [{ ...lookup, scope: { invoiceId: 'different-bill' } }] },
+    { ...native.bill, reads: [{ ...lookup, status: 'unavailable' }] },
+    { ...native.bill, payments: [{ ...invoice, revision: 1, status: 'accepted' }] },
+    { ...native.bill, payments: [{ ...invoice, invoiceId: 'another-invoice', status: 'accepted' }] }
+  ]) assert.equal(supportedDecision(decision, { bill: billNative }, checkedAt), false);
+
+  const approval = { ...invoice, status: 'allowed', expiresAt, grantRevision: grants.payment.revision };
+  assert.equal(presentedDecision({ ...decision, approval }, checkedAt), null);
+  assert.equal(supportedDecision({ ...decision, approval }, native, checkedAt), false);
+  for (const changes of [{ amountMinor: capMinor }, { currency: 'USD' }, { revision: 1 }, { grantRevision: 3 }, { expiresAt: checkedAt }]) {
+    const invalidApproval = { ...decision, approval: { ...approval, ...changes } };
+    assert.equal(presentedDecision(invalidApproval, checkedAt), 'bill-review');
+    assert.equal(supportedDecision(invalidApproval, native, checkedAt), true);
+  }
+  assert.equal(presentedDecision(decision, '2026-11-23T03:30:00'), null);
+});
+
+test('a calendar decision needs exact native booking evidence and the current scoped overlap', () => {
   const visit = { issuer: 'practice-provider', service: 'practice-visit', subject: 'synthetic-booking', zone: 'Asia/Kolkata',
     windowStart: '2026-11-24T12:00:00+05:30', windowEnd: '2026-11-24T18:00:00+05:30' };
-  const reservation = { id: 'confirmed-visit', start: '2026-11-24T15:00:00+05:30', end: '2026-11-24T16:00:00+05:30' };
+  const { windowStart, windowEnd, ...appointment } = visit;
+  const confirmedAt = '2026-11-23T03:30:00.000Z';
+  const checkedAt = '2026-11-23T03:45:00.000Z';
+  const reservation = { ...appointment, id: 'confirmed-visit', key: 'native-booking-test', status: 'confirmed', confirmedAt,
+    slotId: 'test-slot', revision: 1, currency: 'INR', feeMinor: 0, start: '2026-11-24T15:00:00+05:30', end: '2026-11-24T16:00:00+05:30' };
   const conflict = { start: '2026-11-24T15:30:00+05:30', end: '2026-11-24T16:30:00+05:30' };
   const grants = Object.fromEntries(['slots', 'freeBusy'].map(operation => [operation, {
     operation, scope: visit, revision: 1, status: 'allowed', expiresAt: '2026-11-25T09:00:00+05:30'
   }]));
-  const record = { status: 'booked', issue: 'calendar-conflict', visit, reservation, conflict, grants };
-  const native = { visit: { calendar: [{ ...conflict, reservationId: null }] } };
-  const checkedAt = '2026-11-23T03:30:00.000Z';
+  const record = { id: 'visit-errand', status: 'booked', issue: 'calendar-conflict', visit, reservation, conflict, grants };
+  const reservationRead = { source: 'reservation', scope: { key: reservation.key }, checkedAt: confirmedAt };
+  const conflictRead = { source: 'calendarConflict', scope: { reservationId: reservation.id }, checkedAt };
+  const protectedEvent = { ...conflict, id: 'private-event', reservationId: null };
+  const native = { visit: { calendar: [protectedEvent], reservations: [reservation], reads: [reservationRead, conflictRead] } };
+  assert.equal(presentedDecision(record, checkedAt), 'calendar-conflict');
   assert.equal(supportedDecision(record, native, checkedAt), true);
-  assert.equal(supportedDecision({ ...record, grants: { slots: grants.slots } }, native, checkedAt), false);
-  assert.equal(supportedDecision(record, { visit: { calendar: [] } }, checkedAt), false);
+  assert.equal(matchedReadbacks(record, native).reservation, true);
+  for (const invalid of [
+    { ...record, status: 'open' },
+    { ...record, grants: { slots: grants.slots } },
+    { ...record, reservation: null },
+    { ...record, grants: { ...grants, freeBusy: { ...grants.freeBusy, scope: { ...visit, windowEnd: windowStart } } } }
+  ]) {
+    assert.equal(presentedDecision(invalid, checkedAt), null);
+    assert.equal(supportedDecision(invalid, native, checkedAt), false);
+  }
+  const matchingChoice = { ...record, conflictChoice: { ...conflict, reservationId: reservation.id, choice: 'watch' } };
+  assert.equal(presentedDecision(matchingChoice, checkedAt), null);
+  assert.equal(supportedDecision(matchingChoice, native, checkedAt), true);
+  assert.equal(presentedDecision({ ...matchingChoice, conflictChoice: { ...matchingChoice.conflictChoice, reservationId: 'older-booking' } }, checkedAt), 'calendar-conflict');
+
+  const current = native.visit;
+  for (const visitNative of [
+    { ...current, reservations: [] },
+    { ...current, reservations: [{ ...reservation, key: 'substituted-booking' }] },
+    { ...current, reads: [conflictRead] },
+    { ...current, reads: [reservationRead] },
+    { ...current, reads: [{ ...reservationRead, checkedAt: '2026-11-23T03:20:00Z' }, conflictRead] },
+    { ...current, reads: [reservationRead, { ...conflictRead, checkedAt: '2026-11-23T04:00:00Z' }] },
+    { ...current, reads: [reservationRead, { ...conflictRead, scope: { reservationId: 'older-booking' } }] },
+    { ...current, calendar: [] },
+    { ...current, calendar: [{ ...protectedEvent, reservationId: reservation.id }] },
+    { ...current, calendar: [protectedEvent, { ...protectedEvent, id: 'earlier-overlap', start: reservation.start }] }
+  ]) assert.equal(supportedDecision(record, { visit: visitNative }, checkedAt), false);
+
+  const attempt = { operation: 'calendar.add', operationKey: `visit:${record.id}:calendar:${reservation.id}`, status: 'conflict', attemptedAt: checkedAt };
+  const fromWrite = { ...current, reads: [reservationRead], attempts: [attempt] };
+  assert.equal(supportedDecision(record, { visit: fromWrite }, checkedAt), true);
+  assert.equal(supportedDecision(record, { visit: { ...fromWrite, attempts: [{ ...attempt, operationKey: 'different-operation' }] } }, checkedAt), false);
 });
 
 test('model gate fails a single blocked miss or unsafe arm even when full passes clear the threshold', () => {

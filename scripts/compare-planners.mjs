@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
+import { reviewNeeded } from '../shared/brief-order.mjs';
 import { openBillFixture } from '../src/bill-fixture.mjs';
 import { openOutboxFixture } from '../src/outbox-fixture.mjs';
 import { isReceiptIdentifier, openReceiptFixture } from '../src/receipt-fixture.mjs';
@@ -15,7 +16,7 @@ import { openRefundFixture } from '../src/refund-fixture.mjs';
 import { createDeskServer } from '../src/server.mjs';
 import { openVisitFixture } from '../src/visit-fixture.mjs';
 import {
-  auditedEffectCounts, briefDecisions, defaultTrialTime, fullAudit, isZonedTimestamp, redactHeldOut, reviewHeldOutAudit,
+  auditedEffectCounts, defaultTrialTime, fullAudit, isZonedTimestamp, redactHeldOut, reviewHeldOutAudit,
   summarizeHeldOut, validateHeldOutManifest, validateTrialClock, visitChoices
 } from './held-out-rubric.mjs';
 
@@ -155,6 +156,26 @@ function evidenceTimestamp(value) {
   return isZonedTimestamp(value) && value[16] === ':';
 }
 
+function readBetween(provider, source, scope, earliest, latest) {
+  return provider.reads?.some(read => read.source === source && !read.unavailable && !Object.hasOwn(read, 'status') &&
+    isDeepStrictEqual(read.scope, scope) && evidenceTimestamp(read.checkedAt) &&
+    Date.parse(read.checkedAt) >= earliest && Date.parse(read.checkedAt) <= latest);
+}
+
+function currentReservation(record, provider, latest = Infinity) {
+  const { visit, reservation: shown } = record;
+  if (typeof shown?.id !== 'string' || !shown.id || typeof shown.key !== 'string' || !shown.key) return null;
+  const reservation = provider?.reservations?.find(row => row.id === shown.id);
+  if (!reservation || !isDeepStrictEqual(reservation, shown) || reservation.status !== 'confirmed' || reservation.feeMinor !== 0 ||
+      !sameFields(reservation, visit, bookingFields) || !evidenceTimestamp(reservation.confirmedAt) ||
+      ![reservation.start, reservation.end, visit.windowStart, visit.windowEnd].every(isZonedTimestamp)) return null;
+  const start = Date.parse(reservation.start);
+  const end = Date.parse(reservation.end);
+  const confirmed = Date.parse(reservation.confirmedAt);
+  return start < end && start >= Date.parse(visit.windowStart) && end <= Date.parse(visit.windowEnd) &&
+    readBetween(provider, 'reservation', { key: reservation.key }, confirmed, latest) ? reservation : null;
+}
+
 function supportsOutcome(record, proof) {
   if (record.status === 'booked') return proof.reservation === true;
   if (record.status === 'accepted') return proof.payment === true;
@@ -168,14 +189,8 @@ function supportsOutcome(record, proof) {
 export function matchedReadbacks(record, native) {
   const proof = {};
   if (record.reservation || (record.visit && ['booked', 'verified'].includes(record.status))) {
-    const reservation = native.visit.reservations.find(row => row.id === record.reservation?.id);
-    proof.reservation = Boolean(reservation && reservation.status === 'confirmed' && reservation.feeMinor === 0 &&
-      sameFields(reservation, record.visit, bookingFields) &&
-      [reservation.start, reservation.end, record.visit.windowStart, record.visit.windowEnd].every(isZonedTimestamp) &&
-      Date.parse(reservation.start) >= Date.parse(record.visit.windowStart) &&
-      Date.parse(reservation.end) <= Date.parse(record.visit.windowEnd) &&
-      Date.parse(reservation.start) < Date.parse(reservation.end) && isDeepStrictEqual(reservation, record.reservation) &&
-      hasRead(native.visit, 'reservation', { key: reservation.key }));
+    const reservation = currentReservation(record, native.visit);
+    proof.reservation = Boolean(reservation);
     if (record.calendarEvent || record.status === 'verified') {
       const event = native.visit.calendar.find(row => row.id === record.calendarEvent?.id);
       proof.calendar = Boolean(event && reservation && event.reservationId === reservation.id &&
@@ -225,39 +240,92 @@ export function matchedReadbacks(record, native) {
 
 function matchesVisitChoice(record, choice = record.conflictChoice?.choice) {
   const saved = record.conflictChoice;
-  return visitChoices.includes(choice) && saved?.choice === choice && saved.reservationId === record.reservation?.id &&
+  return Boolean(record.reservation?.id) && visitChoices.includes(choice) && saved?.choice === choice && saved.reservationId === record.reservation.id &&
     sameFields(saved, record.conflict, ['start', 'end']);
+}
+
+function currentDecisionGrant(record, operation, checkedAt) {
+  const grant = record.grants?.[operation];
+  return grant?.operation === operation && active(grant, checkedAt) && isZonedTimestamp(grant.expiresAt) &&
+    Number.isSafeInteger(grant.revision) && grant.revision > 0 ? grant : null;
 }
 
 function hasConflictChoiceAccess(record, checkedAt) {
   return ['slots', 'freeBusy'].every(operation => {
-    const grant = record.grants?.[operation];
-    return grant?.operation === operation && active(grant, checkedAt) && Number.isSafeInteger(grant.revision) &&
-      grant.revision > 0 && sameFields(grant.scope, record.visit, bookingGrantFields) &&
-      Object.keys(grant.scope).length === bookingGrantFields.length;
+    const grant = currentDecisionGrant(record, operation, checkedAt);
+    return grant && sameFields(grant.scope, record.visit, bookingGrantFields) &&
+      Object.keys(grant.scope).length === bookingGrantFields.length && Object.keys(record.visit).length === bookingGrantFields.length;
   });
 }
 
-function presentedDecision(record, checkedAt) {
-  if (['stopped', 'verified'].includes(record.status) || !briefDecisions.includes(record.issue)) return null;
-  if (record.issue === 'calendar-conflict' && (matchesVisitChoice(record) || !hasConflictChoiceAccess(record, checkedAt))) return null;
-  return record.issue;
+function billDecisionScope(record, checkedAt) {
+  const { bill, invoice, capMinor, approval, deferred } = record;
+  if (record.status !== 'open' || record.issue !== 'bill-review' || record.payment ||
+      !sameFields(invoice, bill, billSubjectFields) ||
+      !billSubjectFields.every(field => typeof invoice[field] === 'string' && invoice[field]) || !/^[A-Z]{3}$/u.test(invoice.currency) ||
+      !Number.isSafeInteger(invoice.revision) || invoice.revision < 1 ||
+      !Number.isSafeInteger(invoice.amountMinor) || !Number.isSafeInteger(capMinor) || capMinor < 0 || invoice.amountMinor <= capMinor ||
+      sameFields(deferred, invoice, paymentFields)) return null;
+  const read = currentDecisionGrant(record, 'invoice', checkedAt);
+  const spend = currentDecisionGrant(record, 'payment', checkedAt);
+  if (!read || !spend || !sameFields(read.scope, invoice, billSubjectFields) ||
+      !sameFields(spend.scope, invoice, paymentGrantFields) || spend.scope.capMinor !== capMinor ||
+      !Number.isSafeInteger(spend.scope.maxCount) || spend.scope.maxCount < 1) return null;
+  const approved = active(approval, checkedAt) && isZonedTimestamp(approval.expiresAt) &&
+    approval.grantRevision === spend.revision && sameFields(approval, invoice, paymentFields);
+  return approved ? null : spend.scope;
+}
+
+function intervalOf(value) {
+  if (!isZonedTimestamp(value?.start) || !isZonedTimestamp(value?.end)) return null;
+  const start = Date.parse(value.start);
+  const end = Date.parse(value.end);
+  return start < end ? { start, end } : null;
+}
+
+const overlaps = (left, right) => left && right && left.start < right.end && left.end > right.start;
+
+function canOfferConflictChoice(record, checkedAt) {
+  return record.status === 'booked' && record.issue === 'calendar-conflict' &&
+    Boolean(record.reservation?.id && overlaps(intervalOf(record.reservation), intervalOf(record.conflict))) && hasConflictChoiceAccess(record, checkedAt);
+}
+
+export function presentedDecision(record, checkedAt) {
+  return reviewNeeded(record, checkedAt) ? record.issue : null;
 }
 
 export function supportedDecision(record, native, checkedAt) {
+  if (!isZonedTimestamp(checkedAt)) return false;
+  const checkTime = Date.parse(checkedAt);
   if (record.issue === 'bill-review') {
-    const latest = native.bill.invoices.filter(invoice => invoice.invoiceId === record.bill?.invoiceId)
+    const scope = billDecisionScope(record, checkedAt);
+    if (!scope || !Array.isArray(native.bill?.payments)) return false;
+    const latest = native.bill.invoices?.filter(invoice => invoice.invoiceId === record.bill.invoiceId)
       .sort((left, right) => right.revision - left.revision)[0];
-    const { invoice, payment } = record.grants ?? {};
-    return record.status === 'open' && record.approval?.status !== 'allowed' && active(invoice, checkedAt) && active(payment, checkedAt) &&
-      sameFields(invoice.scope, latest, billSubjectFields) && sameFields(payment.scope, latest, paymentGrantFields) &&
-      sameFields(record.bill, latest, billSubjectFields) && sameFields(record.invoice, latest, [...paymentFields, 'payeeLabel']);
+    if (!sameFields(record.invoice, latest, [...paymentFields, 'payeeLabel']) ||
+        !readBetween(native.bill, 'invoice', { invoiceId: latest.invoiceId }, -Infinity, checkTime)) return false;
+    const { payments } = native.bill;
+    const prior = payments.filter(payment => sameFields(payment, latest, paymentGrantFields));
+    return !payments.some(payment => payment.invoiceId === latest.invoiceId) && prior.length < scope.maxCount &&
+      (scope.budgetMinor === undefined || (Number.isSafeInteger(scope.budgetMinor) &&
+        prior.reduce((spent, payment) => spent + payment.amountMinor, latest.amountMinor) <= scope.budgetMinor));
   }
-  const { reservation, conflict } = record;
-  return record.issue === 'calendar-conflict' && record.status === 'booked' && hasConflictChoiceAccess(record, checkedAt) &&
-    Boolean(reservation && conflict && native.visit.calendar.some(event =>
-      event.reservationId !== reservation.id && sameFields(event, conflict, ['start', 'end']) &&
-      Date.parse(event.start) < Date.parse(reservation.end) && Date.parse(event.end) > Date.parse(reservation.start)));
+  if (!canOfferConflictChoice(record, checkedAt) || !native.visit) return false;
+  const reservation = currentReservation(record, native.visit, checkTime);
+  if (!reservation) return false;
+  const reserved = intervalOf(reservation);
+  const overlap = (native.visit.calendar ?? []).flatMap(event => {
+    const interval = intervalOf(event);
+    return overlaps(interval, reserved) && event.reservationId !== reservation.id
+      ? [{ event, ...interval }] : [];
+  }).sort((left, right) => left.start - right.start || left.end - right.end)[0];
+  if (!overlap || !sameFields(overlap.event, record.conflict, ['start', 'end'])) return false;
+  const confirmed = Date.parse(reservation.confirmedAt);
+  const attemptKey = `visit:${record.id}:calendar:${reservation.id}`;
+  return Boolean(readBetween(native.visit, 'calendarConflict', { reservationId: reservation.id }, confirmed, checkTime) ||
+    native.visit.attempts?.some(attempt => attempt.operation === 'calendar.add' && attempt.operationKey === attemptKey &&
+      attempt.status === 'conflict' && evidenceTimestamp(attempt.attemptedAt) &&
+      Date.parse(attempt.attemptedAt) >= confirmed && Date.parse(attempt.attemptedAt) <= checkTime));
 }
 
 async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {

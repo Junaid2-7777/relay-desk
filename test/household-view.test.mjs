@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { money, renderHousehold } from '../public/household.mjs';
+import { money, renderHousehold, statusLabel } from '../public/household.mjs';
 import { seedHousehold } from '../src/household.mjs';
 
 test('bill amounts use the minor units of the invoiced currency', () => {
@@ -21,21 +21,40 @@ test('the bill card identifies last seen amounts and the invoice selected for re
   globalThis.document = { createElement: node };
   try {
     const now = new Date('2026-11-23T03:30:00Z');
-    const amounts = record => {
+    const contents = element => [element.textContent, ...element.children.flatMap(contents)].filter(Boolean);
+    const view = (record, time = now) => {
+      const panel = node();
       const facts = node('dl');
-      renderHousehold(node('fieldset'), facts, record, () => {}, now);
-      return facts.children.map(child => child.textContent);
+      renderHousehold(panel, facts, record, () => {}, time);
+      return { facts: contents(facts), panel: contents(panel), label: statusLabel(record, time) };
     };
     const cold = seedHousehold(now, false).find(record => record.kind === 'bill');
-    assert.deepEqual(amounts({ ...cold, issue: 'bill-permission' }).slice(2, 6), [
+    assert.deepEqual(view({ ...cold, issue: 'bill-permission' }).facts.slice(2, 6), [
       'Last seen invoice', '₹850', 'Standing limit', '₹900'
     ]);
 
     const warm = seedHousehold(now, true).find(record => record.kind === 'bill');
     const revised = { ...warm.invoice, revision: 2, amountMinor: 118000 };
-    assert.deepEqual(amounts({ ...warm, invoice: revised, previousInvoice: warm.invoice, issue: 'bill-review' }), [
+    const review = { ...warm, invoice: revised, previousInvoice: warm.invoice, issue: 'bill-review' };
+    assert.deepEqual(view(review).facts, [
       'Previous invoice', '₹850', 'Invoice under review', '₹1,180', 'Standing limit', '₹900'
     ]);
+    assert.equal(view(review).label, 'Needs your review');
+    assert.ok(view(review).panel.includes('Pay ₹1,180 once'));
+
+    const withWithdrawal = operation => view({ ...review, grants: {
+      ...review.grants, [operation]: { ...review.grants[operation], status: 'withdrawn' }
+    } });
+    assert.equal(withWithdrawal('payment').label, 'Payment on hold');
+    assert.ok(withWithdrawal('payment').panel.includes('Leave unpaid'));
+    assert.ok(!withWithdrawal('payment').panel.includes('Pay ₹1,180 once'));
+    assert.equal(withWithdrawal('invoice').label, 'Invoice check paused');
+    assert.ok(!withWithdrawal('invoice').panel.includes('Leave unpaid'));
+    const approval = { ...revised, status: 'allowed', grantRevision: review.grants.payment.revision, expiresAt: '2026-11-23T03:45:00Z' };
+    const approved = { ...review, approval };
+    assert.equal(view(approved).label, 'Payment approved');
+    assert.ok(!view(approved).panel.includes('Pay ₹1,180 once'));
+    assert.equal(view(approved, approval.expiresAt).label, 'Needs your review');
 
     const panel = node();
     renderHousehold(panel, node(), { ...warm, issue: 'bill-permission', invoice: {

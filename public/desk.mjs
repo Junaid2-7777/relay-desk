@@ -1,4 +1,4 @@
-import { orderChecks, reviewNeeded } from '../shared/brief-order.mjs';
+import { grantActiveAt, orderChecks, reviewNeeded } from '../shared/brief-order.mjs';
 import { evidenceInstant } from '../shared/evidence-time.mjs';
 import { action, addText, fact, renderHousehold, renderPracticeSetup, statusLabel } from './household.mjs';
 
@@ -205,7 +205,7 @@ function renderRefund(panel, record, update, errorMessage, setBusy) {
     ['credits', 'Incoming credits', 'Read incoming credits linked to this return on the practice ledger.']
   ];
   const buttons = [];
-  const active = grant => grant?.status === 'allowed' && Date.parse(grant.expiresAt) > Date.parse(deskTime);
+  const active = grant => grantActiveAt(grant, deskTime);
   const run = async (endpoint, current, body) => {
     errorMessage.textContent = '';
     buttons.forEach(button => { button.disabled = true; });
@@ -265,7 +265,7 @@ function renderRefund(panel, record, update, errorMessage, setBusy) {
   }
 }
 
-function renderErrand(record) {
+function renderErrand(record, accessState) {
   const card = element('errand-template').content.firstElementChild.cloneNode(true);
   const part = name => card.querySelector(`[data-${name}]`);
   const { id, goal, note, kind, checkDate, merchantDeadline } = record;
@@ -274,17 +274,19 @@ function renderErrand(record) {
   card.dataset.day = deskDay;
   card.dataset.pendingFollowup = Boolean(record.pendingFollowup);
   card.dataset.visitPlanEditable = Boolean(record.visitPlanEditable);
+  card.dataset.accessState = accessState;
   part('goal').textContent = goal;
   part('goal').tabIndex = -1;
   part('goal').id = `goal-${id}`;
   card.setAttribute('aria-labelledby', part('goal').id);
   part('note').textContent = note;
-  part('status').textContent = statusLabel(record);
-  card.classList.toggle('review-needed', reviewNeeded(record));
+  const reviewing = reviewNeeded(record, deskTime);
+  part('status').textContent = statusLabel(record, deskTime);
+  card.classList.toggle('review-needed', reviewing);
   if (record.status === 'verified') card.querySelector('.ring').classList.add('verified');
   const due = !householdMode && record.status === 'open' && checkDate && checkDate <= deskDay;
   const dateTitle = due ? (checkDate === deskDay ? 'Check today' : 'Check overdue') : 'Your check date';
-  const billReview = record.bill && record.invoice && reviewNeeded(record);
+  const billReview = record.bill && record.invoice && reviewing;
   const dates = billReview ? document.createElement('dl') : part('facts');
   if (billReview) dates.className = 'facts';
   fact(dates, dateTitle, checkDate ? dateLabel(checkDate) : 'Choose when to check');
@@ -573,13 +575,16 @@ function renderErrand(record) {
 function showErrands(changedId) {
   if (records.length) {
     const prior = new Map([...errands.querySelectorAll('article')].map(card => [card.id, card]));
-    const ordered = orderChecks([...records], householdMode);
+    const ordered = orderChecks([...records], householdMode, deskTime);
     const cards = ordered.map(record => {
       const existing = prior.get(`errand-${record.id}`);
+      const grants = Object.entries(record.refundAccess ?? record.grants ?? {});
+      const accessState = [...grants, ['approval', record.approval]].filter(([, grant]) => grantActiveAt(grant, deskTime))
+        .map(([operation]) => operation).sort().join(' ');
       const reuse = record.id !== changedId && existing?.dataset.revision === String(record.revision) &&
         existing.dataset.day === deskDay && existing.dataset.pendingFollowup === String(Boolean(record.pendingFollowup)) &&
-        existing.dataset.visitPlanEditable === String(Boolean(record.visitPlanEditable));
-      return [record, reuse ? existing : renderErrand(record)];
+        existing.dataset.visitPlanEditable === String(Boolean(record.visitPlanEditable)) && existing.dataset.accessState === accessState;
+      return [record, reuse ? existing : renderErrand(record, accessState)];
     });
     if (!householdMode) {
       errands.replaceChildren(...cards.map(([, card]) => card));

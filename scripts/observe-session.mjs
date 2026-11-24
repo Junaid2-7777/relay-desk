@@ -41,7 +41,7 @@ function participantSnapshot(brief, native) {
       }
       return {
         kind: record.kind, status: record.status, checkDate: record.checkDate, permissions,
-        decisionReady: reviewNeeded(record) && supportedDecision(record, native, brief.now) ? record.issue : null,
+        decisionReady: reviewNeeded(record, brief.now) && supportedDecision(record, native, brief.now) ? record.issue : null,
         matchedNativeEvidence: matchedReadbacks(record, native)
       };
     }),

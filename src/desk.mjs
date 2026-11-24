@@ -232,15 +232,18 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     const action = journal.latest(record.id, 'followup');
     return ['prepared', 'unknown', 'committed'].includes(action?.status) ? action.payload : null;
   }
-  const brief = () => ({
-    deskContext: deskContext(),
-    today: today(),
-    now: clock().toISOString(),
-    errands: orderChecks(list().map(record => pendingFollowup(record) ? { ...record, pendingFollowup: true } : projectErrand(record)), household),
-    fixture: Boolean(refundFixture),
-    household: Boolean(household),
-    ...(household ? { receiptSources: household.receipt.fixture.sources(), plannerMode: intakePlanner.mode } : {})
-  });
+  const brief = () => {
+    const now = clock();
+    return {
+      deskContext: deskContext(),
+      today: localDay(now),
+      now: now.toISOString(),
+      errands: orderChecks(list().map(record => pendingFollowup(record) ? { ...record, pendingFollowup: true } : projectErrand(record)), household, now),
+      fixture: Boolean(refundFixture),
+      household: Boolean(household),
+      ...(household ? { receiptSources: household.receipt.fixture.sources(), plannerMode: intakePlanner.mode } : {})
+    };
+  };
   const updateRefund = (id, reference) => {
     const checkpointId = checkpointReference(reference);
     return withRefund(id, record =>

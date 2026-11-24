@@ -14,9 +14,9 @@ const script = fileURLToPath(new URL('../scripts/observe-session.mjs', import.me
 const run = promisify(execFile);
 const clock = () => new Date('2026-11-23T09:00:00+05:30');
 
-async function open(t, mode) {
+async function open(t, mode, readClock = clock) {
   const dataDir = await mkdtemp(join(tmpdir(), 'relay-observer-'));
-  const server = createDeskServer({ dataDir, clock, householdMode: mode !== 'private', reset: mode !== 'private', warm: mode === 'warm' });
+  const server = createDeskServer({ dataDir, clock: readClock, householdMode: mode !== 'private', reset: mode !== 'private', warm: mode === 'warm' });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(async () => {
@@ -30,12 +30,12 @@ async function open(t, mode) {
   server.on('request', request => http.push([request.method, request.url]));
   return {
     http,
-    async request(path, body) {
+    async request(path, body, status = 200) {
       const response = await fetch(`http://127.0.0.1:${port}${path}`, {
         method: body === undefined ? 'GET' : 'POST',
         headers: body === undefined ? {} : { 'content-type': 'application/json' }, body: JSON.stringify(body)
       });
-      assert.ok(response.ok, path);
+      assert.equal(response.status, status, path);
       return response.json();
     },
     async observe() {
@@ -48,7 +48,7 @@ async function open(t, mode) {
 test('observing private first use prints the next check with no note, private identifier or provider request', async t => {
   const desk = await open(t, 'private');
   const note = 'Check the synthetic personal reference moonstone-478 on Friday.';
-  const saved = await desk.request('/api/errands', { note, goal: 'Private synthetic goal', checkDate: '2026-11-27' });
+  const saved = await desk.request('/api/errands', { note, goal: 'Private synthetic goal', checkDate: '2026-11-27' }, 201);
   desk.http.length = 0;
   const report = await desk.observe();
   assert.deepEqual(report.errands, [{
@@ -60,6 +60,30 @@ test('observing private first use prints the next check with no note, private id
   assert.ok(Object.values(report.providerReads).every(count => count === 0));
   assert.ok(Object.values(report.committedEffects).every(count => count === 0));
   assert.ok([note, saved.goal, saved.id, 'moonstone-478'].every(item => !JSON.stringify(report).includes(item)));
+});
+
+test('the observer tracks mandatory bill choices across approval expiry and payment withdrawal', async t => {
+  let now = clock();
+  const desk = await open(t, 'warm', () => now);
+  const bill = (await desk.request('/api/checkpoint', {})).errands.find(record => record.kind === 'bill');
+  const route = `/api/errands/${bill.id}`;
+  const readiness = async () => (await desk.observe()).errands.find(record => record.kind === 'bill').decisionReady;
+  assert.equal(await readiness(), 'bill-review');
+
+  const approved = await desk.request(`${route}/bill-choice`, { revision: bill.revision, choice: 'approve' });
+  assert.equal(await readiness(), null);
+  assert.deepEqual((await desk.request('/api/fixture/bill')).payments, []);
+  now = new Date(approved.approval.expiresAt);
+  assert.equal(await readiness(), 'bill-review');
+
+  const held = await desk.request(`${route}/household-access`, {
+    revision: approved.revision, operation: 'payment', choice: 'withdrawn'
+  });
+  assert.equal(await readiness(), null);
+  await desk.request(`${route}/bill-choice`, { revision: held.revision, choice: 'approve' }, 409);
+  const deferred = await desk.request(`${route}/bill-choice`, { revision: held.revision, choice: 'defer' });
+  assert.equal(deferred.issue, 'bill-deferred');
+  assert.deepEqual((await desk.request('/api/fixture/bill')).payments, []);
 });
 
 test('the observer distinguishes cold grants from warm native outcomes without executing a checkpoint', async t => {
