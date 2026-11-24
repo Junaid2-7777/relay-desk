@@ -7,7 +7,7 @@ import { kolkataDay as localDay, zonedInstant } from '../shared/evidence-time.mj
 import { billApprovalMs } from '../shared/grant-time.mjs';
 import { openActionJournal } from './action-journal.mjs';
 import { invoiceGrant } from './bill.mjs';
-import { orderChecks } from '../shared/brief-order.mjs';
+import { billDecision, orderChecks } from '../shared/brief-order.mjs';
 import { activeGrant, makeGrant, sameInvoice, scopes, seedHousehold } from './household.mjs';
 import { previewErrand, suggestPracticePlan } from './intake.mjs';
 import { createIntakePlanner } from './intake-planner.mjs';
@@ -660,19 +660,20 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       if (!household || !['approve', 'defer'].includes(choice)) throw new DeskError('Choose what to do with the invoice.');
       return changeCase(id, record => {
         requireRevision(record, revision);
-        const now = clock();
-        if (!record.bill || record.status !== 'open' || record.issue !== 'bill-review' || !invoiceGrant(record, record.bill, now)) {
-          throw new DeskError('There is no invoice ready for review.', 409);
+        function requireDecision(invoice, now) {
+          const decision = billDecision({ ...record, invoice }, now);
+          if (!decision?.canDefer) throw new DeskError('There is no invoice ready for review.', 409);
+          if (choice === 'defer') return;
+          if (!decision.canApprove) throw new DeskError('This invoice needs a separate payment permission.', 409);
+          if (decision.approved) throw new DeskError('This invoice already has an active one-time approval.', 409);
         }
+        requireDecision(record.invoice, clock());
         const invoice = household.bill.fixture.readInvoice(record.bill.invoiceId, at => invoiceGrant(record, record.bill, at));
         if (invoice === undefined) throw new DeskError('Invoice access expired. Review access before checking again.', 409);
         if (!sameInvoice(invoice, record.invoice)) throw new DeskError('The invoice changed. Check your errands to see the new terms.', 409);
         if (choice === 'defer') return { ...record, approval: null, deferred: invoice, issue: 'bill-deferred' };
         const approvalTime = clock();
-        if (!activeGrant(record.grants.payment, approvalTime) || invoice.payee !== record.bill.payee ||
-            invoice.currency !== record.bill.currency) {
-          throw new DeskError('This invoice needs a separate payment permission.', 409);
-        }
+        requireDecision(invoice, approvalTime);
         const { invoiceId, revision: invoiceRevision, payee, amountMinor, currency } = invoice;
         return {
           ...record,

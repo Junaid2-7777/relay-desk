@@ -28,7 +28,7 @@ async function startHousehold(t, warm = true) {
   let time = monday;
   let server;
   let url;
-  const clock = () => new Date(time);
+  const clock = () => new Date(typeof time === 'function' ? time() : time);
 
   async function close() {
     if (!server?.listening) return;
@@ -311,6 +311,82 @@ test('an old review with a grant for another invoice cannot read or grant a bill
   assert.equal(after.approval, null);
   assert.equal(after.deferred, null);
   assert.equal(after.revision, bill.revision);
+});
+
+test('bill approval requires the active payment grant to match the displayed exception', async t => {
+  const household = await startHousehold(t);
+  const bill = errand(await household.checkpoint(), 'bill');
+  const { payment } = bill.grants;
+  const before = await household.native('bill');
+  for (const grant of [
+    { ...payment, operation: 'invoice' },
+    { ...payment, scope: { ...payment.scope, payee: 'another-practice-payee' } },
+    { ...payment, scope: { ...payment.scope, currency: 'USD' } },
+    { ...payment, scope: { ...payment.scope, capMinor: billCap - 1 } }
+  ]) {
+    household.persistLegacyErrand({ ...bill, grants: { ...bill.grants, payment: grant } });
+    await household.billChoice(bill, 'approve', 409);
+    const rejected = errand(await household.desk(), 'bill');
+    assert.equal(rejected.approval, null);
+    assert.equal(rejected.revision, bill.revision);
+    assert.deepEqual(await household.native('bill'), before);
+  }
+
+  const withdrawn = await household.access(bill, 'payment', 'withdrawn');
+  const deferred = await household.billChoice(withdrawn, 'defer');
+  assert.deepEqual(deferred.deferred, bill.invoice);
+  const after = await household.native('bill');
+  assert.equal(after.reads.length, before.reads.length + 1);
+  assert.deepEqual(after.payments, []);
+  assert.deepEqual(after.attempts, []);
+});
+
+test('repeating a bill approval cannot extend its expiry or authorize a changed invoice', async t => {
+  const household = await startHousehold(t);
+  const bill = errand(await household.checkpoint(), 'bill');
+  const provider = household.provider(openBillFixture);
+  const revised = { ...mondayBill, revision: 3, amountMinor: 126000 };
+  provider.putInvoice(revised);
+  await household.billChoice(bill, 'approve', 409);
+  assert.equal(errand(await household.desk(), 'bill').approval, null);
+
+  const latest = errand(await household.checkpoint(), 'bill');
+  const approved = await household.billChoice(latest, 'approve');
+  const before = await household.native('bill');
+  household.moveTime('2026-11-23T03:35:00.000Z');
+  await household.billChoice(approved, 'approve', 409);
+  const stillApproved = errand(await household.desk(), 'bill');
+  assert.deepEqual(stillApproved.approval, approved.approval);
+  assert.equal(stillApproved.revision, approved.revision);
+  assert.deepEqual(await household.native('bill'), before);
+
+  household.moveTime(approved.approval.expiresAt);
+  const renewed = await household.billChoice(stillApproved, 'approve');
+  assert.equal(renewed.approval.revision, revised.revision);
+  assert.ok(Date.parse(renewed.approval.expiresAt) > Date.parse(approved.approval.expiresAt));
+});
+
+test('payment access must still be active after the authorized invoice read', async t => {
+  const household = await startHousehold(t);
+  const bill = errand(await household.checkpoint(), 'bill');
+  household.moveTime(tuesday);
+  const ready = await household.access(bill, 'invoice', 'allowed');
+  const before = await household.native('bill');
+  const expiry = ready.grants.payment.expiresAt;
+  const beforeExpiry = new Date(Date.parse(expiry) - 1).toISOString();
+  let reads = 0;
+  household.moveTime(() => reads++ < 2 ? beforeExpiry : expiry);
+
+  await household.billChoice(ready, 'approve', 409);
+  const after = await household.native('bill');
+  assert.deepEqual(after.reads.slice(before.reads.length), [{
+    source: 'invoice', scope: { invoiceId: bill.invoice.invoiceId }, checkedAt: beforeExpiry
+  }]);
+  assert.deepEqual(after.payments, []);
+  assert.deepEqual(after.attempts, []);
+  const stillOpen = errand(await household.desk(), 'bill');
+  assert.equal(stillOpen.revision, ready.revision);
+  assert.equal(stillOpen.approval, null);
 });
 
 test('the operator can publish a new bill without carrying forward approval or changing a past revision', async t => {
