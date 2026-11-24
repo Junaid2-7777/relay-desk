@@ -28,6 +28,25 @@ test('leaves competing or ambiguous check dates for the person to choose', () =>
   assert.equal(previewErrand('Check next Friday.', monday).checkDate, null);
   assert.equal(previewErrand('Check Friday. Follow up on Sunday.', monday).checkDate, null);
   assert.equal(previewErrand('Check Friday or 2026-11-28.', monday).checkDate, null);
+  assert.equal(previewErrand('Check Friday, Saturday or Sunday.', monday).checkDate, null);
+  assert.equal(previewErrand('Check Friday morning or Saturday evening.', monday).checkDate, null);
+  assert.equal(previewErrand('Check Friday and then Saturday.', monday).checkDate, null);
+  assert.equal(previewErrand('Check Friday through Monday.', monday).checkDate, null);
+  assert.equal(previewErrand('Check Friday, and check again on Monday.', monday).checkDate, null);
+});
+
+test('recognizes a household check after a comma and keeps other dates separate', () => {
+  assert.equal(previewErrand('My parcel return is pending, please check again on Thursday.', monday).checkDate, '2026-11-26');
+  assert.equal(previewErrand('The renewal was due on Tuesday, could you check the payment on Friday?', monday).checkDate, '2026-11-27');
+  assert.equal(previewErrand('The clinic says the form is due on Tuesday, so follow up on Thursday.', monday).checkDate, '2026-11-26');
+  assert.equal(previewErrand('Check Thursday, the provider promised Friday.', monday).checkDate, '2026-11-26');
+});
+
+test('does not extract a check from unquoted reported instructions after a comma', () => {
+  assert.equal(previewErrand('The library says, please check on Friday.', monday).checkDate, null);
+  assert.equal(previewErrand('The clinic wrote, if the form is missing, please check on Friday.', monday).checkDate, null);
+  assert.equal(previewErrand('Vendor message: no confirmation yet, please check on Friday.', monday).checkDate, null);
+  assert.equal(previewErrand('My return is pending, do not check on Friday.', monday).checkDate, null);
 });
 
 test('handles explicit today, tomorrow and a weekday on the local clock', () => {

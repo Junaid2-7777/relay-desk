@@ -3,6 +3,9 @@ const dateReference = /\b(?:(this|next|last)\s+)?(today|tomorrow|sunday|monday|t
 const quotedText = /"[^"]*"|“[^”]*”|‘[^’]*’|(?<![\p{L}\p{N}])'(?:[^']|(?<=\p{L})'(?=\p{L}))*'(?![\p{L}\p{N}])/gu;
 const requestIntro = /^\s*(?:(?:please|help\s+me|(?:can|could|would|will)\s+you|(?:i|we)\s+(?:want|need|would\s+like)\s+(?:you\s+)?to)\s+)*/iu;
 const checkRequest = /^(?:check|follow[\s-]+up|look\s+again|revisit)(?:\s+(?:again|back|in|it|this))*(?:\s+on|\s+(?:(?:on|for)\s+)?(?:the|my|our)\s+(?:[\p{L}\p{N}'-]+\s+){1,4}on)?\s+$/iu;
+const clauseConnector = /^\s*(?:and|but|so)\s+/iu;
+const reportingCue = /\b(?:(?:said|says|told|wrote|replied|asked|asks|reads|reported|instructed|suggested|advised|reminded|warned)(?:\s+(?:to|me|us|you|again))*(?:\s*:|\s*$)|(?:message|instructions?|note|notice|email|text|letter)\s*:)/iu;
+const dateListSeparator = /^\s*(?:(?:morning|afternoon|evening|night)\b\s*)?(?:[,/–—-]|,?\s*(?:and(?:\s+then)?|or(?:\s+else)?|to|through|then)(?:\s+on)?)\s*$/iu;
 const bookingRequest = /^(?:book|reserve|schedule)\s+(?:(?:me|us)\s+(?:for\s+)?)?(?:a|an|one|the|my|our)\s+/iu;
 const bookingDetails = /[,:]|\s+(?:about|and|or|for|from|of|at|on|with|to|between|before|after|(?:this|next)\s+(?:morning|afternoon|evening|week|month))\b/iu;
 const nonSlotObject = /\b(?:alarm|alert|book|cop(?:y|ie)|e-?mail|follow[\s-]+up|message|notification|payment|reminder|text|transfer)s?$/iu;
@@ -31,16 +34,23 @@ function calendarDay(day) {
   return Number.isFinite(+date) && date.toISOString().slice(0, 10) === day ? date : null;
 }
 
+function startsCheckRequest(prefix) {
+  const clauses = prefix.split(',');
+  const request = clauses.pop().replace(clauseConnector, '').replace(requestIntro, '');
+  return checkRequest.test(request) && !clauses.some(clause => reportingCue.test(clause));
+}
+
 function requestedCheckDate(note, today) {
   const start = calendarDay(today);
   if (!start) return null;
 
   const dates = new Set();
   for (const sentence of noteSentences(note)) {
-    let requested = false;
+    let previousDateEnd = null;
     for (const reference of sentence.matchAll(dateReference)) {
-      requested ||= checkRequest.test(sentence.slice(0, reference.index).replace(requestIntro, ''));
-      if (!requested) continue;
+      const inDateList = previousDateEnd !== null && dateListSeparator.test(sentence.slice(previousDateEnd, reference.index));
+      if (!inDateList && !startsCheckRequest(sentence.slice(0, reference.index))) continue;
+      previousDateEnd = reference.index + reference[0].length;
 
       const modifier = reference[1]?.toLowerCase();
       if (modifier === 'next' || modifier === 'last') return null;
