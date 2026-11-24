@@ -8,6 +8,19 @@ Run `npm run evaluate` with Node.js 24 or newer. Keep the test output and its re
 
 The release evidence requires independently supplied tasks after a freeze, matched manual and model-backed runs, and sessions with people for effort and usability observations. [Run the local build](build.md#run-the-local-build)
 
+### Rehearsal results from 24 November 2026
+
+Both runs of `npm run evaluate` passed all 226 tests from a clean checkout, once on Node.js 24.0.0 and once on 26.8.1. The commands below reproduce the local results at [revision 26c8a59](https://github.com/JunaidAhamed-7777/relay-desk/commit/26c8a59878c394fafc35fa378596fa81df27ad94).
+
+| Rehearsal | Observed result |
+| --- | --- |
+| `npm run compare:planners` | Fixed rules matched 5 of 12 initial interpretations. Authored responses matched 12 of 12. After the scripted household review, both arms reached the expected provider outcome in all 12 cases. |
+| `npm run compare:morning` | Both cold and warm pairs started with the same fixtures and permissions and reached matching outcomes. The scripted warm manual arm made seven lookups. The desk arm used one check click. Each presented the bill decision once and took zero bill decisions by the cutoff. |
+| `node --test test/held-out-comparison.test.mjs` | A synthetic planner passed all 36 mock trials, including all 12 blocked trials. The suite also exercises fallback and detects a restricted fixture marker carried into another case. |
+| `node scripts/replay-scholarship.mjs` and `node scripts/replay-scholarship-notices.mjs` | All 27 case-event checkpoints in 16 scenarios and all 21 notice checkpoints in six scenarios passed. |
+
+One interpretation miss was a request to see broadband times before reserving. The fixed rules left the booking suggestion out when the person explicitly declined a reservation. The expected proposal was a visit with booking access withheld. This miss is included in the count. Effort, usability and live model quality still await the participant sessions and independent planner trials.
+
 ## Paired planner rehearsal
 
 Run `npm run compare:planners` for the offline comparison. The manifest covers twelve authored refund, visit, bill and receipt scenarios. Each arm gets a fresh cold household and the same note, clock, provider events, review choices and grants. The recorded-response arm uses explicitly authored proposals to exercise the review and validation path. Both arms use the same deterministic controller. The operator confirms the supplied plan in each arm, which lets the report show interpretation misses separately from later outcomes. [Rehearsal cases](../fixtures/planner-rehearsal.json)
