@@ -184,6 +184,12 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 700; font-variant-numeric:
 .source { background: var(--carbon); padding: 0 .75rem; }
 .source summary { min-height: 2.75rem; padding-block: .6rem; cursor: pointer; font-weight: 700; }
 .source p { margin: 0; padding-bottom: .75rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.updates { margin-block-start: .75rem; }
+.updates ol { margin: 0; padding-inline-start: 1.25rem; }
+.updates li + li, .updates form { border-block-start: 1px solid var(--line); padding-block-start: .75rem; }
+.updates time { font-size: .9375rem; }
+.updates button { margin-block: .75rem; }
+.updates p:empty { padding: 0; }
 .edit, .draft { margin-block-start: 1rem; padding-block-start: 1rem; border-top: 1px solid var(--line); }
 .draft [role=status]:empty { display: none; }
 .draft [data-queue] { margin-top: .75rem; }

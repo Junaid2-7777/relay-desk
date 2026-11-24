@@ -21,6 +21,7 @@ const format = new Intl.DateTimeFormat('en-IN', {
 const activityFormat = new Intl.DateTimeFormat('en-IN', {
   day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata'
 });
+const updateTimeFormat = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
 const plannerLabels = new Map([
   ['recorded-response', 'Recorded responses'],
   ['n8n', 'n8n planner']
@@ -34,10 +35,12 @@ let deskDay;
 let deskContext;
 let pagePlannerMode;
 let householdMode = false;
+let privateDesk = false;
 let receiptSources = [];
 let checking = false;
 const openEdits = new Set();
 const localDrafts = new Map();
+const localUpdates = new Map();
 const pendingCheckpoints = new Map();
 const editReminder = 'Finish editing your errand before checking.';
 
@@ -64,7 +67,7 @@ async function request(path, { method = 'GET', body } = {}) {
     throw new Error('The desk could not be reached. Check that Relay Desk is running and try again.');
   }
   const result = await response.json();
-  if (!response.ok) throw Object.assign(new Error(result.error), { code: result.code });
+  if (!response.ok) throw Object.assign(new Error(result.error), { code: result.code, status: response.status });
   if (path === '/api/desk' || path === '/api/checkpoint') {
     if (typeof result.deskContext !== 'string' || !result.deskContext ||
         (deskContext !== undefined && result.deskContext !== deskContext)) {
@@ -99,6 +102,165 @@ function validate(fields, message) {
 
 function restoreFocus(control) {
   if (document.activeElement === document.body) control?.focus();
+}
+
+function renderPrivateUpdates(panel, record, cardControls, replaceCard) {
+  const { id, status } = record;
+  const path = `/api/errands/${id}/updates`;
+  const state = localUpdates.get(id) ?? { open: false, text: '', requestId: null };
+  localUpdates.set(id, state);
+
+  const details = document.createElement('details');
+  details.className = 'source updates';
+  const summary = addText(details, 'summary', 'Your follow-up updates');
+  addText(details, 'p', 'Your words, saved on this computer.');
+  const history = document.createElement('ol');
+  history.hidden = true;
+  details.append(history);
+  const message = addText(details, 'p', '');
+  message.setAttribute('role', 'status');
+  const failure = addText(details, 'p', '');
+  failure.setAttribute('role', 'alert');
+  const retry = action(details, 'Retry loading updates', () => load({ fromRetry: true }));
+  retry.hidden = true;
+
+  let form, input, save;
+  let updates = [];
+  let loadVersion = 0;
+  let saving = false;
+
+  function showHistory() {
+    history.replaceChildren(...updates.map(({ text, recordedAt }) => {
+      const entry = document.createElement('li');
+      const at = evidenceInstant(recordedAt);
+      if (Number.isFinite(at)) addText(entry, 'time', `${updateTimeFormat.format(at)} IST`).dateTime = recordedAt;
+      addText(entry, 'p', text);
+      return entry;
+    }));
+    history.hidden = updates.length === 0;
+  }
+
+  function showError(error) {
+    message.textContent = '';
+    failure.textContent = error.message;
+    if (error.code !== 'desk-context-changed') return;
+    updates = [];
+    showHistory();
+    state.text = '';
+    state.requestId = null;
+    if (form) {
+      form.hidden = true;
+      input.value = '';
+    }
+  }
+
+  async function load({ fromRetry = false, saved = false } = {}) {
+    const version = ++loadVersion;
+    const current = () => version === loadVersion && details.open && details.isConnected;
+    retry.hidden = true;
+    if (!saved) {
+      updates = [];
+      showHistory();
+      if (form) form.hidden = true;
+      message.textContent = 'Loading your updates…';
+    }
+    failure.textContent = '';
+    try {
+      const loaded = await request(path);
+      if (!current()) return;
+      updates = loaded.updates;
+      showHistory();
+      if (form) form.hidden = false;
+      message.textContent = saved ? 'Update saved on this computer.' : updates.length ? '' : 'No follow-up updates yet.';
+    } catch (error) {
+      if (!current()) return;
+      if (saved && error.code !== 'desk-context-changed') {
+        message.textContent = 'Update saved. Reopen your updates to refresh the history.';
+        return;
+      }
+      showError(error);
+      retry.hidden = error.code === 'desk-context-changed';
+    } finally {
+      if (fromRetry && current()) restoreFocus(retry.hidden ? summary : retry);
+    }
+  }
+
+  if (status === 'open') {
+    form = document.createElement('form');
+    form.noValidate = true;
+    form.hidden = true;
+    input = document.createElement('textarea');
+    input.id = `update-${id}`;
+    input.rows = 3;
+    input.maxLength = 2000;
+    input.required = true;
+    input.value = state.text;
+    addText(form, 'label', 'New update').htmlFor = input.id;
+    form.append(input);
+    save = addText(form, 'button', 'Save update');
+    save.type = 'submit';
+    details.append(form);
+
+    input.addEventListener('input', () => {
+      if (state.text !== input.value) state.requestId = null;
+      state.text = input.value;
+      input.removeAttribute('aria-invalid');
+      failure.textContent = '';
+    });
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (saving || form.hidden) return;
+      if (!validate([[input, 'Enter an update.']], failure)) return;
+      state.requestId ??= crypto.randomUUID();
+      const locked = cardControls.filter(control => !control.disabled);
+      locked.forEach(control => { control.disabled = true; });
+      saving = true;
+      save.disabled = true;
+      input.readOnly = true;
+      message.textContent = 'Saving update…';
+      failure.textContent = '';
+      let nextFocus = save;
+      try {
+        const added = await request(path, { method: 'POST', body: { requestId: state.requestId, text: state.text } });
+        if (!updates.some(update => update.id === added.id)) updates.push(added);
+        showHistory();
+        state.requestId = null;
+        input.value = state.text = '';
+        message.textContent = 'Update saved on this computer.';
+        nextFocus = input;
+        if (details.open) await load({ saved: true });
+        if (form.hidden) nextFocus = summary;
+      } catch (error) {
+        showError(error);
+        if (error.status === 409 && error.code !== 'desk-context-changed') {
+          try {
+            const { errands } = await request('/api/desk');
+            const current = errands.find(item => item.id === id);
+            if (current && current.status !== status && details.isConnected) replaceCard(current);
+          } catch (refreshError) {
+            if (refreshError.code === 'desk-context-changed') showError(refreshError);
+          }
+        }
+        if (form.hidden) nextFocus = summary;
+      } finally {
+        saving = false;
+        save.disabled = false;
+        input.readOnly = false;
+        locked.forEach(control => { control.disabled = false; });
+        if (details.open && document.activeElement === save) nextFocus.focus();
+        else if (details.open) restoreFocus(nextFocus);
+      }
+    });
+  } else if (status === 'stopped') addText(details, 'p', 'Resume tracking to add an update.');
+
+  details.addEventListener('toggle', () => {
+    if (!details.isConnected) return;
+    state.open = details.open;
+    if (details.open && !saving) load();
+    else loadVersion++;
+  });
+  panel.append(details);
+  details.open = state.open;
 }
 
 function renderPrivateDraftSave(panel, draft, state, read, write, cardControls) {
@@ -384,6 +546,7 @@ function renderErrand(record, accessState) {
   });
 
   const draftButton = part('draft');
+  if (privateDesk) renderPrivateUpdates(part('evidence'), record, [part('edit'), draftButton, trackingButton], replaceCard);
   if (record.queuedFollowup) draftButton.textContent = 'Review queued follow-up';
   else if (record.pendingFollowup) draftButton.textContent = 'Review pending follow-up';
   const readDraft = () => request(`/api/errands/${id}/draft`, { method: 'POST' });
@@ -636,6 +799,7 @@ function showBrief({ today, now, errands: items, fixture, household, plannerMode
   checkpointButton.hidden = !household;
   addErrand.hidden = !household;
   householdMode = household;
+  privateDesk = !fixture && !household;
   if (household) {
     element('main').classList.add('household');
     const newErrand = intake.closest('section');
