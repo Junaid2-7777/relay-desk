@@ -65,7 +65,7 @@ function withState(record, status, issue = null, proof = {}) {
 
 function dispatchVisit(journal, record, operation, key, payload, action) {
   const prepared = journal.prepare(record.id, operation, key, payload);
-  return journal.dispatch(record.id, (current, now) => action(current, prepared.payload, now));
+  return journal.dispatch(record.id, (current, now, readClock) => action(current, prepared.payload, now, readClock));
 }
 
 function readUnderGrant(record, operation, journal, instant, read) {
@@ -107,11 +107,13 @@ function runCalendar(record, reservation, fixture, journal, instant) {
     }
   }
   const key = previous?.key ?? `visit:${record.id}:calendar:${reservation.id}`;
-  const result = dispatchVisit(journal, record, 'calendar', key, { key, reservationId: reservation.id }, (current, payload, now) => {
-    if (!permittedAtDispatch(record, current, ['freeBusy', 'calendar'], +(now ?? instant))) {
+  const calendarGrants = ['freeBusy', 'calendar'];
+  const result = dispatchVisit(journal, record, 'calendar', key, { key, reservationId: reservation.id }, (current, payload, now, readClock) => {
+    if (!permittedAtDispatch(record, current, calendarGrants, +(now ?? instant))) {
       return { status: 'blocked', reason: 'permission' };
     }
     return fixture.addToCalendar(payload, fresh =>
+      permittedAtDispatch(record, current, calendarGrants, +readClock()) &&
       fresh.reservationId === reservation.id && sameFields(eventFields, fresh, reservation));
   });
   if (result?.status === 'conflict') {
@@ -172,13 +174,16 @@ export function runVisit(record, fixture, journal, now) {
   const { id: slotId, revision, start, end, feeMinor, currency } = candidate;
   const key = mustRecover ? previous.key : `visit:${record.id}:reserve:${encodeURIComponent(slotId)}:${revision}`;
   const request = mustRecover ? previous.payload : { key, ...visit, slotId, revision, start, end, feeMinor, currency };
-  const result = dispatchVisit(journal, record, 'reserve', key, request, (current, payload, currentTime) => {
+  const result = dispatchVisit(journal, record, 'reserve', key, request, (current, payload, currentTime, readClock) => {
     if (!permittedAtDispatch(record, current, bookingGrants, +(currentTime ?? instant))) {
       return { status: 'blocked', reason: 'permission' };
     }
-    return fixture.reserve(payload, fresh =>
-      sameFields(['start', 'end', 'currency'], fresh, payload) && fresh.feeMinor === payload.feeMinor &&
-      Date.parse(fresh.start) > +(currentTime ?? instant));
+    return fixture.reserve(payload, fresh => {
+      const commitTime = +readClock();
+      return permittedAtDispatch(record, current, bookingGrants, commitTime) &&
+        sameFields(['start', 'end', 'currency'], fresh, payload) && fresh.feeMinor === payload.feeMinor &&
+        Date.parse(fresh.start) > commitTime;
+    });
   });
   if (result?.status === 'blocked' && result.reason !== 'key-conflict') {
     journal.mark(key, 'blocked');

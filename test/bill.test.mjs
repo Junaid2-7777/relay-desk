@@ -14,7 +14,8 @@ const later = '2026-11-24T05:30:00.000Z';
 
 function setup(t, { seedInvoices = true } = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), 'relay-bill-flow-'));
-  const fixture = openBillFixture({ dataDir, clock: () => now });
+  let time = now;
+  const fixture = openBillFixture({ dataDir, clock: () => time });
   const db = new DatabaseSync(':memory:');
   t.after(() => {
     fixture.close();
@@ -23,14 +24,15 @@ function setup(t, { seedInvoices = true } = {}) {
   });
   if (seedInvoices) fixture.reset();
   let record = seedHousehold(now, true).find(item => item.kind === 'bill');
-  const journal = openActionJournal(db, () => record, action => action(), () => now);
+  const journal = openActionJournal(db, () => record, action => action(), () => time);
   return {
     fixture,
     journal,
+    moveTime(value) { time = value; },
     get record() { return record; },
     update(patch) { record = { ...record, ...patch }; },
     check(provider = fixture, operations = journal) {
-      record = runBill(record, provider, operations, now);
+      record = runBill(record, provider, operations, time);
       return record;
     }
   };
@@ -130,4 +132,22 @@ test('revocation after journalling strikes before the provider write', t => {
   };
   assert.equal(desk.check(desk.fixture, journal).issue, 'bill-permission');
   assert.deepEqual(desk.fixture.inspect().attempts, []);
+});
+
+test('a one-time approval that expires before the provider commits cannot debit the bill', t => {
+  const desk = setup(t);
+  const invoice = desk.check();
+  const expiresAt = '2026-11-23T05:31:00.000Z';
+  desk.update({ approval: { ...approve(invoice), expiresAt } });
+  desk.check({
+    ...desk.fixture,
+    pay(...args) {
+      desk.moveTime(new Date(expiresAt));
+      return desk.fixture.pay(...args);
+    }
+  });
+
+  const { payments, attempts } = desk.fixture.inspect();
+  assert.deepEqual(payments, []);
+  assert.deepEqual(attempts.map(({ status, code }) => [status, code]), [['blocked', 'not-authorized']]);
 });

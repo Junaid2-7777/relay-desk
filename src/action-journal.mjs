@@ -41,7 +41,7 @@ export function openActionJournal(database, find, transaction, clock) {
       if (reopen.run(key).changes) row.status = 'prepared';
       return decode(row);
     }),
-    dispatch: (errandId, action) => transaction(() => action(find(errandId), clock())),
+    dispatch: (errandId, action) => transaction(() => action(find(errandId), clock(), clock)),
     mark: (key, status) => update.run(status, key),
     inspect: () => database.prepare('SELECT * FROM actions ORDER BY rowid').all().map(decode),
     reset: errandId => database.prepare('DELETE FROM actions WHERE errandId = ?').run(errandId)

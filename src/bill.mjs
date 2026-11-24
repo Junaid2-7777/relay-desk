@@ -113,15 +113,19 @@ export function runBill(record, fixture, journal, clockNow) {
   if (prepared.status !== 'prepared') return openWith(updated, 'payment-unknown');
   let payment;
   try {
-    payment = journal.dispatch(record.id, (current, currentTime) => {
+    payment = journal.dispatch(record.id, (current, currentTime, readClock) => {
       const time = currentTime ?? now;
       const currentRead = invoiceGrant(current, payload, time);
       const currentSpend = paymentGrant(current, payload, time);
       if (!currentRead || !currentSpend || currentRead.revision !== readGrant.revision ||
           currentSpend.revision !== spendGrant.revision || current.status === 'stopped' || sameInvoice(current.deferred, payload)) return null;
 
-      return fixture.pay(payload, (terms, totals) => sameInvoice(terms, payload) &&
-        allowsAmount(current, terms, currentSpend, time) && allowsSpend(terms, currentSpend.scope, totals));
+      return fixture.pay(payload, (terms, totals) => {
+        const commitTime = readClock();
+        return activeGrant(currentRead, commitTime) && activeGrant(currentSpend, commitTime) &&
+          sameInvoice(terms, payload) && allowsAmount(current, terms, currentSpend, commitTime) &&
+          allowsSpend(terms, currentSpend.scope, totals);
+      });
     });
   } catch (error) {
     const blocked = knownFailure(error);

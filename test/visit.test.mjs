@@ -72,3 +72,41 @@ test('reopening after an interrupted retry recovers the original visit before re
     assert.equal(journal.prepare(visit.id, 'reserve', confirmed.key, confirmed.payload).status, 'confirmed');
   });
 });
+
+test('appointment writes require permission inside their provider transaction', async t => {
+  for (const [operation, method] of [['reserve', 'reserve'], ['calendar', 'addToCalendar']]) {
+    await t.test(operation, t => {
+      let now = new Date('2026-11-23T09:00:00+05:30');
+      const expiresAt = '2026-11-23T04:00:00.000Z';
+      const clock = () => now;
+      const dataDir = mkdtempSync(join(tmpdir(), 'relay-visit-expiry-'));
+      const fixture = openVisitFixture({ dataDir, clock });
+      const database = new DatabaseSync(':memory:');
+      t.after(() => {
+        database.close();
+        fixture.close();
+        rmSync(dataDir, { force: true, recursive: true });
+      });
+      fixture.reset();
+      const visit = seedHousehold(now, true).find(record => record.kind === 'visit');
+      visit.grants[operation].expiresAt = expiresAt;
+      const journal = openActionJournal(database, () => visit, action => action(), clock);
+      const delayed = {
+        ...fixture,
+        [method](...args) {
+          now = new Date(expiresAt);
+          return fixture[method](...args);
+        }
+      };
+
+      const result = runVisit(visit, delayed, journal, now);
+      const native = fixture.inspect();
+      const reservationExpected = operation === 'calendar';
+      assert.equal(result.status, reservationExpected ? 'booked' : 'open');
+      assert.equal(native.reservations.length, reservationExpected ? 1 : 0);
+      assert.equal(native.calendar.filter(event => event.reservationId).length, 0);
+      assert.equal(native.attempts.at(-1).status, 'blocked');
+      assert.equal(native.attempts.at(-1).reason, 'permission');
+    });
+  }
+});
