@@ -28,6 +28,9 @@ test('reports observed task denominators and only compares matching participant 
       measurement('fixed-rule', 'done', {
         unassistedSeconds: 32, counts: { setup: { consentChoices: 2, manualLookups: 0 }, ongoing: { manualLookups: 0, interruptions: 1 } }
       }),
+      measurement('fixed-rule', 'done', {
+        cutoff: cutoff('after-bill-decision'), unassistedSeconds: 220, counts: { ongoing: { manualLookups: 7, decisionsTaken: 1 } }
+      }),
       measurement('manual', 'done', {
         cutoff: cutoff('first-morning-checkpoint', '2026-11-23T03:30:00Z'), unassistedSeconds: 65,
         counts: { setup: { consentChoices: 2, manualLookups: 1 }, ongoing: { manualLookups: 3, interruptions: 2, decisionsTaken: 0 } }
@@ -41,7 +44,9 @@ test('reports observed task denominators and only compares matching participant 
       measurement('manual', 'done', { cutoff: cutoff('first-morning-checkpoint', '2026-11-23T09:01:00+05:30'), unassistedSeconds: 48 })),
     session(105, measurement('fixed-rule', 'asked-for-help', { unassistedSeconds: 35 })),
     session(106, measurement('fixed-rule', 'stopped', { task: 'cold-monday', unassistedSeconds: 16 })),
-    session(107, measurement('manual', 'cutoff', { task: 'cold-monday', unassistedSeconds: 40 })),
+    session(107,
+      measurement('manual', 'cutoff', { task: 'cold-monday', unassistedSeconds: 40 }),
+      measurement('fixed-rule', 'stopped', { cutoff: null, unassistedSeconds: 62 })),
     session(108,
       measurement('model-backed', 'done', { cutoff: cutoff('after-bill-decision') }),
       measurement('manual', 'done', { cutoff: cutoff('after-bill-decision') })),
@@ -57,8 +62,12 @@ test('reports observed task denominators and only compares matching participant 
   assert.deepEqual(JSON.parse(await readFile(filename, 'utf8')), input);
   assert.ok(input.sessions.every(({ code }) => !stdout.includes(code)));
 
-  const group = (task, arm) => report.taskArms.find(item => item.task === task && item.arm === arm);
-  const warm = group('warm-monday', 'fixed-rule');
+  const armSummary = (task, arm) => report.taskArms.find(item => item.task === task && item.arm === arm);
+  const warmArm = armSummary('warm-monday', 'fixed-rule');
+  assert.equal(warmArm.recordedParticipants, 6);
+  assert.equal(warmArm.notRecorded, 3);
+  const [warm, afterBill, unknown] = warmArm.cutoffs;
+  assert.deepEqual(warm.cutoff, { point: 'first-morning-checkpoint', clock: '2026-11-23T03:30:00.000Z' });
   assert.equal(warm.recorded, 5);
   assert.equal(warm.attempted, 4);
   assert.equal(warm.notRecorded, 4);
@@ -73,8 +82,20 @@ test('reports observed task denominators and only compares matching participant 
   assert.deepEqual(warm.counts.total.consentChoices, { n: 0, median: null });
   assert.deepEqual(warm.counts.total.manualLookups, { n: 1, median: 0 });
   assert.deepEqual(warm.counts.ongoing.decisionsTaken, { n: 0, median: null });
-  assert.equal(group('cold-monday', 'fixed-rule').outcomes.first.stopped, 1);
-  assert.equal(group('cold-monday', 'manual').outcomes.first.cutoff, 1);
+  assert.deepEqual(afterBill.cutoff, { point: 'after-bill-decision', clock: '2026-11-23T03:30:00.000Z' });
+  assert.equal(afterBill.recorded, 1);
+  assert.equal(afterBill.notRecorded, 8);
+  assert.equal(afterBill.outcomes.first.skipped, 0);
+  assert.deepEqual(afterBill.elapsedSeconds.unassisted.done, { n: 1, median: 220 });
+  assert.deepEqual(afterBill.counts.ongoing.decisionsTaken, { n: 1, median: 1 });
+  assert.equal(unknown.cutoff, null);
+  assert.equal(unknown.outcomes.first.stopped, 1);
+  assert.equal(unknown.notRecorded, 8);
+  const manualLater = armSummary('warm-monday', 'manual').cutoffs[1];
+  assert.deepEqual(manualLater.cutoff, { point: 'first-morning-checkpoint', clock: '2026-11-23T03:31:00.000Z' });
+  assert.deepEqual(manualLater.elapsedSeconds.unassisted.done, { n: 1, median: 48 });
+  assert.equal(armSummary('cold-monday', 'fixed-rule').cutoffs[0].outcomes.first.stopped, 1);
+  assert.equal(armSummary('cold-monday', 'manual').cutoffs[0].outcomes.first.cutoff, 1);
 
   const pair = (task, arm) => report.deskManualPairs.find(item => item.task === task && item.deskArm === arm);
   const paired = pair('warm-monday', 'fixed-rule');
@@ -87,6 +108,7 @@ test('reports observed task denominators and only compares matching participant 
   assert.deepEqual(paired.bothCompletedWithHelp.beforeHelpSeconds, { n: 0, deskMedian: null, manualMedian: null, medianDeskMinusManual: null });
   assert.deepEqual(paired.bothCompletedWithHelp.assistedSeconds, { n: 1, deskMedian: 30, manualMedian: 70, medianDeskMinusManual: -40 });
   assert.equal(pair('cold-monday', 'fixed-rule').matchedCutoff, 0);
+  assert.equal(pair('warm-monday', 'model-backed').bothRecorded, 0);
   assert.equal(pair('warm-monday', 'model-backed').matchedCutoff, 0);
   const blank = pair('blank-desk', 'fixed-rule');
   assert.equal(blank.matchedCutoff, 1);
@@ -101,7 +123,8 @@ test('rejects private text and invalid worksheet rows without printing their con
     evidence([session(102, { ...allowed, cutoff: cutoff('first-morning-checkpoint', '2026-11-23T09:00:00') })]),
     evidence([session(103, { ...allowed, counts: { ongoing: { manualLookups: -1 } } })]),
     evidence([session(104, { ...allowed, assisted: { outcome: 'done', elapsedSeconds: 10 } })]),
-    evidence([session(105, allowed, allowed)])
+    evidence([session(105, allowed, allowed)]),
+    evidence([session(106, allowed, { ...allowed, cutoff: cutoff('first-morning-checkpoint', '2026-11-23T09:01:00+05:30') })])
   ];
   const filename = await inputFile(t, invalid[0]);
   for (const input of invalid) {

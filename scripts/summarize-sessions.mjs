@@ -12,6 +12,7 @@ const terminal = ['done', 'stopped', 'cutoff'];
 const firstOutcomes = [...terminal, 'asked-for-help', 'skipped'];
 const phases = ['setup', 'ongoing', 'total'];
 const measures = ['consentChoices', 'clarifications', 'decisionsPresented', 'decisionsTaken', 'manualLookups', 'repeatPrompts', 'interruptions'];
+const runKey = (task, arm, point) => `${task}/${arm}/${point ?? ''}`;
 
 class WorksheetError extends Error {}
 
@@ -87,8 +88,8 @@ function worksheets(input) {
     const runs = new Map();
     session.runs.forEach((value, index) => {
       const run = normalizeRun(value, `${label}, task record ${index + 1}`);
-      const key = `${run.task}/${run.arm}`;
-      if (runs.has(key)) throw new WorksheetError(`${label} contains more than one record for a task and arm.`);
+      const key = runKey(run.task, run.arm, run.cutoff?.point);
+      if (runs.has(key)) throw new WorksheetError(`${label} contains more than one record for a task, arm and cutoff point.`);
       runs.set(key, run);
     });
     return runs;
@@ -119,18 +120,36 @@ function outcomes(runs) {
   return { first, afterHelp, requestedHelpWithoutContinuation: first['asked-for-help'] - Object.values(afterHelp).reduce((sum, count) => sum + count, 0) };
 }
 
-function armSummary(sessions, task, arm) {
-  const runs = sessions.map(session => session.get(`${task}/${arm}`)).filter(Boolean);
+function summarizeCutoff(runs, point, instant, participantCount) {
   const attempted = runs.filter(run => run.outcome !== 'skipped');
   const unassisted = [...terminal, 'asked-for-help'].map(outcome => [outcome,
     observed(attempted.filter(run => run.outcome === outcome).map(run => run.unassistedSeconds))]);
   const assisted = terminal.map(outcome => [outcome,
     observed(attempted.filter(run => run.assisted?.outcome === outcome).map(run => run.assisted.elapsedSeconds))]);
   return {
-    task, arm, recorded: runs.length, attempted: attempted.length, notRecorded: sessions.length - runs.length,
+    cutoff: point === null ? null : { point, clock: new Date(instant).toISOString() },
+    recorded: runs.length, attempted: attempted.length, notRecorded: participantCount - runs.length,
     outcomes: outcomes(runs), elapsedSeconds: { unassisted: Object.fromEntries(unassisted), assisted: Object.fromEntries(assisted) },
     counts: workload(read => observed(attempted.map(read)))
   };
+}
+
+function armSummary(sessions, task, arm) {
+  const points = [...cutoffs[task], null];
+  const observations = points.flatMap(point => {
+    const grouped = new Map();
+    for (const session of sessions) {
+      const run = session.get(runKey(task, arm, point));
+      if (!run) continue;
+      const instant = run.cutoff?.instant ?? null;
+      if (!grouped.has(instant)) grouped.set(instant, []);
+      grouped.get(instant).push(run);
+    }
+    return [...grouped].sort(([left], [right]) => left - right)
+      .map(([instant, runs]) => summarizeCutoff(runs, point, instant, sessions.length));
+  });
+  const recordedParticipants = sessions.filter(session => points.some(point => session.has(runKey(task, arm, point)))).length;
+  return { task, arm, recordedParticipants, notRecorded: sessions.length - recordedParticipants, cutoffs: observations };
 }
 
 function pairStats(pairs, read) {
@@ -144,11 +163,11 @@ function pairStats(pairs, read) {
 const completed = run => run.outcome === 'done' || run.assisted?.outcome === 'done';
 
 function pairSummary(sessions, task, deskArm) {
-  const recorded = sessions.map(session => [session.get(`${task}/${deskArm}`), session.get(`${task}/manual`)])
+  const point = cutoffs[task][0];
+  const recorded = sessions.map(session => [session.get(runKey(task, deskArm, point)), session.get(runKey(task, 'manual', point))])
     .filter(pair => pair.every(Boolean));
   const attempted = recorded.filter(pair => pair.every(run => run.outcome !== 'skipped'));
-  const matched = attempted.filter(([desk, manual]) => desk.cutoff?.point === cutoffs[task][0] &&
-    manual.cutoff?.point === desk.cutoff.point && manual.cutoff.instant === desk.cutoff.instant);
+  const matched = attempted.filter(([desk, manual]) => manual.cutoff.instant === desk.cutoff.instant);
   const unassisted = matched.filter(pair => pair.every(run => run.outcome === 'done'));
   const assisted = matched.filter(pair => pair.every(run => run.assisted?.outcome === 'done'));
   const completionPairs = { bothCompleted: 0, deskOnlyCompleted: 0, manualOnlyCompleted: 0, neitherCompleted: 0 };
@@ -159,7 +178,7 @@ function pairSummary(sessions, task, deskArm) {
     else completionPairs.neitherCompleted++;
   }
   return {
-    task, deskArm, bothRecorded: recorded.length, bothAttempted: attempted.length,
+    task, deskArm, point, bothRecorded: recorded.length, bothAttempted: attempted.length,
     matchedCutoff: matched.length, completionPairs,
     outcomes: { desk: outcomes(matched.map(([desk]) => desk)), manual: outcomes(matched.map(([, manual]) => manual)) },
     bothCompletedUnassisted: {
