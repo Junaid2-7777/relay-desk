@@ -11,6 +11,13 @@ function parseInstant(value, requireSeconds) {
 export const zonedInstant = value => parseInstant(value, false);
 export const evidenceInstant = value => parseInstant(value, true);
 
+const kolkataDayFormat = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' });
+
+export function kolkataDay(date) {
+  const values = Object.fromEntries(kolkataDayFormat.formatToParts(date).map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 export function latestEvidence(records, timestampField, previous = null) {
   const previousAt = evidenceInstant(previous?.[timestampField]);
   let latestAt = Number.isFinite(previousAt) ? previousAt : -Infinity;

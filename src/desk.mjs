@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { zonedInstant } from '../shared/evidence-time.mjs';
+import { kolkataDay as localDay, zonedInstant } from '../shared/evidence-time.mjs';
 import { openActionJournal } from './action-journal.mjs';
 import { invoiceGrant } from './bill.mjs';
 import { orderChecks } from '../shared/brief-order.mjs';
@@ -23,12 +23,7 @@ export class DeskError extends Error {
   }
 }
 
-const dayFormat = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' });
-
-export function localDay(date) {
-  const values = Object.fromEntries(dayFormat.formatToParts(date).map(part => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
-}
+export { localDay };
 
 function requiredText(value, label, limit) {
   if (typeof value !== 'string' || !value.trim()) throw new DeskError(`Enter ${label}.`);

@@ -1,0 +1,642 @@
+{
+  "schemaVersion": 1,
+  "mode": "archived-scholarship-notice-replay",
+  "scopes": {
+    "nmmss": {
+      "scheme": "NMMSS",
+      "academicYear": "2026-27",
+      "cohort": "scheme-wide",
+      "geography": "India",
+      "issuer": "Ministry of Education"
+    },
+    "csss": {
+      "scheme": "PM-USP CSSS",
+      "academicYear": "2026-27",
+      "cohort": "unspecified",
+      "geography": "India",
+      "issuer": "Ministry of Education"
+    },
+    "practice": {
+      "scheme": "practice-notice-conflict",
+      "academicYear": "2026-27",
+      "cohort": "scheme-wide",
+      "geography": "India",
+      "issuer": "practice-date-authority"
+    }
+  },
+  "sources": {
+    "ministry": {
+      "scope": "nmmss",
+      "issuer": "Ministry of Education",
+      "kind": "release",
+      "origin": "archived",
+      "stages": ["application", "L1", "L2"]
+    },
+    "nsp-nmmss": {
+      "scope": "nmmss",
+      "issuer": "National Scholarship Portal",
+      "kind": "capture",
+      "origin": "archived",
+      "stages": ["application", "defect", "L1", "L2"]
+    },
+    "nsp-csss": {
+      "scope": "csss",
+      "issuer": "National Scholarship Portal",
+      "kind": "capture",
+      "origin": "archived",
+      "stages": ["application", "defect", "L1", "L2"]
+    },
+    "practice-release": {
+      "scope": "practice",
+      "issuer": "practice-date-authority",
+      "kind": "release",
+      "origin": "synthetic",
+      "stages": ["application", "L1", "L2"]
+    }
+  },
+  "notices": {
+    "pib-2295776": {
+      "source": "ministry",
+      "issuedOn": "2026-08-06",
+      "publishedOn": "2026-08-06",
+      "url": "https://www.pib.gov.in/PressReleasePage.aspx?PRID=2295776&lang=1&reg=3",
+      "locator": "Published application, institute and district deadlines",
+      "dates": { "application": "2026-08-31", "L1": "2026-09-15", "L2": "2026-09-30" }
+    },
+    "pib-2305633": {
+      "source": "ministry",
+      "issuedOn": "2026-09-01",
+      "publishedOn": "2026-09-01",
+      "url": "https://www.pib.gov.in/PressReleasePage.aspx?PRID=2305633&lang=2&reg=48",
+      "locator": "Published application, institute and district deadlines",
+      "dates": { "application": "2026-09-30", "L1": "2026-10-15", "L2": "2026-10-31" }
+    },
+    "pib-2317657": {
+      "source": "ministry",
+      "issuedOn": "2026-10-01",
+      "publishedOn": "2026-10-01",
+      "url": "https://www.pib.gov.in/PressReleseDetailm.aspx?PRID=2317657&lang=1&reg=3",
+      "locator": "Published application, institute and district deadlines",
+      "dates": { "application": "2026-10-31", "L1": "2026-11-15", "L2": "2026-11-30" }
+    },
+    "pib-2330936": {
+      "source": "ministry",
+      "issuedOn": "2026-10-31",
+      "publishedOn": "2026-10-31",
+      "url": "https://www.pib.gov.in/PressReleseDetailm.aspx?PRID=2330936&lang=1&reg=1",
+      "locator": "Published application, institute and district deadlines",
+      "dates": { "application": "2026-11-15", "L1": "2026-11-30", "L2": "2026-12-15" }
+    },
+    "nsp-nmmss-2026-11-21": {
+      "source": "nsp-nmmss",
+      "capturedOn": "2026-11-21",
+      "url": "https://scholarships.gov.in/All-Scholarships",
+      "locator": "NMMSS public scheme card with application, defective application, institute and higher-level dates",
+      "dates": { "application": "2026-11-15", "defect": "2026-11-30", "L1": "2026-11-30", "L2": "2026-12-15" }
+    },
+    "nsp-csss-2026-11-21": {
+      "source": "nsp-csss",
+      "capturedOn": "2026-11-21",
+      "url": "https://scholarships.gov.in/All-Scholarships",
+      "locator": "PM-USP CSSS general scheme card without a cohort label",
+      "dates": { "application": "2026-11-30", "defect": "2026-12-15", "L1": "2026-12-15", "L2": "2026-12-31" }
+    },
+    "practice-base": {
+      "source": "practice-release",
+      "issuedOn": "2026-10-01",
+      "publishedOn": "2026-10-01",
+      "url": null,
+      "locator": "Synthetic baseline using archived date values",
+      "dates": { "application": "2026-10-31", "L1": "2026-11-15", "L2": "2026-11-30" }
+    },
+    "practice-split-one": {
+      "source": "practice-release",
+      "issuedOn": "2026-10-31",
+      "publishedOn": "2026-10-31",
+      "url": null,
+      "locator": "Synthetic partial revision, first claimed institute date",
+      "dates": { "L1": "2026-11-30", "L2": "2026-12-15" }
+    },
+    "practice-split-two": {
+      "source": "practice-release",
+      "issuedOn": "2026-10-31",
+      "publishedOn": "2026-10-31",
+      "url": null,
+      "locator": "Synthetic partial revision, second claimed institute date",
+      "dates": { "L1": "2026-11-15" }
+    },
+    "practice-resolution": {
+      "source": "practice-release",
+      "issuedOn": "2026-11-21",
+      "publishedOn": "2026-11-21",
+      "url": null,
+      "locator": "Synthetic resolution of the institute date only",
+      "dates": { "L1": "2026-11-30" }
+    }
+  },
+  "syntheticDeliveries": {
+    "practice-repost-oct": {
+      "record": "pib-2317657",
+      "keepRecordId": true,
+      "changes": { "availableOn": "2026-11-21" }
+    },
+    "practice-wrong-cycle": {
+      "record": "pib-2330936",
+      "changes": {
+        "scope": { "academicYear": "2025-26" }
+      }
+    },
+    "practice-wrong-cohort": {
+      "record": "pib-2330936",
+      "changes": {
+        "scope": { "cohort": "fresh" }
+      }
+    },
+    "practice-wrong-geography": {
+      "record": "pib-2330936",
+      "changes": {
+        "scope": { "geography": "practice-other-place" }
+      }
+    },
+    "practice-wrong-issuer": {
+      "record": "pib-2330936",
+      "changes": { "issuer": "National Scholarship Portal" }
+    },
+    "practice-wrong-stage": {
+      "record": "pib-2330936",
+      "changes": {
+        "dates": { "defect": "2026-11-30" }
+      }
+    },
+    "practice-early-release": {
+      "record": "pib-2330936",
+      "changes": { "availableOn": "2026-10-30" }
+    },
+    "practice-no-issuer": {
+      "record": "practice-resolution",
+      "changes": { "issuer": null }
+    },
+    "practice-no-cycle": {
+      "record": "practice-resolution",
+      "changes": {
+        "scope": { "academicYear": null }
+      }
+    },
+    "practice-no-stage": {
+      "record": "practice-resolution",
+      "changes": {
+        "dates": {}
+      }
+    }
+  },
+  "case": {
+    "caseId": "practice-nmmss-archived-dates",
+    "issuers": { "student": "practice-student", "institute": "practice-school", "district": "practice-district" }
+  },
+  "caseReceipts": {
+    "filed": {
+      "id": "practice-filed",
+      "caseId": "practice-nmmss-archived-dates",
+      "sequence": 1,
+      "issuer": "practice-student",
+      "issuerRole": "student",
+      "type": "submitted",
+      "stage": "application",
+      "receiptRef": "practice-filed-receipt",
+      "recordedAt": "2026-08-06T00:00:00+05:30"
+    },
+    "school": {
+      "id": "practice-school-verified",
+      "caseId": "practice-nmmss-archived-dates",
+      "sequence": 2,
+      "issuer": "practice-school",
+      "issuerRole": "institute",
+      "type": "institute_verified",
+      "stage": "L1",
+      "receiptRef": "practice-school-proof",
+      "recordedAt": "2026-10-30T09:00:00+05:30"
+    }
+  },
+  "scenarios": [
+    {
+      "id": "D01-official-editions",
+      "scope": "nmmss",
+      "checkpoints": [
+        {
+          "label": "August release",
+          "asOf": "2026-08-06T00:00:00+05:30",
+          "observe": ["pib-2295776"],
+          "deliver": ["filed"],
+          "expected": {
+            "day": "2026-08-06",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-08-31", "defect": null, "L1": "2026-09-15", "L2": "2026-09-30" },
+            "followups": { "L1": "upcoming", "L2": "upcoming" },
+            "L1Versions": ["pib-2295776"],
+            "L2Versions": ["pib-2295776"],
+            "L1History": [],
+            "L2History": [],
+            "proofIds": { "L1": null, "L2": null }
+          }
+        },
+        {
+          "label": "September release",
+          "asOf": "2026-09-01T00:00:00+05:30",
+          "observe": ["pib-2305633"],
+          "deliver": [],
+          "expected": {
+            "day": "2026-09-01",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-09-30", "defect": null, "L1": "2026-10-15", "L2": "2026-10-31" },
+            "followups": { "L1": "upcoming", "L2": "upcoming" },
+            "L1Versions": ["pib-2305633"],
+            "L2Versions": ["pib-2305633"],
+            "L1History": ["pib-2295776"],
+            "L2History": ["pib-2295776"]
+          }
+        },
+        {
+          "label": "October release",
+          "asOf": "2026-10-01T00:00:00+05:30",
+          "observe": ["pib-2317657"],
+          "deliver": [],
+          "expected": {
+            "day": "2026-10-01",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-10-31", "defect": null, "L1": "2026-11-15", "L2": "2026-11-30" },
+            "followups": { "L1": "upcoming", "L2": "upcoming" },
+            "L1Versions": ["pib-2317657"],
+            "L2Versions": ["pib-2317657"],
+            "L1History": ["pib-2295776", "pib-2305633"],
+            "L2History": ["pib-2295776", "pib-2305633"]
+          }
+        },
+        {
+          "label": "Late October release",
+          "asOf": "2026-10-31T00:00:00+05:30",
+          "observe": ["pib-2330936"],
+          "deliver": [],
+          "expected": {
+            "day": "2026-10-31",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-11-15", "defect": null, "L1": "2026-11-30", "L2": "2026-12-15" },
+            "followups": { "L1": "upcoming", "L2": "upcoming" },
+            "L1Versions": ["pib-2330936"],
+            "L2Versions": ["pib-2330936"],
+            "L1History": ["pib-2295776", "pib-2305633", "pib-2317657"],
+            "L2History": ["pib-2295776", "pib-2305633", "pib-2317657"],
+            "proofIds": { "L1": null, "L2": null }
+          }
+        }
+      ]
+    },
+    {
+      "id": "D02-availability-and-scope",
+      "scope": "nmmss",
+      "checkpoints": [
+        {
+          "label": "Future edition and capture exist on disk",
+          "asOf": "2026-10-30T12:00:00+05:30",
+          "observe": ["pib-2295776", "pib-2305633", "pib-2317657", "pib-2330936", "nsp-nmmss-2026-11-21"],
+          "deliver": ["filed"],
+          "expected": {
+            "day": "2026-10-30",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-10-31", "defect": null, "L1": "2026-11-15", "L2": "2026-11-30" },
+            "followups": { "L1": "upcoming", "L2": "upcoming" },
+            "L1Versions": ["pib-2317657"],
+            "L2Versions": ["pib-2317657"],
+            "L1Corroboration": [],
+            "ignored": [
+              { "id": "pib-2330936", "reason": "not-yet-available" },
+              { "id": "nsp-nmmss-2026-11-21", "reason": "not-yet-available" }
+            ]
+          }
+        },
+        {
+          "label": "Publication makes the October 31 edition eligible",
+          "asOf": "2026-10-31T00:00:00+05:30",
+          "observe": [],
+          "deliver": [],
+          "expected": {
+            "day": "2026-10-31",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-11-15", "defect": null, "L1": "2026-11-30", "L2": "2026-12-15" },
+            "followups": { "L1": "upcoming", "L2": "upcoming" },
+            "L1Versions": ["pib-2330936"],
+            "L2Versions": ["pib-2330936"],
+            "L1Corroboration": [],
+            "ignored": [
+              { "id": "nsp-nmmss-2026-11-21", "reason": "not-yet-available" }
+            ]
+          }
+        },
+        {
+          "label": "The portal capture is still unavailable one minute earlier",
+          "asOf": "2026-11-20T18:29:00Z",
+          "observe": [],
+          "deliver": [],
+          "expected": {
+            "day": "2026-11-20",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-11-15", "defect": null, "L1": "2026-11-30", "L2": "2026-12-15" },
+            "followups": { "L1": "upcoming", "L2": "upcoming" },
+            "L1Versions": ["pib-2330936"],
+            "L2Versions": ["pib-2330936"],
+            "L1Corroboration": [],
+            "ignored": [
+              { "id": "nsp-nmmss-2026-11-21", "reason": "not-yet-available" }
+            ]
+          }
+        },
+        {
+          "label": "The portal capture confirms the scoped fields",
+          "asOf": "2026-11-20T18:30:00Z",
+          "observe": [],
+          "deliver": [],
+          "expected": {
+            "day": "2026-11-21",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": {
+              "application": "2026-11-15",
+              "defect": "2026-11-30",
+              "L1": "2026-11-30",
+              "L2": "2026-12-15"
+            },
+            "followups": { "L1": "upcoming", "L2": "upcoming" },
+            "L1Versions": ["pib-2330936"],
+            "L2Versions": ["pib-2330936"],
+            "L1Corroboration": ["nsp-nmmss-2026-11-21"],
+            "ignored": [],
+            "proofIds": { "L1": null, "L2": null }
+          }
+        },
+        {
+          "label": "Duplicate editions and scope mismatches leave the current dates",
+          "asOf": "2026-11-21T12:00:00+05:30",
+          "observe": [
+            "pib-2330936",
+            "pib-2295776",
+            "nsp-csss-2026-11-21",
+            "practice-wrong-cycle",
+            "practice-wrong-cohort",
+            "practice-wrong-geography",
+            "practice-wrong-issuer",
+            "practice-wrong-stage",
+            "practice-early-release"
+          ],
+          "deliver": [],
+          "expected": {
+            "day": "2026-11-21",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": {
+              "application": "2026-11-15",
+              "defect": "2026-11-30",
+              "L1": "2026-11-30",
+              "L2": "2026-12-15"
+            },
+            "followups": { "L1": "upcoming", "L2": "upcoming" },
+            "L1Versions": ["pib-2330936"],
+            "L2Versions": ["pib-2330936"],
+            "L1History": ["pib-2295776", "pib-2305633", "pib-2317657"],
+            "ignored": [
+              { "id": "pib-2330936", "reason": "duplicate" },
+              { "id": "pib-2295776", "reason": "duplicate" },
+              { "id": "nsp-csss-2026-11-21", "reason": "wrong-scope" },
+              { "id": "practice-wrong-cycle", "reason": "wrong-scope" },
+              { "id": "practice-wrong-cohort", "reason": "wrong-scope" },
+              { "id": "practice-wrong-geography", "reason": "wrong-scope" },
+              { "id": "practice-wrong-issuer", "reason": "wrong-issuer" },
+              { "id": "practice-wrong-stage", "reason": "wrong-stage" },
+              { "id": "practice-early-release", "reason": "invalid-availability" }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "D02-older-repost",
+      "scope": "nmmss",
+      "checkpoints": [
+        {
+          "label": "Read the current release first",
+          "asOf": "2026-10-31T12:00:00+05:30",
+          "observe": ["pib-2330936"],
+          "deliver": ["filed"],
+          "expected": {
+            "day": "2026-10-31",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-11-15", "defect": null, "L1": "2026-11-30", "L2": "2026-12-15" },
+            "followups": { "L1": "upcoming", "L2": "upcoming" },
+            "L1Versions": ["pib-2330936"],
+            "L2Versions": ["pib-2330936"],
+            "L1History": [],
+            "L2History": []
+          }
+        },
+        {
+          "label": "Later observation of the older release preserves its issue date",
+          "asOf": "2026-11-21T12:00:00+05:30",
+          "observe": ["practice-repost-oct"],
+          "deliver": [],
+          "expected": {
+            "day": "2026-11-21",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-11-15", "defect": null, "L1": "2026-11-30", "L2": "2026-12-15" },
+            "followups": { "L1": "upcoming", "L2": "upcoming" },
+            "L1Versions": ["pib-2330936"],
+            "L2Versions": ["pib-2330936"],
+            "L1History": ["pib-2317657"],
+            "L2History": ["pib-2317657"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "D03-independent-field-conflict",
+      "scope": "practice",
+      "checkpoints": [
+        {
+          "label": "Synthetic baseline with separate stage dates",
+          "asOf": "2026-10-01T12:00:00+05:30",
+          "observe": ["practice-base"],
+          "deliver": ["filed"],
+          "expected": {
+            "day": "2026-10-01",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-10-31", "defect": null, "L1": "2026-11-15", "L2": "2026-11-30" },
+            "followups": { "L1": "upcoming", "L2": "upcoming" },
+            "L1Versions": ["practice-base"],
+            "L2Versions": ["practice-base"]
+          }
+        },
+        {
+          "label": "Only the independent L2 revision moves",
+          "asOf": "2026-10-31T12:00:00+05:30",
+          "observe": ["practice-split-one", "practice-split-two"],
+          "deliver": [],
+          "expected": {
+            "day": "2026-10-31",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-10-31", "defect": null, "L1": "2026-11-15", "L2": "2026-12-15" },
+            "followups": { "L1": "review", "L2": "upcoming" },
+            "L1Conflict": ["practice-split-one", "practice-split-two"],
+            "L1Versions": ["practice-base"],
+            "L2Versions": ["practice-split-one"],
+            "L2History": ["practice-base"]
+          }
+        },
+        {
+          "label": "Incomplete source claims cannot resolve L1",
+          "asOf": "2026-11-21T11:00:00+05:30",
+          "observe": ["practice-no-issuer", "practice-no-cycle", "practice-no-stage"],
+          "deliver": [],
+          "expected": {
+            "day": "2026-11-21",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-10-31", "defect": null, "L1": "2026-11-15", "L2": "2026-12-15" },
+            "followups": { "L1": "review", "L2": "upcoming" },
+            "L1Conflict": ["practice-split-one", "practice-split-two"],
+            "L1Versions": ["practice-base"],
+            "L2Versions": ["practice-split-one"],
+            "ignored": [
+              { "id": "practice-no-issuer", "reason": "wrong-issuer" },
+              { "id": "practice-no-cycle", "reason": "wrong-scope" },
+              { "id": "practice-no-stage", "reason": "invalid-notice" }
+            ]
+          }
+        },
+        {
+          "label": "Later synthetic authority resolves only the affected field",
+          "asOf": "2026-11-21T12:00:00+05:30",
+          "observe": ["practice-resolution"],
+          "deliver": [],
+          "expected": {
+            "day": "2026-11-21",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-10-31", "defect": null, "L1": "2026-11-30", "L2": "2026-12-15" },
+            "followups": { "L1": "upcoming", "L2": "upcoming" },
+            "L1Conflict": [],
+            "L1Versions": ["practice-resolution"],
+            "L1History": ["practice-base"],
+            "L2Versions": ["practice-split-one"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "D10-indian-calendar-day",
+      "scope": "nmmss",
+      "checkpoints": [
+        {
+          "label": "L1 remains due through the final second of the Indian date",
+          "asOf": "2026-11-30T18:29:59Z",
+          "observe": ["pib-2330936"],
+          "deliver": ["filed"],
+          "expected": {
+            "day": "2026-11-30",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-11-15", "defect": null, "L1": "2026-11-30", "L2": "2026-12-15" },
+            "followups": { "L1": "due", "L2": "upcoming" },
+            "proofIds": { "L1": null, "L2": null }
+          }
+        },
+        {
+          "label": "The next Indian date marks the same stage overdue",
+          "asOf": "2026-11-30T18:30:00Z",
+          "observe": [],
+          "deliver": [],
+          "expected": {
+            "day": "2026-12-01",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-11-15", "defect": null, "L1": "2026-11-30", "L2": "2026-12-15" },
+            "followups": { "L1": "overdue", "L2": "upcoming" },
+            "proofIds": { "L1": null, "L2": null }
+          }
+        },
+        {
+          "label": "Repeat the overdue checkpoint without new evidence",
+          "asOf": "2026-11-30T18:30:00Z",
+          "observe": [],
+          "deliver": [],
+          "expected": {
+            "day": "2026-12-01",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-11-15", "defect": null, "L1": "2026-11-30", "L2": "2026-12-15" },
+            "followups": { "L1": "overdue", "L2": "upcoming" },
+            "proofIds": { "L1": null, "L2": null }
+          }
+        }
+      ]
+    },
+    {
+      "id": "D10-already-verified-stage",
+      "scope": "nmmss",
+      "checkpoints": [
+        {
+          "label": "L1 is pending under the then-current edition",
+          "asOf": "2026-10-30T08:00:00+05:30",
+          "observe": ["pib-2317657"],
+          "deliver": ["filed"],
+          "expected": {
+            "day": "2026-10-30",
+            "owner": "institute",
+            "caseStage": "L1",
+            "dates": { "application": "2026-10-31", "defect": null, "L1": "2026-11-15", "L2": "2026-11-30" },
+            "followups": { "L1": "upcoming", "L2": "upcoming" },
+            "followupDates": { "L1": "2026-11-15", "L2": "2026-11-30" },
+            "proofIds": { "L1": null, "L2": null }
+          }
+        },
+        {
+          "label": "An issuer receipt retires L1 from the projection",
+          "asOf": "2026-10-30T09:00:00+05:30",
+          "observe": [],
+          "deliver": ["school"],
+          "expected": {
+            "day": "2026-10-30",
+            "owner": "district",
+            "caseStage": "L2",
+            "dates": { "application": "2026-10-31", "defect": null, "L1": "2026-11-15", "L2": "2026-11-30" },
+            "followups": { "L1": "verified", "L2": "upcoming" },
+            "proofIds": { "L1": "practice-school-verified", "L2": null },
+            "followupDates": { "L1": null, "L2": "2026-11-30" }
+          }
+        },
+        {
+          "label": "The next release changes both public dates and only the open L2 follow-up",
+          "asOf": "2026-10-31T12:00:00+05:30",
+          "observe": ["pib-2330936"],
+          "deliver": [],
+          "expected": {
+            "day": "2026-10-31",
+            "owner": "district",
+            "caseStage": "L2",
+            "dates": { "application": "2026-11-15", "defect": null, "L1": "2026-11-30", "L2": "2026-12-15" },
+            "followups": { "L1": "verified", "L2": "upcoming" },
+            "proofIds": { "L1": "practice-school-verified", "L2": null },
+            "followupDates": { "L1": null, "L2": "2026-12-15" }
+          }
+        }
+      ]
+    }
+  ]
+}
