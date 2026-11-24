@@ -96,7 +96,7 @@ function applyEvents(providers, events = []) {
   }
 }
 
-function nativeEffects(native) {
+export function nativeEffects(native) {
   const calendar = native.visit.calendar.filter(event => event.reservationId);
   return {
     counts: {

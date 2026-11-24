@@ -11,6 +11,7 @@
     "compare:planners": "node scripts/compare-planners.mjs",
     "compare:held-out": "node scripts/compare-planners.mjs --held-out",
     "compare:morning": "node scripts/compare-morning.mjs",
+    "observe:session": "node scripts/observe-session.mjs",
     "check:n8n": "node scripts/check-n8n.mjs",
     "demo:evidence": "node scripts/demo-evidence.mjs",
     "demo": "node src/server.mjs --fixture",

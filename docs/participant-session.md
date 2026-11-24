@@ -19,6 +19,12 @@ Use a fresh `RELAY_DATA_DIR` for each task and arm. Stop the current server befo
 
 Read each task aloud without naming a control. Start timing when the prompt ends and pause for observer setup such as restarting the desk. Record the outcome and elapsed time when the person finishes, stops, requests help or reaches the agreed cutoff. If they continue with help, record the first prompt you gave, what they did next and the assisted elapsed time separately. For a manual comparison, give the same starting reminders and access to the same fictional source records at the same checkpoints. Use a fresh copy for each arm and record the order so a second attempt can be interpreted in light of the first. [Comparison protocol](evaluation.md#compare-work-and-attention)
 
+## Capture what the desk did
+
+Before each task and after the participant answers, pause interaction and fixture updates. In a second terminal run `npm run --silent observe:session`. Set `RELAY_PORT` there if the desk uses a different port. Record the server checkout’s build revision with `git rev-parse HEAD`. The command reads the running local desk and prints a JSON snapshot. It leaves the desk and provider logs untouched. The report carries the fixture time, planner mode, current permissions, check dates, household provider reads and failures, write attempts and committed effects. It omits note and draft text, recipients, record identifiers and calendar titles. The observer rejects a capture if the errands or native records change during inspection.
+
+Compare the two snapshots to find what changed during the task. On cold Monday, expect one free/busy read after the prescribed consent choices. On warm Monday, look for `decisionReady: "bill-review"` and a visit with both `reservation: true` and `calendar: true` under `matchedNativeEvidence`. A false value means the current native records did not corroborate that claim. Record it with the session. A ready decision on screen can go unnoticed. Use your observations for attention, help, elapsed time and decisions the participant actually took.
+
 ## Record one block per task and arm
 
 ```text
