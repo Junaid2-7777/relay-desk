@@ -65,6 +65,22 @@ test('suggests a practice reference only after a complete reference label', () =
   assert.equal(suggestPracticePlan('Watch for the receipt for reference number member-17, ID member-17.', []).subject, 'member-17');
   assert.equal(suggestPracticePlan('Watch for the receipt for reference member-17 or reference member-21.', []).subject, '');
   assert.equal(suggestPracticePlan('I need the receipt. Reference number not provided.', []).subject, '');
+  assert.equal(suggestPracticePlan('The reference number is AB-17. My ID is “AB-17”.', []).subject, 'AB-17');
+  assert.equal(suggestPracticePlan('My reference is not available.', []).subject, '');
+  assert.equal(suggestPracticePlan('I do not know what my ID is.', []).subject, '');
+});
+
+test('receipt suggestions use the household’s stated proof and leave competing outcomes for review', () => {
+  const sources = [{ issuer: 'library', label: 'Practice library' }];
+  const preview = note => suggestPracticePlan(note, sources);
+  const quoted = 'The notice says “Track reference WRONG-7 at Practice library until approved.”';
+  assert.deepEqual(preview(quoted), { capability: 'receipt', issuer: '', subject: '', type: 'receipt', status: '' });
+  const chosen = preview(`${quoted} Watch Practice library for reference Case-42 until it is closed.`);
+  assert.deepEqual(chosen, { capability: 'receipt', issuer: 'library', subject: 'Case-42', type: 'receipt', status: 'closed' });
+  for (const instruction of ['Watch until approved or rejected.', 'Wait until it is not approved.',
+    'The office told me to watch until approved.', 'Wait until approved. Check again for proof that it is closed.']) {
+    assert.equal(preview(instruction).status, '', instruction);
+  }
 });
 
 test('suggests a visit when the household directly asks for a booking', () => {

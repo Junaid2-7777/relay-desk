@@ -10,10 +10,16 @@ const bookingRequest = /^(?:book|reserve|schedule)\s+(?:(?:me|us)\s+(?:for\s+)?)
 const bookingDetails = /[,:]|\s+(?:about|and|or|for|from|of|at|on|with|to|between|before|after|(?:this|next)\s+(?:morning|afternoon|evening|week|month))\b/iu;
 const nonSlotObject = /\b(?:alarm|alert|book|cop(?:y|ie)|e-?mail|follow[\s-]+up|message|notification|payment|reminder|text|transfer)s?$/iu;
 const bookingRefusal = /\b(?:do\s+not|don['’]t|never|not\s+to)\s+(?:actually\s+)?(?:book|reserve|schedule)\b/iu;
-const referenceLabel = /\b(?:reference(?:[ \t]+(?:number|id))?|ref|id)\b\.?[ \t]*(?:[:#][ \t]*)?(?!(?:id|number|not|missing|unknown)\b)([a-z0-9][a-z0-9._:-]*)/giu;
+const referenceLabel = /\b(?:reference(?:[ \t]+(?:number|id))?|ref|id)\b\.?[ \t]*(?:is\b[ \t]*)?(?:[:#][ \t]*)?(?!(?:id|number|is|was|will|not|no|none|missing|unknown|unavailable|pending|needed|withheld|the|to|for|of|from)\b)([a-z0-9][a-z0-9._:-]*)/giu;
+const receiptRule = /\b(?:until|once|proof\s+that|confirmation\s+that)\b([^.!?]{0,70})/giu;
+const receiptStatus = /\b(?:closed|approved|confirmed|issued|rejected|completed)\b/giu;
+const reportedRule = /\b(?:said|says|wrote|replied|asked|reported|instructed|suggested|advised|told)\b/iu;
+const negatedRule = /\b(?:not|never|neither|unless|or)\b|n['’]t\b/iu;
+
+const withoutQuotes = note => note.replace(quotedText, quote => /[.!?].$/u.test(quote) ? '. ' : ' ');
 
 function noteSentences(note) {
-  return note.replace(quotedText, quote => /[.!?].$/u.test(quote) ? '. ' : ' ')
+  return withoutQuotes(note)
     .replace(/:[ \t]*[\r\n]+\s*/gu, ': ').split(/[.!?;\r\n]+/u);
 }
 
@@ -86,19 +92,34 @@ export function previewErrand(note, today) {
 }
 
 export function suggestPracticePlan(note, sources) {
-  const lower = note.toLowerCase();
-  const subjects = new Set(Array.from(note.matchAll(referenceLabel), match => match[1].replace(/[.:]+$/u, '')));
+  const instructions = withoutQuotes(note).toLowerCase();
+  const referenceText = note.replace(quotedText, quote => {
+    const literal = quote.slice(1, -1);
+    return /^[a-z0-9][a-z0-9._:-]{0,99}$/iu.test(literal) ? literal : ' ';
+  });
+  const subjects = new Set(Array.from(referenceText.matchAll(referenceLabel), match => match[1].replace(/[.:]+$/u, '')));
   const [reference] = subjects;
   const subject = subjects.size === 1 && reference.length <= 100 ? reference : '';
   if (requestsBooking(note)) return { capability: 'visit', subject };
 
-  const issuers = sources.filter(source => lower.includes(source.label.toLowerCase()));
-  const expected = /\b(?:until|once|proof\s+that|confirmation\s+that)\b[^.!?]{0,70}\b(closed|approved|confirmed|issued|rejected|completed)\b/u.exec(lower);
+  const issuers = sources.filter(source => instructions.includes(source.label.toLowerCase()));
   return {
     capability: 'receipt',
     issuer: issuers.length === 1 ? issuers[0].issuer : '',
     subject,
     type: 'receipt',
-    status: expected?.[1] ?? ''
+    status: requestedReceiptStatus(note)
   };
+}
+
+function requestedReceiptStatus(note) {
+  const statuses = new Set();
+  for (const sentence of noteSentences(note)) {
+    for (const match of sentence.matchAll(receiptRule)) {
+      if (reportedRule.test(sentence.slice(0, match.index))) continue;
+      if (negatedRule.test(match[0])) return '';
+      for (const status of match[1].matchAll(receiptStatus)) statuses.add(status[0].toLowerCase());
+    }
+  }
+  return statuses.size === 1 ? [...statuses][0] : '';
 }
