@@ -127,6 +127,38 @@ test('the context separates role and configured planner on the same port and dat
   assert.equal(plannerCalls, 1);
 });
 
+test('private and practice errands stay with their own desk when both share a data directory', async t => {
+  const host = await workspace(t);
+  const dataDir = host.data('mixed');
+  const personal = await host.open({ dataDir });
+  const { deskContext } = await personal.request('/api/desk');
+  const privateId = '52cea560-9241-47b5-99c5-ce556ce23cba';
+  const privateBody = { requestId: privateId, note: 'The fictional shop gave me a private reference. Check on Friday.' };
+  const privateErrand = await personal.request('/api/errands', { method: 'POST', body: privateBody, status: 201 });
+  const practice = await host.open({ dataDir, householdMode: true, reset: true });
+  const exercise = await practice.request('/api/errands', {
+    method: 'POST', body: { note: 'Practice library reference mock-member. Check tomorrow.' }, status: 201
+  });
+  for (const path of ['/api/desk', '/api/inspect']) {
+    assert.ok(!(await practice.request(path)).errands.some(row => row.id === privateId));
+    assert.deepEqual((await personal.request(path, { context: deskContext })).errands, [privateErrand]);
+  }
+  const before = await practice.request('/api/fixture/refund');
+  await practice.request('/api/errands', { method: 'POST', body: privateBody, status: 409 });
+  await practice.request(`/api/errands/${privateId}/draft`, { method: 'POST', status: 404 });
+  await practice.request(`/api/errands/${privateId}/tracking`, { method: 'POST', body: { choice: 'stop', revision: 1 }, status: 404 });
+  await personal.request(`/api/errands/${exercise.id}/draft`, { method: 'POST', status: 404 });
+  assert.deepEqual(await practice.request('/api/fixture/refund'), before);
+  const after = await practice.request('/api/checkpoint', { method: 'POST', body: {} });
+  assert.ok(!JSON.stringify(after).includes(privateErrand.note));
+  await practice.close();
+
+  const reset = await host.open({ dataDir, householdMode: true, reset: true });
+  assert.deepEqual((await reset.request('/api/desk')).errands.map(row => row.id).sort(), ['demo-bill', 'demo-refund', 'demo-visit']);
+  assert.deepEqual((await personal.request('/api/desk', { context: deskContext })).errands, [privateErrand]);
+  assert.deepEqual(await personal.request('/api/errands', { method: 'POST', body: privateBody, status: 201 }), privateErrand);
+});
+
 test('a practice reset blocks stale actions for reused errand IDs and unversioned checkpoints', async t => {
   const host = await workspace(t);
   const dataDir = host.data('practice');

@@ -21,7 +21,7 @@ Run the local desk with Node.js 24 or newer. The app uses Node’s built-in HTTP
 npm start
 ```
 
-Saved notes stay in `.relay/desk.sqlite`. Open [Relay Desk on this computer](http://127.0.0.1:4173).
+Saved notes stay in `.relay/desk.sqlite`. Private notes stay on the private desk even if you point a practice session at the same directory. Open [Relay Desk on this computer](http://127.0.0.1:4173).
 
 Use `npm run reset` to start the three-errand practice household on 23 November 2026 IST. Select **Check your errands** to see the morning brief. To start with no permissions, use `npm run reset -- --cold`. To reopen the practice desk, use `npm run demo`. Stop the desk before switching commands. The practice desk uses `.relay/demo` by default.
 

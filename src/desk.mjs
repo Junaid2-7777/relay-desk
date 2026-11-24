@@ -106,10 +106,18 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
   const readIdentity = database.prepare('SELECT id, resetVersion FROM desk_identity WHERE singleton = 1');
   const rotateContext = database.prepare('UPDATE desk_identity SET resetVersion = resetVersion + 1 WHERE singleton = 1');
   const role = household ? 'household' : refundFixture ? 'refund-practice' : 'private';
+  const practice = role !== 'private';
+  // Earlier builds marked household intake with practiceCase and used fixed IDs for the three seeds.
+  // Unmarked notes belong to the private desk, including notes already saved in a mixed directory.
+  database.exec(`
+    CREATE TEMP VIEW visible_errands AS SELECT rowid AS savedOrder, id, record FROM errands
+    WHERE (id IN ('demo-refund', 'demo-visit', 'demo-bill') OR COALESCE(json_extract(record, '$.practiceCase'), 0) = 1)
+      = ${practice ? 1 : 0}
+  `);
   const requestContext = new AsyncLocalStorage();
   const deskContext = () => {
     const { id, resetVersion } = readIdentity.get();
-    return createHash('sha256').update(JSON.stringify([id, resetVersion, directory, role, intakePlanner?.mode ?? 'fixed-rule'])).digest('hex');
+    return createHash('sha256').update(JSON.stringify([id, practice ? resetVersion : 0, directory, role, intakePlanner?.mode ?? 'fixed-rule'])).digest('hex');
   };
   function checkDeskContext() {
     const expected = requestContext.getStore();
@@ -117,14 +125,15 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       throw new DeskError('The desk changed. Reload the page before continuing.', 409, changedContextCode);
     }
   }
-  const get = database.prepare('SELECT record FROM errands WHERE id = ?');
-  const getSave = database.prepare('SELECT record, intent FROM errands LEFT JOIN errand_saves USING (id) WHERE id = ?');
+  const get = database.prepare('SELECT record FROM visible_errands WHERE id = ?');
+  const getSave = database.prepare('SELECT record, intent FROM visible_errands LEFT JOIN errand_saves USING (id) WHERE id = ?');
   const find = id => {
     const errand = readErrand(get.get(id));
     if (!errand) throw new DeskError('This errand could not be found.', 404);
     return errand;
   };
-  const list = () => database.prepare('SELECT record FROM errands ORDER BY rowid DESC').all().map(readErrand);
+  const visible = database.prepare('SELECT record FROM visible_errands ORDER BY savedOrder DESC');
+  const list = () => visible.all().map(readErrand);
   const today = () => localDay(clock());
   function fixedProposal(note, day, sources) {
     const parsed = previewErrand(note, day);
@@ -304,7 +313,8 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
           status: 'open',
           owner: proposal.kind === 'refund' ? 'Shop' : null,
           evidence: [],
-          ...(household ? { practiceCase: true, practicePlan: proposal.practicePlan, plannerMode: proposal.plannerMode } : {})
+          ...(practice ? { practiceCase: true } : {}),
+          ...(household ? { practicePlan: proposal.practicePlan, plannerMode: proposal.plannerMode } : {})
         };
 
         // Older rows lack a saved request, so compare the fields still in the record.
@@ -628,12 +638,13 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     },
     inspect() {
       const errands = list();
+      const ids = new Set(errands.map(record => record.id));
       return {
         errands,
         grants: errands.flatMap(record =>
           Object.values(record.refundAccess ?? record.grants ?? {}).map(grant => ({ errandId: record.id, ...grant }))),
         effects: refundFixture?.inspect().reads ?? [],
-        ...(household ? { actions: journal.inspect() } : {})
+        ...(household ? { actions: journal.inspect().filter(action => ids.has(action.errandId)) } : {})
       };
     },
     close: () => database.close()
