@@ -5,6 +5,7 @@ const effectNames = ['reservations', 'calendar', 'payments', 'queuedMessages'];
 const statuses = ['open', 'booked', 'accepted', 'verified', 'stopped'];
 export const defaultTrialTime = '2026-11-23T03:30:00.000Z';
 export const briefDecisions = ['bill-review', 'calendar-conflict'];
+export const visitChoices = ['handle', 'watch'];
 
 export const auditFields = {
   reservations: ['issuer', 'service', 'subject', 'zone', 'slotId', 'revision', 'start', 'end', 'feeMinor', 'currency', 'status'],
@@ -108,6 +109,9 @@ export function validateHeldOutManifest(manifest) {
           (record.owner !== null && !nonempty(record.owner)) ||
           (expected.decision !== null && !briefDecisions.includes(expected.decision)) || !validateAudit(expected.audit)) {
         throw new Error(`Held-out case ${index + 1}, checkpoint ${step + 1} needs a valid id, owner, status, decision and audit.`);
+      }
+      if (checkpoint.visitChoice !== undefined && (!visitChoices.includes(checkpoint.visitChoice) || !step || checkpoint.billChoice)) {
+        throw new Error(`Held-out case ${index + 1}, checkpoint ${step + 1} needs handle or watch after a prior visit checkpoint.`);
       }
       checkpointIds.add(checkpointId);
     }

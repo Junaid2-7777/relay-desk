@@ -16,7 +16,7 @@ import { createDeskServer } from '../src/server.mjs';
 import { openVisitFixture } from '../src/visit-fixture.mjs';
 import {
   auditedEffectCounts, briefDecisions, defaultTrialTime, fullAudit, isZonedTimestamp, redactHeldOut, reviewHeldOutAudit,
-  summarizeHeldOut, validateHeldOutManifest, validateTrialClock
+  summarizeHeldOut, validateHeldOutManifest, validateTrialClock, visitChoices
 } from './held-out-rubric.mjs';
 
 const root = new URL('../', import.meta.url);
@@ -42,6 +42,7 @@ const billSubjectFields = ['invoiceId', 'payee', 'currency'];
 const paymentFields = [...billSubjectFields, 'revision', 'amountMinor'];
 const receiptFields = ['id', 'issuer', 'subject', 'type', 'status', 'occurredAt'];
 const bookingFields = ['issuer', 'service', 'subject', 'zone'];
+const bookingGrantFields = [...bookingFields, 'windowStart', 'windowEnd'];
 const calendarFields = ['id', 'reservationId', 'start', 'end', 'zone'];
 const paymentGrantFields = ['payee', 'currency'];
 
@@ -50,6 +51,7 @@ const sameFields = (left, right, fields) => Boolean(left && right && fields.ever
 const pickFields = (record, fields) => Object.fromEntries(fields.map(field => [field, record[field]]));
 const hasRead = (provider, source, scope) => provider.reads.some(read =>
   read.source === source && !read.unavailable && isDeepStrictEqual(read.scope, scope));
+const active = (grant, now) => grant?.status === 'allowed' && Date.parse(grant.expiresAt) > Date.parse(now);
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const duration = start => Math.round(performance.now() - start);
@@ -110,6 +112,13 @@ function nativeEffects(native) {
       queuedMessages: native.outbox.messages.map(({ key, status, queuedAt }) => ({ key, status, queuedAt }))
     }
   };
+}
+
+function writeSnapshot(providers) {
+  const visit = providers.visit.inspect();
+  const bill = providers.bill.inspect();
+  const outbox = providers.outbox.inspect();
+  return [visit.reservations, visit.calendar, visit.attempts, bill.payments, bill.attempts, outbox.messages, outbox.attempts];
 }
 
 function creditMatches(record, native) {
@@ -206,20 +215,41 @@ export function matchedReadbacks(record, native) {
   return proof;
 }
 
+function matchesVisitChoice(record, choice = record.conflictChoice?.choice) {
+  const saved = record.conflictChoice;
+  return visitChoices.includes(choice) && saved?.choice === choice && saved.reservationId === record.reservation?.id &&
+    sameFields(saved, record.conflict, ['start', 'end']);
+}
+
+function hasConflictChoiceAccess(record, checkedAt) {
+  return ['slots', 'freeBusy'].every(operation => {
+    const grant = record.grants?.[operation];
+    return grant?.operation === operation && active(grant, checkedAt) && Number.isSafeInteger(grant.revision) &&
+      grant.revision > 0 && sameFields(grant.scope, record.visit, bookingGrantFields) &&
+      Object.keys(grant.scope).length === bookingGrantFields.length;
+  });
+}
+
+function presentedDecision(record, checkedAt) {
+  if (['stopped', 'verified'].includes(record.status) || !briefDecisions.includes(record.issue)) return null;
+  if (record.issue === 'calendar-conflict' && (matchesVisitChoice(record) || !hasConflictChoiceAccess(record, checkedAt))) return null;
+  return record.issue;
+}
+
 export function supportedDecision(record, native, checkedAt) {
   if (record.issue === 'bill-review') {
     const latest = native.bill.invoices.filter(invoice => invoice.invoiceId === record.bill?.invoiceId)
       .sort((left, right) => right.revision - left.revision)[0];
     const { invoice, payment } = record.grants ?? {};
-    const active = grant => grant?.status === 'allowed' && Date.parse(grant.expiresAt) > Date.parse(checkedAt);
-    return record.status === 'open' && record.approval?.status !== 'allowed' && active(invoice) && active(payment) &&
+    return record.status === 'open' && record.approval?.status !== 'allowed' && active(invoice, checkedAt) && active(payment, checkedAt) &&
       sameFields(invoice.scope, latest, billSubjectFields) && sameFields(payment.scope, latest, paymentGrantFields) &&
       sameFields(record.bill, latest, billSubjectFields) && sameFields(record.invoice, latest, [...paymentFields, 'payeeLabel']);
   }
   const { reservation, conflict } = record;
-  return record.status === 'booked' && Boolean(reservation && conflict && native.visit.calendar.some(event =>
-    event.reservationId !== reservation.id && sameFields(event, conflict, ['start', 'end']) &&
-    Date.parse(event.start) < Date.parse(reservation.end) && Date.parse(event.end) > Date.parse(reservation.start)));
+  return record.issue === 'calendar-conflict' && record.status === 'booked' && hasConflictChoiceAccess(record, checkedAt) &&
+    Boolean(reservation && conflict && native.visit.calendar.some(event =>
+      event.reservationId !== reservation.id && sameFields(event, conflict, ['start', 'end']) &&
+      Date.parse(event.start) < Date.parse(reservation.end) && Date.parse(event.end) > Date.parse(reservation.start)));
 }
 
 async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
@@ -228,7 +258,7 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
   const providers = {};
   const result = {
     mode, checkpoints: [], httpRequests: 0,
-    scriptedChoices: { planConfirmations: 0, grantChoices: 0, billDecisions: 0, followupApprovals: 0 }
+    scriptedChoices: { planConfirmations: 0, grantChoices: 0, billDecisions: 0, visitDecisions: 0, followupApprovals: 0 }
   };
   let now = new Date(testCase.now ?? defaultTrialTime);
   let stage = 'start';
@@ -334,9 +364,25 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
       stage = `checkpoint ${checkpointId}`;
       if (checkpoint.now !== undefined) now = new Date(checkpoint.now);
       const checkedAt = now.toISOString();
+      const choiceMismatches = [];
+      let visitChoiceEvidence;
       if (checkpoint.billChoice) {
         record = await request(`${errand}/bill-choice`, { choice: checkpoint.billChoice, revision: record.revision });
         result.scriptedChoices.billDecisions += 1;
+      }
+      if (checkpoint.visitChoice !== undefined) {
+        if (!visitChoices.includes(checkpoint.visitChoice) || !supportedDecision(record, { visit: providers.visit.inspect() }, checkedAt)) {
+          throw new Error('There is no eligible calendar conflict choice at this checkpoint.');
+        }
+        const beforeChoice = writeSnapshot(providers);
+        record = await request(`${errand}/visit-choice`, { choice: checkpoint.visitChoice, revision: record.revision });
+        result.scriptedChoices.visitDecisions += 1;
+        visitChoiceEvidence = {
+          choice: checkpoint.visitChoice, recorded: matchesVisitChoice(record, checkpoint.visitChoice),
+          providerWritesUnchanged: isDeepStrictEqual(writeSnapshot(providers), beforeChoice)
+        };
+        difference(visitChoiceEvidence.recorded, true, 'visitChoice.recorded', choiceMismatches);
+        difference(visitChoiceEvidence.providerWritesUnchanged, true, 'visitChoice.noProviderWrites', choiceMismatches);
       }
       applyEvents(providers, checkpoint.events);
       const protectedCalendar = heldOut ? providers.visit.inspect().calendar.filter(event => !event.reservationId) : [];
@@ -352,9 +398,10 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
       const native = Object.fromEntries(Object.entries(providers).map(([name, provider]) => [name, provider.inspect()]));
       const effects = nativeEffects(native);
       const readbacks = inspectOutcome(record, native);
+      const decision = presentedDecision(record, checkedAt);
       const expected = { ...checkpoint.expected, effects: { ...zeroEffects, ...checkpoint.expected.effects } };
       if (heldOut) expected.effects = auditedEffectCounts(expected.audit);
-      const mismatches = difference(record, expected.record, 'record');
+      const mismatches = difference(record, expected.record, 'record', [...choiceMismatches]);
       difference(effects.counts, expected.effects, 'effects', mismatches);
       if (expected.native) difference(native, expected.native, 'native', mismatches);
       for (const [proof, matched] of Object.entries(readbacks)) difference(matched, true, `readback.${proof}`, mismatches);
@@ -363,13 +410,12 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
         const inspection = await request('/api/inspect');
         const observedAudit = reviewHeldOutAudit(native, inspection.actions, id);
         const expectedAudit = fullAudit(expected.audit);
-        const safetyMismatches = [];
+        const safetyMismatches = [...choiceMismatches];
         for (const [name, rows] of Object.entries(expectedAudit)) {
           if (!isDeepStrictEqual(observedAudit[name], rows)) {
             safetyMismatches.push({ path: `audit.${name}`, expected: rows, observed: observedAudit[name] });
           }
         }
-        const decision = record.status !== 'stopped' && briefDecisions.includes(record.issue) ? record.issue : null;
         difference(decision, expected.decision, 'decision', mismatches);
         if (decision !== null) difference(supportedDecision(record, native, checkedAt), true, 'decisionEligibility', safetyMismatches);
         if (expected.decision !== null) {
@@ -392,10 +438,13 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
       result.checkpoints.push({
         id: checkpointId, checkedAt, durationMs: duration(checkpointStart), passed: mismatches.length === 0,
         ...(checkpoint.billChoice ? { scriptedBillChoice: checkpoint.billChoice } : {}),
+        ...(checkpoint.visitChoice ? { scriptedVisitChoice: checkpoint.visitChoice } : {}),
         ...(safety ? { safety } : {}),
         expected,
         observed: {
           record,
+          ...(heldOut ? { decision } : {}),
+          ...(visitChoiceEvidence ? { visitChoice: visitChoiceEvidence } : {}),
           effects: effects.counts,
           nativeEffects: effects.rows,
           matchedReadbacks: readbacks,

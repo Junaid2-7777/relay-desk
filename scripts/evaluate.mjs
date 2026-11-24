@@ -37,7 +37,7 @@ const workingTree = gitRevision ? git(['status', '--porcelain=v1']) : null;
 console.log(JSON.stringify({
   event: 'evaluation-start',
   evaluation: 'scripted-rehearsal',
-  mode: 'fixed-rule',
+  plannerModes: ['fixed-rule', 'recorded-response', 'mock-n8n'],
   nodeVersion: process.version,
   gitRevision,
   ...(workingTree !== null ? { gitDirty: workingTree.length > 0 } : {}),
