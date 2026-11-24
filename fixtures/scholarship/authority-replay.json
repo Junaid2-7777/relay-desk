@@ -1,0 +1,850 @@
+{
+  "schemaVersion": 1,
+  "mode": "synthetic-scholarship-case-events",
+  "case": {
+    "caseId": "practice-nmmss-case",
+    "issuers": {
+      "student": "practice-student",
+      "institute": "practice-institute",
+      "district": "practice-district"
+    }
+  },
+  "events": {
+    "filed": {
+      "id": "filed",
+      "caseId": "practice-nmmss-case",
+      "sequence": 1,
+      "issuer": "practice-student",
+      "issuerRole": "student",
+      "type": "submitted",
+      "stage": "application",
+      "receiptRef": "practice-receipt-filed",
+      "recordedAt": "2026-11-24T10:01:00+05:30"
+    },
+    "return-a": {
+      "id": "return-a",
+      "caseId": "practice-nmmss-case",
+      "sequence": 2,
+      "issuer": "practice-institute",
+      "issuerRole": "institute",
+      "type": "returned_for_correction",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-return-a",
+      "recordedAt": "2026-11-24T10:02:00+05:30",
+      "reason": "Supply the missing synthetic form page."
+    },
+    "submit-a": {
+      "id": "submit-a",
+      "caseId": "practice-nmmss-case",
+      "sequence": 3,
+      "issuer": "practice-student",
+      "issuerRole": "student",
+      "type": "correction_submitted",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-submit-a",
+      "recordedAt": "2026-11-24T10:03:00+05:30",
+      "returnId": "return-a"
+    },
+    "return-b": {
+      "id": "return-b",
+      "caseId": "practice-nmmss-case",
+      "sequence": 4,
+      "issuer": "practice-institute",
+      "issuerRole": "institute",
+      "type": "returned_for_correction",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-return-b",
+      "recordedAt": "2026-11-24T10:04:00+05:30",
+      "reason": "Replace the synthetic enrollment attachment."
+    },
+    "ack-a": {
+      "id": "ack-a",
+      "caseId": "practice-nmmss-case",
+      "sequence": 4,
+      "issuer": "practice-institute",
+      "issuerRole": "institute",
+      "type": "correction_acknowledged",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-ack-a",
+      "recordedAt": "2026-11-24T10:04:00+05:30",
+      "returnId": "return-a",
+      "submissionId": "submit-a"
+    },
+    "late-ack-a": {
+      "id": "late-ack-a",
+      "caseId": "practice-nmmss-case",
+      "sequence": 5,
+      "issuer": "practice-institute",
+      "issuerRole": "institute",
+      "type": "correction_acknowledged",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-late-ack-a",
+      "recordedAt": "2026-11-24T10:05:00+05:30",
+      "returnId": "return-a",
+      "submissionId": "submit-a"
+    },
+    "submit-b": {
+      "id": "submit-b",
+      "caseId": "practice-nmmss-case",
+      "sequence": 6,
+      "issuer": "practice-student",
+      "issuerRole": "student",
+      "type": "correction_submitted",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-submit-b",
+      "recordedAt": "2026-11-24T10:06:00+05:30",
+      "returnId": "return-b"
+    },
+    "repeat-a": {
+      "id": "repeat-a",
+      "caseId": "practice-nmmss-case",
+      "sequence": 6,
+      "issuer": "practice-student",
+      "issuerRole": "student",
+      "type": "correction_submitted",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-repeat-a",
+      "recordedAt": "2026-11-24T10:06:00+05:30",
+      "returnId": "return-a"
+    },
+    "wrong-ack-role": {
+      "id": "wrong-ack-role",
+      "caseId": "practice-nmmss-case",
+      "sequence": 4,
+      "issuer": "practice-student",
+      "issuerRole": "student",
+      "type": "correction_acknowledged",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-wrong-ack-role",
+      "recordedAt": "2026-11-24T10:04:00+05:30",
+      "returnId": "return-a",
+      "submissionId": "submit-a"
+    },
+    "wrong-ack-submission": {
+      "id": "wrong-ack-submission",
+      "caseId": "practice-nmmss-case",
+      "sequence": 4,
+      "issuer": "practice-institute",
+      "issuerRole": "institute",
+      "type": "correction_acknowledged",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-wrong-ack-submission",
+      "recordedAt": "2026-11-24T10:04:00+05:30",
+      "returnId": "return-a",
+      "submissionId": "another-submission"
+    },
+    "school-after-ack": {
+      "id": "school-after-ack",
+      "caseId": "practice-nmmss-case",
+      "sequence": 5,
+      "issuer": "practice-institute",
+      "issuerRole": "institute",
+      "type": "institute_verified",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-school-after-ack",
+      "recordedAt": "2026-11-24T10:05:00+05:30"
+    },
+    "district-after-ack": {
+      "id": "district-after-ack",
+      "caseId": "practice-nmmss-case",
+      "sequence": 6,
+      "issuer": "practice-district",
+      "issuerRole": "district",
+      "type": "district_verified",
+      "stage": "L2",
+      "receiptRef": "practice-receipt-district-after-ack",
+      "recordedAt": "2026-11-24T10:06:00+05:30"
+    },
+    "school-direct": {
+      "id": "school-direct",
+      "caseId": "practice-nmmss-case",
+      "sequence": 4,
+      "issuer": "practice-institute",
+      "issuerRole": "institute",
+      "type": "institute_verified",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-school-direct",
+      "recordedAt": "2026-11-24T10:04:00+05:30"
+    },
+    "district-direct": {
+      "id": "district-direct",
+      "caseId": "practice-nmmss-case",
+      "sequence": 5,
+      "issuer": "practice-district",
+      "issuerRole": "district",
+      "type": "district_verified",
+      "stage": "L2",
+      "receiptRef": "practice-receipt-district-direct",
+      "recordedAt": "2026-11-24T10:05:00+05:30"
+    },
+    "school-before-submission": {
+      "id": "school-before-submission",
+      "caseId": "practice-nmmss-case",
+      "sequence": 3,
+      "issuer": "practice-institute",
+      "issuerRole": "institute",
+      "type": "institute_verified",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-school-before-submission",
+      "recordedAt": "2026-11-24T10:03:00+05:30"
+    },
+    "student-note": {
+      "note": "The mock case was approved."
+    },
+    "school": {
+      "id": "school",
+      "caseId": "practice-nmmss-case",
+      "sequence": 2,
+      "issuer": "practice-institute",
+      "issuerRole": "institute",
+      "type": "institute_verified",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-school",
+      "recordedAt": "2026-11-24T10:02:00+05:30"
+    },
+    "district": {
+      "id": "district",
+      "caseId": "practice-nmmss-case",
+      "sequence": 3,
+      "issuer": "practice-district",
+      "issuerRole": "district",
+      "type": "district_verified",
+      "stage": "L2",
+      "receiptRef": "practice-receipt-district",
+      "recordedAt": "2026-11-24T10:03:00+05:30"
+    },
+    "district-first": {
+      "id": "district-first",
+      "caseId": "practice-nmmss-case",
+      "sequence": 2,
+      "issuer": "practice-district",
+      "issuerRole": "district",
+      "type": "district_verified",
+      "stage": "L2",
+      "receiptRef": "practice-receipt-district-first",
+      "recordedAt": "2026-11-24T10:02:00+05:30"
+    },
+    "school-second": {
+      "id": "school-second",
+      "caseId": "practice-nmmss-case",
+      "sequence": 3,
+      "issuer": "practice-institute",
+      "issuerRole": "institute",
+      "type": "institute_verified",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-school-second",
+      "recordedAt": "2026-11-24T10:03:00+05:30"
+    },
+    "foreign-case": {
+      "id": "foreign-case",
+      "caseId": "another-practice-case",
+      "sequence": 2,
+      "issuer": "practice-institute",
+      "issuerRole": "institute",
+      "type": "institute_verified",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-foreign-case",
+      "recordedAt": "2026-11-24T10:02:00+05:30"
+    },
+    "foreign-school": {
+      "id": "foreign-school",
+      "caseId": "practice-nmmss-case",
+      "sequence": 2,
+      "issuer": "another-practice-institute",
+      "issuerRole": "institute",
+      "type": "institute_verified",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-foreign-school",
+      "recordedAt": "2026-11-24T10:02:00+05:30"
+    },
+    "wrong-stage": {
+      "id": "wrong-stage",
+      "caseId": "practice-nmmss-case",
+      "sequence": 2,
+      "issuer": "practice-institute",
+      "issuerRole": "institute",
+      "type": "institute_verified",
+      "stage": "L2",
+      "receiptRef": "practice-receipt-wrong-stage",
+      "recordedAt": "2026-11-24T10:02:00+05:30"
+    },
+    "conflicting-id": {
+      "id": "school",
+      "caseId": "practice-nmmss-case",
+      "sequence": 2,
+      "issuer": "practice-institute",
+      "issuerRole": "institute",
+      "type": "institute_verified",
+      "stage": "L1",
+      "receiptRef": "changed-practice-receipt",
+      "recordedAt": "2026-11-24T10:02:00+05:30"
+    },
+    "conflicting-sequence": {
+      "id": "different-school-receipt",
+      "caseId": "practice-nmmss-case",
+      "sequence": 2,
+      "issuer": "practice-institute",
+      "issuerRole": "institute",
+      "type": "institute_verified",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-different-school-receipt",
+      "recordedAt": "2026-11-24T10:02:00+05:30"
+    },
+    "invalid-time": {
+      "id": "invalid-time",
+      "caseId": "practice-nmmss-case",
+      "sequence": 2,
+      "issuer": "practice-institute",
+      "issuerRole": "institute",
+      "type": "institute_verified",
+      "stage": "L1",
+      "receiptRef": "practice-receipt-invalid-time",
+      "recordedAt": "2026-11-24T10:02:00"
+    }
+  },
+  "scenarios": [
+    {
+      "id": "D04-superseded-correction",
+      "checkpoints": [
+        {
+          "label": "Filing recorded",
+          "deliver": [
+            "filed"
+          ],
+          "expected": {
+            "sequence": 1,
+            "stage": "L1",
+            "owner": "institute",
+            "review": null,
+            "instituteProofId": null,
+            "districtProofId": null
+          }
+        },
+        {
+          "label": "Institute returns A",
+          "deliver": [
+            "return-a"
+          ],
+          "expected": {
+            "sequence": 2,
+            "stage": "correction",
+            "owner": "student",
+            "review": null,
+            "returnId": "return-a",
+            "correctionReason": "Supply the missing synthetic form page.",
+            "submissionId": null
+          }
+        },
+        {
+          "label": "Student submits A",
+          "deliver": [
+            "submit-a"
+          ],
+          "expected": {
+            "sequence": 3,
+            "stage": "L1",
+            "owner": "institute",
+            "review": null,
+            "returnId": "return-a",
+            "correctionReason": "Supply the missing synthetic form page.",
+            "submissionId": "submit-a",
+            "acknowledgementId": null,
+            "awaitingAcknowledgement": true,
+            "historicalAcknowledgementIds": []
+          }
+        },
+        {
+          "label": "Institute returns B",
+          "deliver": [
+            "return-b"
+          ],
+          "expected": {
+            "sequence": 4,
+            "stage": "correction",
+            "owner": "student",
+            "review": null,
+            "returnId": "return-b",
+            "correctionReason": "Replace the synthetic enrollment attachment.",
+            "submissionId": null,
+            "acknowledgementId": null,
+            "awaitingAcknowledgement": false,
+            "historicalAcknowledgementIds": []
+          }
+        },
+        {
+          "label": "Late institute acknowledgement for A",
+          "deliver": [
+            "late-ack-a"
+          ],
+          "expected": {
+            "sequence": 5,
+            "stage": "correction",
+            "owner": "student",
+            "review": null,
+            "returnId": "return-b",
+            "correctionReason": "Replace the synthetic enrollment attachment.",
+            "submissionId": null,
+            "acknowledgementId": null,
+            "awaitingAcknowledgement": false,
+            "historicalAcknowledgementIds": [
+              "late-ack-a"
+            ]
+          }
+        },
+        {
+          "label": "Student submits B",
+          "deliver": [
+            "submit-b"
+          ],
+          "expected": {
+            "sequence": 6,
+            "stage": "L1",
+            "owner": "institute",
+            "review": null,
+            "returnId": "return-b",
+            "correctionReason": "Replace the synthetic enrollment attachment.",
+            "submissionId": "submit-b",
+            "acknowledgementId": null,
+            "awaitingAcknowledgement": true,
+            "historicalAcknowledgementIds": [
+              "late-ack-a"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "D04-submission-for-old-return",
+      "checkpoints": [
+        {
+          "label": "An old A submission cannot answer B",
+          "deliver": [
+            "filed",
+            "return-a",
+            "submit-a",
+            "return-b",
+            "late-ack-a",
+            "repeat-a"
+          ],
+          "expected": {
+            "sequence": 5,
+            "stage": "correction",
+            "owner": "student",
+            "review": "wrong-correction",
+            "returnId": "return-b",
+            "correctionReason": "Replace the synthetic enrollment attachment.",
+            "submissionId": null,
+            "acknowledgementId": null,
+            "awaitingAcknowledgement": false,
+            "historicalAcknowledgementIds": [
+              "late-ack-a"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "D05-receipt-then-verification",
+      "checkpoints": [
+        {
+          "label": "Await acknowledgement of A",
+          "deliver": [
+            "filed",
+            "return-a",
+            "submit-a"
+          ],
+          "expected": {
+            "sequence": 3,
+            "stage": "L1",
+            "owner": "institute",
+            "review": null,
+            "returnId": "return-a",
+            "correctionReason": "Supply the missing synthetic form page.",
+            "submissionId": "submit-a",
+            "acknowledgementId": null,
+            "awaitingAcknowledgement": true,
+            "historicalAcknowledgementIds": []
+          }
+        },
+        {
+          "label": "Institute acknowledges A",
+          "deliver": [
+            "ack-a"
+          ],
+          "expected": {
+            "sequence": 4,
+            "stage": "L1",
+            "owner": "institute",
+            "review": null,
+            "returnId": "return-a",
+            "correctionReason": "Supply the missing synthetic form page.",
+            "submissionId": "submit-a",
+            "acknowledgementId": "ack-a",
+            "awaitingAcknowledgement": false,
+            "historicalAcknowledgementIds": [],
+            "instituteProofId": null,
+            "districtProofId": null
+          }
+        },
+        {
+          "label": "Institute verifies L1",
+          "deliver": [
+            "school-after-ack"
+          ],
+          "expected": {
+            "sequence": 5,
+            "stage": "L2",
+            "owner": "district",
+            "review": null,
+            "instituteProofId": "school-after-ack",
+            "districtProofId": null
+          }
+        },
+        {
+          "label": "District verifies L2",
+          "deliver": [
+            "district-after-ack"
+          ],
+          "expected": {
+            "sequence": 6,
+            "stage": "verified",
+            "owner": null,
+            "review": null,
+            "instituteProofId": "school-after-ack",
+            "districtProofId": "district-after-ack"
+          }
+        }
+      ]
+    },
+    {
+      "id": "D05-direct-verification",
+      "checkpoints": [
+        {
+          "label": "Direct L1 verification after A is submitted",
+          "deliver": [
+            "filed",
+            "return-a",
+            "submit-a",
+            "school-direct"
+          ],
+          "expected": {
+            "sequence": 4,
+            "stage": "L2",
+            "owner": "district",
+            "review": null,
+            "acknowledgementId": null,
+            "awaitingAcknowledgement": false,
+            "instituteProofId": "school-direct",
+            "districtProofId": null
+          }
+        },
+        {
+          "label": "District receipt closes verification",
+          "deliver": [
+            "district-direct"
+          ],
+          "expected": {
+            "sequence": 5,
+            "stage": "verified",
+            "owner": null,
+            "review": null,
+            "instituteProofId": "school-direct",
+            "districtProofId": "district-direct"
+          }
+        }
+      ]
+    },
+    {
+      "id": "D05-note-without-proof",
+      "checkpoints": [
+        {
+          "label": "An unstructured approval note supplies no proof",
+          "deliver": [
+            "filed",
+            "student-note"
+          ],
+          "expected": {
+            "sequence": 1,
+            "stage": "L1",
+            "owner": "institute",
+            "review": "invalid-receipt",
+            "instituteProofId": null,
+            "districtProofId": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "D05-acknowledgement-wrong-role",
+      "checkpoints": [
+        {
+          "label": "The student cannot acknowledge for the institute",
+          "deliver": [
+            "filed",
+            "return-a",
+            "submit-a",
+            "wrong-ack-role"
+          ],
+          "expected": {
+            "sequence": 3,
+            "stage": "L1",
+            "owner": "institute",
+            "review": "wrong-authority",
+            "returnId": "return-a",
+            "correctionReason": "Supply the missing synthetic form page.",
+            "submissionId": "submit-a",
+            "acknowledgementId": null,
+            "awaitingAcknowledgement": true,
+            "historicalAcknowledgementIds": [],
+            "instituteProofId": null,
+            "districtProofId": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "D05-acknowledgement-wrong-submission",
+      "checkpoints": [
+        {
+          "label": "An acknowledgement must cite the exact submission",
+          "deliver": [
+            "filed",
+            "return-a",
+            "submit-a",
+            "wrong-ack-submission"
+          ],
+          "expected": {
+            "sequence": 3,
+            "stage": "L1",
+            "owner": "institute",
+            "review": "wrong-submission",
+            "returnId": "return-a",
+            "correctionReason": "Supply the missing synthetic form page.",
+            "submissionId": "submit-a",
+            "acknowledgementId": null,
+            "awaitingAcknowledgement": true,
+            "historicalAcknowledgementIds": [],
+            "instituteProofId": null,
+            "districtProofId": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "D05-verification-before-resubmission",
+      "checkpoints": [
+        {
+          "label": "L1 waits for the requested correction",
+          "deliver": [
+            "filed",
+            "return-a",
+            "school-before-submission"
+          ],
+          "expected": {
+            "sequence": 2,
+            "stage": "correction",
+            "owner": "student",
+            "review": "invalid-transition",
+            "instituteProofId": null,
+            "districtProofId": null,
+            "returnId": "return-a",
+            "submissionId": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "D09-delivery-gap",
+      "checkpoints": [
+        {
+          "label": "L2 arrives ahead of L1 in delivery order",
+          "deliver": [
+            "filed",
+            "district"
+          ],
+          "expected": {
+            "sequence": 1,
+            "stage": "L1",
+            "owner": "institute",
+            "review": "sequence-gap",
+            "instituteProofId": null,
+            "districtProofId": null,
+            "missingSequence": 2
+          }
+        },
+        {
+          "label": "The missing L1 receipt fills the gap",
+          "deliver": [
+            "school"
+          ],
+          "expected": {
+            "sequence": 3,
+            "stage": "verified",
+            "owner": null,
+            "review": null,
+            "instituteProofId": "school",
+            "districtProofId": "district"
+          }
+        },
+        {
+          "label": "The same authority receipts are delivered again",
+          "deliver": [
+            "school",
+            "district"
+          ],
+          "expected": {
+            "sequence": 3,
+            "stage": "verified",
+            "owner": null,
+            "review": null,
+            "instituteProofId": "school",
+            "districtProofId": "district"
+          }
+        }
+      ]
+    },
+    {
+      "id": "D09-service-order",
+      "checkpoints": [
+        {
+          "label": "L2 precedes L1 in service sequence",
+          "deliver": [
+            "filed",
+            "school-second",
+            "district-first"
+          ],
+          "expected": {
+            "sequence": 1,
+            "stage": "L1",
+            "owner": "institute",
+            "review": "invalid-transition",
+            "instituteProofId": null,
+            "districtProofId": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "D09-wrong-case",
+      "checkpoints": [
+        {
+          "label": "A different case ID cannot verify L1",
+          "deliver": [
+            "filed",
+            "foreign-case"
+          ],
+          "expected": {
+            "sequence": 1,
+            "stage": "L1",
+            "owner": "institute",
+            "review": "wrong-case",
+            "instituteProofId": null,
+            "districtProofId": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "D09-wrong-institute",
+      "checkpoints": [
+        {
+          "label": "A matching role needs the exact designated issuer",
+          "deliver": [
+            "filed",
+            "foreign-school"
+          ],
+          "expected": {
+            "sequence": 1,
+            "stage": "L1",
+            "owner": "institute",
+            "review": "wrong-authority",
+            "instituteProofId": null,
+            "districtProofId": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "D09-wrong-stage",
+      "checkpoints": [
+        {
+          "label": "L1 proof must identify L1",
+          "deliver": [
+            "filed",
+            "wrong-stage"
+          ],
+          "expected": {
+            "sequence": 1,
+            "stage": "L1",
+            "owner": "institute",
+            "review": "wrong-stage",
+            "instituteProofId": null,
+            "districtProofId": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "D09-conflicting-id",
+      "checkpoints": [
+        {
+          "label": "Changed content under an accepted ID cannot replace proof",
+          "deliver": [
+            "filed",
+            "school",
+            "conflicting-id"
+          ],
+          "expected": {
+            "sequence": 2,
+            "stage": "L2",
+            "owner": "district",
+            "review": "conflicting-event-id",
+            "instituteProofId": "school",
+            "districtProofId": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "D09-conflicting-sequence",
+      "checkpoints": [
+        {
+          "label": "A competing receipt at an accepted sequence cannot replace proof",
+          "deliver": [
+            "filed",
+            "school",
+            "conflicting-sequence"
+          ],
+          "expected": {
+            "sequence": 2,
+            "stage": "L2",
+            "owner": "district",
+            "review": "conflicting-sequence",
+            "instituteProofId": "school",
+            "districtProofId": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "D09-invalid-recorded-time",
+      "checkpoints": [
+        {
+          "label": "A native proof time requires its offset",
+          "deliver": [
+            "filed",
+            "invalid-time"
+          ],
+          "expected": {
+            "sequence": 1,
+            "stage": "L1",
+            "owner": "institute",
+            "review": "invalid-receipt",
+            "instituteProofId": null,
+            "districtProofId": null
+          }
+        }
+      ]
+    }
+  ]
+}
