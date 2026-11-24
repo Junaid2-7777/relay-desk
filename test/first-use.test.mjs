@@ -157,8 +157,9 @@ test('concurrent private updates append once per request and never enter the pra
   assert.deepEqual((await desk.request(path(a.id))).updates.length, 2);
 });
 
-test('editing a saved errand preserves the original note and rejects a stale edit', async (t) => {
-  const { desk } = await startFreshDesk(t);
+test('a private errand edit conflict can be reviewed and saved with the current revision', async (t) => {
+  const { desk, open } = await startFreshDesk(t);
+  const other = await open();
   const saved = await desk.request('/api/errands', {
     method: 'POST',
     body: { note, goal: 'Check the shop refund', checkDate: '2026-11-27' }
@@ -176,19 +177,33 @@ test('editing a saved errand preserves the original note and rejects a stale edi
   assert.equal(edited.status, 'open');
   assert.equal(edited.merchantDeadline, null);
 
-  await desk.request(path, {
+  const changes = { goal: 'Ask the shop for the exact refund reference', checkDate: null };
+  const conflict = await other.request(path, {
     method: 'PUT',
-    body: { goal: 'An older draft', checkDate: '2026-11-27', revision: saved.revision },
+    body: { ...changes, revision: saved.revision },
     status: 409
   });
-  assert.deepEqual((await desk.request('/api/desk')).errands, [edited]);
+  assert.equal(conflict.code, 'errand-edit-conflict');
+  assert.deepEqual((await other.request('/api/desk')).errands, [edited]);
 
-  const cleared = await desk.request(path, {
+  const newer = await desk.request(path, {
     method: 'PUT',
-    body: { goal: edited.goal, checkDate: null, revision: edited.revision }
+    body: { goal: 'Find the original receipt', checkDate: '2026-12-01', revision: edited.revision }
   });
+  const repeated = await other.request(path, {
+    method: 'PUT', body: { ...changes, revision: edited.revision }, status: 409
+  });
+  assert.equal(repeated.code, 'errand-edit-conflict');
+  assert.deepEqual((await other.request('/api/desk')).errands, [newer]);
+
+  const cleared = await other.request(path, {
+    method: 'PUT',
+    body: { ...changes, revision: newer.revision }
+  });
+  assert.equal(cleared.goal, changes.goal);
   assert.equal(cleared.checkDate, null);
   assert.equal(cleared.note, note);
+  assert.equal(cleared.revision, newer.revision + 1);
 
   const inspection = await desk.request('/api/inspect');
   assert.deepEqual(inspection.errands, [cleared]);

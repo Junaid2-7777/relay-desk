@@ -664,7 +664,19 @@ function renderErrand(record, accessState) {
     form.querySelector('[data-date-label]').htmlFor = editedDate.id;
     editedGoal.value = goal;
     editedDate.value = checkDate ?? '';
-    form.querySelector('[data-cancel]').addEventListener('click', () => {
+    const fields = form.querySelector('fieldset');
+    const save = fields.querySelector('[type="submit"]');
+    const changedDesk = 'The desk changed. Reopen the original desk at this address and try Save changes again.';
+    let base = record;
+    let conflict = null;
+
+    function closeEdit(saved) {
+      openEdits.delete(id);
+      updateCheckpointButton();
+      if (saved !== record) {
+        replaceCard(saved);
+        return;
+      }
       form.remove();
       restoreDraft();
       part('error').textContent = '';
@@ -672,28 +684,67 @@ function renderErrand(record, accessState) {
       part('draft').disabled = false;
       trackingButton.disabled = false;
       part('evidence').disabled = false;
-      openEdits.delete(id);
-      updateCheckpointButton();
       part('edit').focus();
-    });
+    }
+
+    function compare(saved) {
+      const details = document.createElement('details');
+      details.className = 'source evidence';
+      details.open = true;
+      const summary = addText(details, 'summary', 'Compare errand details');
+      const current = document.createElement('dl');
+      current.className = 'facts';
+      fact(current, 'Saved goal', saved.goal);
+      fact(current, 'Saved check date', saved.checkDate ? dateLabel(saved.checkDate) : 'No check date');
+      details.append(current);
+      const choices = document.createElement('div');
+      choices.className = 'actions';
+      action(choices, 'Use saved errand', () => closeEdit(saved));
+      action(choices, 'Keep my edits', () => {
+        base = saved;
+        conflict = null;
+        details.remove();
+        part('error').textContent = '';
+        save.disabled = false;
+        editedGoal.focus();
+      });
+      details.append(choices);
+      save.parentElement.before(details);
+      conflict = saved;
+      save.disabled = true;
+      return summary;
+    }
+
+    form.querySelector('[data-cancel]').addEventListener('click', () => closeEdit(conflict ?? base));
     form.addEventListener('submit', async event => {
       event.preventDefault();
+      if (fields.disabled || conflict) return;
       part('error').textContent = '';
       if (!validate([[editedGoal, 'Enter a goal.'], [editedDate, 'Choose a valid check date.']], part('error'))) return;
-      const fields = form.querySelector('fieldset');
       fields.disabled = true;
       try {
         const result = await request(`/api/errands/${id}`, {
           method: 'PUT',
-          body: { goal: editedGoal.value, checkDate: editedDate.value, revision: record.revision }
+          body: { goal: editedGoal.value, checkDate: editedDate.value, revision: base.revision }
         });
-        openEdits.delete(id);
-        updateCheckpointButton();
-        replaceCard(result);
+        closeEdit(result);
       } catch (error) {
-        part('error').textContent = error.message;
+        part('error').textContent = privateDesk && error.code === 'desk-context-changed' ? changedDesk : error.message;
+        let focus = editedGoal;
+        if (privateDesk && error.code === 'errand-edit-conflict') {
+          try {
+            const saved = await readCurrentErrand();
+            if (saved) {
+              focus = compare(saved);
+              part('error').textContent = 'Another tab saved newer errand details. Compare them with your edits.';
+            }
+          } catch (readError) {
+            part('error').textContent = readError.code === 'desk-context-changed' ? changedDesk :
+              'The errand changed. Try Save changes again to compare it with your edits.';
+          }
+        }
         fields.disabled = false;
-        editedGoal.focus();
+        focus.focus();
       }
     });
     part('extra').replaceChildren(form);

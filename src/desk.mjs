@@ -224,9 +224,9 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       return action(record);
     });
   }
-  function requireRevision(record, revision) {
+  function requireRevision(record, revision, code) {
     if (record.revision !== revision) {
-      throw new DeskError('This errand changed. Reload the desk before saving again.', 409);
+      throw new DeskError('This errand changed. Reload the desk before saving again.', 409, code);
     }
   }
   const journal = openActionJournal(database, find, transaction, clock, write);
@@ -380,13 +380,12 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       });
     },
     edit(id, { goal, checkDate, revision }) {
-      const errand = find(id);
-      if (!Number.isInteger(revision)) throw new DeskError('An errand revision is required.');
-      return projectErrand(revise({
-        ...errand,
-        goal: requiredText(goal, 'a goal', 4000),
-        checkDate: optionalDate(checkDate)
-      }, revision));
+      return changeCase(id, errand => {
+        if (!Number.isInteger(revision)) throw new DeskError('An errand revision is required.');
+        const next = { ...errand, goal: requiredText(goal, 'a goal', 4000), checkDate: optionalDate(checkDate) };
+        requireRevision(errand, revision, practice ? undefined : 'errand-edit-conflict');
+        return next;
+      });
     },
     updates(id) {
       if (practice) throw new DeskError('Follow-up notes are available in the private desk.', 404);
