@@ -33,7 +33,7 @@ const providerFactories = {
 };
 const eventMethods = {
   bill: ['putInvoice', 'putSettlement', 'failNextReply'],
-  receipt: ['putSource', 'putReceipt'],
+  receipt: ['putSource', 'putReceipt', 'setAvailable'],
   refund: ['putEvent', 'putCredit', 'putLink', 'setAvailable'],
   visit: ['putSlot', 'putCalendarEvent', 'failNextReservationReply', 'failNextCalendarWrite']
 };
@@ -192,9 +192,9 @@ export function matchedReadbacks(record, native) {
   if (record.receiptPlan && record.status === 'verified') {
     const matches = native.receipt.receipts.filter(row => sameFields(row, record.receiptPlan, ['issuer', 'subject', 'type', 'status']) &&
       isReceiptIdentifier(row.id) && evidenceTimestamp(row.occurredAt));
+    const latestRead = native.receipt.reads.findLast(read => sameFields(read, record.receiptPlan, ['issuer', 'subject']));
     proof.receipt = matches.length === 1 && isDeepStrictEqual(pickFields(matches[0], receiptFields), record.receiptProof) &&
-      native.receipt.reads.some(read => sameFields(read, record.receiptPlan, ['issuer', 'subject']) &&
-        read.checkedAt === record.receiptCheck?.checkedAt);
+      Boolean(latestRead && !Object.hasOwn(latestRead, 'status') && latestRead.checkedAt === record.receiptCheck?.checkedAt);
   }
   if (record.refund && record.status === 'verified') {
     const creditProof = record.evidence?.find(item => item.source === 'credits');

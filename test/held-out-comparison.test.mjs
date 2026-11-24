@@ -123,6 +123,41 @@ function manifest() {
     } }
   ];
 
+  const archive = cases.find(item => item.id === 'receipt-changed');
+  const issuer = 'archive-practice';
+  const label = 'Practice archive';
+  const archiveScope = { issuer, subject: 'archive-record-17' };
+  const archiveTerms = { ...archiveScope, type: 'receipt', status: 'closed' };
+  const healthyTime = '2026-11-23T03:30:00.000Z';
+  const outageTime = '2026-11-24T03:30:00.000Z';
+  const recoveryTime = '2026-11-25T03:30:00.000Z';
+  const acknowledgement = { ...archiveTerms, id: 'archive-ack-17', status: 'received', occurredAt: healthyTime };
+  const closure = { ...archiveTerms, id: 'archive-closed-17', occurredAt: outageTime };
+  const unavailableRead = { ...archiveScope, status: 'unavailable' };
+  const duringOutage = [archiveScope, unavailableRead, unavailableRead];
+  const lastHealthyCheck = { checkedAt: healthyTime, lastEventAt: acknowledgement.occurredAt };
+  const archiveRecord = { owner: label, status: 'open', receiptPlan: { ...archiveTerms, available: true }, receiptProof: null };
+  archive.setup = { capability: 'receipt', ...archiveTerms };
+  archive.grants = [{ operation: 'receipt', choice: 'allowed' }];
+  archive.beforeIntake = [
+    { fixture: 'receipt', method: 'putSource', args: [{ issuer, label }] },
+    { fixture: 'receipt', method: 'putReceipt', args: [acknowledgement] }
+  ];
+  archive.checkpoints = [
+    { expected: { record: { ...archiveRecord, issue: 'receipt-pending', receiptCheck: lastHealthyCheck }, decision: null,
+      audit: { receiptReads: [archiveScope] } } },
+    { now: outageTime, events: [
+      { fixture: 'receipt', method: 'setAvailable', args: [issuer, false] },
+      { fixture: 'receipt', method: 'putReceipt', args: [closure] }
+    ], expected: { record: { ...archiveRecord, issue: 'receipt-unavailable', receiptCheck: lastHealthyCheck }, decision: null,
+      audit: { receiptReads: duringOutage }, native: { receipt: { receipts: [acknowledgement, closure] } } } },
+    { now: recoveryTime, events: [{ fixture: 'receipt', method: 'setAvailable', args: [issuer, true] }], expected: {
+      record: { ...archiveRecord, status: 'verified', issue: null, receiptProof: closure,
+        receiptCheck: { checkedAt: recoveryTime, lastEventAt: closure.occurredAt } },
+      decision: null, audit: { receiptReads: [...duringOutage, archiveScope] }
+    } }
+  ];
+
   return { schemaVersion: 1, mode: 'held-out', frozenRevision: 'a'.repeat(40), providerVersion: 'synthetic-test-double', cases };
 }
 
@@ -165,6 +200,14 @@ test('held-out runs twelve fixed rules and thirty-six fresh candidate trials wit
     })));
     assert.ok(arm.checkpoints.every(step => step.observed.effects.reservations === 1 && step.observed.effects.calendarWrites === 1));
   }
+  const archive = result.cases.find(trial => trial.id === 'receipt-changed');
+  for (const arm of [archive.fixedRule, ...archive.trials]) {
+    const [healthy, outage, recovered] = arm.checkpoints;
+    assert.deepEqual(outage.observed.record.receiptCheck, healthy.observed.record.receiptCheck);
+    assert.equal(outage.safety.observedAudit.receiptReads.filter(read => read.status === 'unavailable').length, 2);
+    assert.equal(recovered.observed.matchedReadbacks.receipt, true);
+    assert.equal(recovered.observed.record.receiptCheck.checkedAt, recovered.checkedAt);
+  }
   assert.ok(!JSON.stringify(result).includes(marker));
 });
 
@@ -181,6 +224,10 @@ test('held-out input requires all groups and variants, an exact read scope and a
   const decision = manifest();
   delete decision.cases[0].checkpoints[0].expected.decision;
   assert.throws(() => validateHeldOutManifest(decision), /decision and audit/);
+  const receiptStatus = manifest();
+  const archive = receiptStatus.cases.find(testCase => testCase.id === 'receipt-changed');
+  archive.checkpoints[0].expected.audit.receiptReads[0].status = 'failed';
+  assert.throws(() => validateHeldOutManifest(receiptStatus), /decision and audit/);
   const visitChoice = manifest();
   visitChoice.cases[0].checkpoints[0].visitChoice = 'watch';
   assert.throws(() => validateHeldOutManifest(visitChoice), /handle or watch after a prior visit checkpoint/);
@@ -208,6 +255,8 @@ test('readback grading rejects ambiguous receipts, substituted settlement terms 
   const record = { status: 'verified', receiptPlan, receiptProof: receipt, receiptCheck: { checkedAt } };
   assert.equal(matchedReadbacks(record, { receipt: { receipts: [receipt], reads } }).receipt, true);
   assert.equal(matchedReadbacks(record, { receipt: { receipts: [receipt], reads: [] } }).receipt, false);
+  assert.equal(matchedReadbacks(record, { receipt: { receipts: [receipt], reads: [{ ...reads[0], status: 'unavailable' }] } }).receipt, false);
+  assert.equal(matchedReadbacks(record, { receipt: { receipts: [receipt], reads: [...reads, { ...reads[0], status: 'unavailable' }] } }).receipt, false);
   assert.equal(matchedReadbacks(record, { receipt: { receipts: [receipt, { ...receipt, id: 'second-match' }], reads } }).receipt, false);
   const invalid = { ...receipt, occurredAt: '2026-02-30T09:00:00Z' };
   assert.equal(matchedReadbacks({ ...record, receiptProof: invalid }, { receipt: { receipts: [invalid], reads } }).receipt, false);

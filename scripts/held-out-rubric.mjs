@@ -66,10 +66,16 @@ function validReadScope(name, source, scope) {
     (['payment', 'settlement'].includes(source) && scope === 'original-operation');
 }
 
+function fieldsForAuditRow(name, row) {
+  const fields = auditFields[name];
+  return name === 'receiptReads' && Object.hasOwn(row ?? {}, 'status') ? [...fields, 'status'] : fields;
+}
+
 function validateAudit(audit) {
   return object(audit) && Object.entries(audit).every(([name, rows]) => Object.hasOwn(auditFields, name) &&
-    Array.isArray(rows) && rows.every(row => keysAre(row, auditFields[name]) &&
+    Array.isArray(rows) && rows.every(row => keysAre(row, fieldsForAuditRow(name, row)) &&
       (!scopedReads.includes(name) || validReadScope(name, row.source, row.scope)) &&
+      (name !== 'receiptReads' || !Object.hasOwn(row, 'status') || row.status === 'unavailable') &&
       (name !== 'outboxAttempts' || row.scope === 'original-operation')));
 }
 
@@ -159,7 +165,7 @@ export function reviewHeldOutAudit(native, actions, targetId) {
       scope: followupKeys.has(row.key) ? 'original-operation' : { key: row.key }
     }))
   };
-  return Object.fromEntries(Object.entries(auditRows).map(([name, rows]) => [name, rows.map(row => project(row, auditFields[name]))]));
+  return Object.fromEntries(Object.entries(auditRows).map(([name, rows]) => [name, rows.map(row => project(row, fieldsForAuditRow(name, row)))]));
 }
 
 export function fullAudit(audit) {
