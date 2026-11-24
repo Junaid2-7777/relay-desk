@@ -42,6 +42,8 @@ The same intake works for the next errand. For a broadband visit, ask for permis
 
 For unfamiliar work, ask only for details needed for the next step. “Watch for my old library membership to close” can start as an open errand. To verify it later, Relay needs a membership reference and a permitted source that can confirm closure. An acknowledgement leaves the case open. A person can inspect or withdraw a permission at any time. Withdrawing it stops future actions under that permission and preserves the history of receipts already recorded.
 
+When a household commitment overlaps an already confirmed provider visit, the person can take over rescheduling or ask Relay to keep checking the interval. Their choice applies to the displayed booking and overlap. The booking stays open until its own confirmation and calendar entry can be verified. [Reproduce the conflict](demo.md#let-the-judge-break-the-plan)
+
 ## A briefing that works on a phone
 
 Lead with the decision, the previous value, the new value and the person’s rule. Put completed or waiting work beneath it. Use a text label with every status symbol. Keep the decision visible until resolved or deferred, and leave evidence accessible from each item. Use the carbon-copy receipt treatment for the decision and save the melon tab for a genuine exception. [Identity system](../DESIGN.md)

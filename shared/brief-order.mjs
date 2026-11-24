@@ -1,5 +1,13 @@
+export function calendarConflictChoice(record) {
+  const { conflictChoice, conflict, reservation } = record;
+  if (!conflictChoice || !conflict || !reservation) return null;
+  const { choice, reservationId, start, end } = conflictChoice;
+  return (choice === 'handle' || choice === 'watch') && reservationId === reservation.id &&
+    start === conflict.start && end === conflict.end ? choice : null;
+}
+
 export const reviewNeeded = record => !['verified', 'stopped'].includes(record.status) &&
-  (record.issue === 'bill-review' || record.issue === 'calendar-conflict');
+  (record.issue === 'bill-review' || (record.issue === 'calendar-conflict' && !calendarConflictChoice(record)));
 
 function priority(record) {
   if (record.status === 'verified') return 2;

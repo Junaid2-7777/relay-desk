@@ -29,6 +29,13 @@ At the end, let the judge inspect the three separate records for the appointment
 
 ## Let the judge break the plan
 
+To reproduce a calendar conflict through the brief, use a fresh practice directory for both terminals.
+
+1. Run `npm run reset -- --cold`. In the visit’s permissions, allow **Calendar availability**, **Provider availability** and **Free booking**. Leave **Calendar entry** ungranted. Check the errands and find the provider’s confirmed visit.
+2. In the operator terminal, run `npm run demo:evidence -- visit-conflict`. This adds a synthetic household commitment during the confirmed visit. In the brief, allow **Calendar entry** and check again. The visit card shows the overlap.
+3. Choose to handle rescheduling yourself or to keep checking for a free interval. Inspect `/api/fixture/visit` after the choice. Both the confirmed reservation and the household commitment retain their times.
+4. To simulate the calendar owner independently moving their commitment, run `npm run demo:evidence -- visit-conflict-moved` and check again. With the watch choice and active permissions, Relay can add and verify the original visit. With personal follow-up selected, the person keeps responsibility for arranging a change.
+
 Use a clean fixture for each challenge. A lost 3 pm slot should prompt a fresh availability check within the existing grant. If only a paid visit or a busy time remains, show the alternatives and leave the protected event alone. Changing the bill again after a one-time approval should retire the stale decision before any new payment. Dropping a provider response after an accepted write should trigger readback before a retry. Compare the provider records before and after the challenge. Preserve failed runs separately from the uninterrupted video. [Evaluation plan](evaluation.md)
 
 For the unfamiliar task, let the judge choose the subject and issuer. If the available tools cannot read the specified proof, accept a tracking-only task or ask for clarification and disclose the limitation. Record this audience-chosen trial separately from frozen evaluation cases. For viewers who know the original project, the scholarship specialist offers a further example. A school’s receipt of a correction leaves verification outstanding through the separate institute and district stages. [Scholarship sources](scholarship-sources.md)

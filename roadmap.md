@@ -4,7 +4,7 @@
 
 **The local desk runs the three-errand practice household.** The first-use flow keeps a private note and check date. With synthetic permissions, the practice brief shows a revised bill for review, a verified free visit and an open refund. A demo operator can publish separate synthetic provider records to verify each outcome. [Run the desk](docs/build.md#run-the-local-build) · [Demo runbook](docs/demo.md)
 
-**Next evidence · Run the live planner comparison and participant sessions.** The opt-in n8n workflow, paired runner and audit are implemented and exercised with a local mock. The live run needs a published workflow, an OpenAI credential and cases supplied by an evaluator after the freeze. [Connect n8n](docs/n8n.md) · [Held-out comparison](docs/held-out.md)
+**Next evidence · Run the live planner comparison and participant sessions.** The opt-in n8n workflow, paired runner and audit are implemented and exercised with a local mock. The live run needs a published workflow, an OpenAI credential and cases supplied by an evaluator after the freeze. The observer can run the first-use, cold and warm participant tasks on the local desk today. [Connect n8n](docs/n8n.md) · [Held-out comparison](docs/held-out.md) · [Participant worksheet](docs/participant-session.md)
 
 ## Build order
 

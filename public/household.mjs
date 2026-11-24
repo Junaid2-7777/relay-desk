@@ -1,4 +1,4 @@
-import { reviewNeeded } from '../shared/brief-order.mjs';
+import { calendarConflictChoice, reviewNeeded } from '../shared/brief-order.mjs';
 
 const activity = new Intl.DateTimeFormat('en-IN', {
   weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata'
@@ -52,7 +52,6 @@ const issues = {
   'slot-unavailable': 'A free visit within your window is unavailable.',
   'reservation-unknown': 'Checking whether the provider booked the visit.',
   'calendar-pending': 'The provider confirmed the visit. The calendar entry is pending.',
-  'calendar-conflict': 'The provider confirmed the visit. Your calendar has an overlapping commitment.',
   'bill-permission': 'Review access to check the bill and see which payments are covered.',
   'invoice-unavailable': 'The biller has no current invoice for this account. Check again when one is available.',
   'bill-deferred': 'You chose to leave this invoice unpaid.',
@@ -177,6 +176,31 @@ function renderBill(panel, list, record, run, deskTime) {
   if (settlement) fact(list, 'Settled', `${when(settlement.settledAt)} IST`);
 }
 
+function renderVisitConflict(panel, record, run, deskTime) {
+  const choice = calendarConflictChoice(record);
+  if (choice === 'handle') addText(panel, 'p', 'You chose to contact the provider about rescheduling.');
+  if (choice === 'watch') addText(panel, 'p', 'You chose to keep checking the booked time.');
+  addText(panel, 'p', 'Your confirmed visit and the overlapping calendar commitment stay in place.');
+
+  const needed = [['slots', 'provider availability'], ['freeBusy', 'calendar availability']]
+    .filter(([operation]) => !activeAt(record.grants[operation], deskTime)).map(([, label]) => label);
+  if (needed.length) {
+    addText(panel, 'p', `Allow ${needed.join(' and ')} in Permissions to review this overlap.`);
+    return;
+  }
+
+  addText(panel, 'p', choice === 'watch'
+    ? 'At the next check, Relay can add this visit if the time frees up and calendar access is allowed.'
+    : 'If you keep checking, Relay can add this visit when the time frees up and calendar access is allowed.');
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  const choose = (label, selection) => action(actions, label, event =>
+    run('visit-choice', { choice: selection, revision: record.revision }, event.currentTarget));
+  if (choice !== 'handle') choose('I’ll contact the provider', 'handle');
+  if (choice !== 'watch') choose('Keep checking this time', 'watch');
+  panel.append(actions);
+}
+
 export function renderHousehold(panel, list, record, run, deskTime) {
   if (record.owner) fact(list, 'Responsible for this errand', record.owner);
   if (record.reservation) {
@@ -185,7 +209,13 @@ export function renderHousehold(panel, list, record, run, deskTime) {
   }
   if (record.calendarEvent) fact(list, 'Calendar entry', 'Confirmed in the practice calendar');
   if (record.conflict) fact(list, 'Calendar conflict', `${when(record.conflict.start)} IST`);
-  if (record.status !== 'stopped' && record.issue && issues[record.issue]) addText(panel, 'p', issues[record.issue]);
+  if (record.status !== 'stopped') {
+    if (record.issue === 'calendar-conflict') renderVisitConflict(panel, record, run, deskTime);
+    else if (record.issue === 'calendar-pending' && record.conflictChoice?.choice === 'handle' &&
+             record.conflictChoice.reservationId === record.reservation?.id) {
+      addText(panel, 'p', 'You chose to contact the provider about rescheduling.');
+    } else if (issues[record.issue]) addText(panel, 'p', issues[record.issue]);
+  }
   if (record.bill) renderBill(panel, list, record, run, deskTime);
   if (record.receiptPlan) {
     const { issuer, subject, type, status } = record.receiptPlan;
