@@ -30,6 +30,7 @@ let saveRequestId;
 let reviewId;
 let deskTime;
 let deskDay;
+let deskContext;
 let pagePlannerMode;
 let householdMode = false;
 let receiptSources = [];
@@ -51,7 +52,10 @@ async function request(path, { method = 'GET', body } = {}) {
   try {
     response = await fetch(path, {
       method,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      headers: {
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(deskContext === undefined ? {} : { 'X-Relay-Desk': deskContext })
+      },
       body: body === undefined ? undefined : JSON.stringify(body)
     });
   } catch {
@@ -59,6 +63,13 @@ async function request(path, { method = 'GET', body } = {}) {
   }
   const result = await response.json();
   if (!response.ok) throw new Error(result.error);
+  if (path === '/api/desk' || path === '/api/checkpoint') {
+    if (typeof result.deskContext !== 'string' || !result.deskContext ||
+        (deskContext !== undefined && result.deskContext !== deskContext)) {
+      throw new Error('The desk changed. Reload the page before continuing.');
+    }
+    deskContext ??= result.deskContext;
+  }
   return result;
 }
 

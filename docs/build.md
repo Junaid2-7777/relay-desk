@@ -31,6 +31,8 @@ If the outbox reply is lost, **Review pending follow-up** reopens the approved r
 
 Open checks in the private desk appear in check-date order. On the date chosen for a refund, the card shows **Check today** and asks the person to look for the posted credit. Missed dates stay with their errands, and stopped items move below open checks.
 
+A browser tab remembers which desk it opened. If you switch to a different data directory or planner, or reset the practice household on the same port, the old tab asks you to reload. If you have an unsaved private review, restart the original private desk at that address and select **Save errand** again to keep the draft there.
+
 In the practice desk, **Edit receipt check** lets the person correct an open errand’s issuer, reference, record type or required status. A change of issuer or reference withdraws access to the old record and clears its last check. A change to the proof required from the same record preserves its scoped permission. The original note and check date stay on the card.
 
 To rehearse a new errand, save “Track my membership with Practice library reference member-17 until it is closed.” Open **Set up a practice check** and confirm the issuer, reference, record type and expected status. After saving, allow just the issuer receipt and select **Check your errands**. The operator can register a different synthetic issuer, publish an acknowledgement or matching receipt, and disconnect or restore the source through `npm run demo:evidence`. Inspect the native records at `/api/fixture/receipt`. Run `node --test test/transfer-flow.test.mjs` to replay receipt and booking cases. [Rehearse a new issuer](demo.md#try-an-issuer-of-your-own)

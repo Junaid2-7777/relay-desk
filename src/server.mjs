@@ -82,7 +82,12 @@ export function createDeskServer({
     outbox: { fixture: openOutboxFixture({ dataDir, clock }) }
   } : undefined;
   const desk = openDesk({ dataDir, clock, refundFixture, household, planner });
-  const server = createServer(async (request, response) => {
+  async function checkedBody(request) {
+    const body = await jsonBody(request);
+    desk.checkDeskContext();
+    return body;
+  }
+  async function serve(request, response) {
     try {
       const { host, origin } = request.headers;
       if (!/^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host ?? '') || (origin && origin !== `http://${host}`)) {
@@ -90,52 +95,55 @@ export function createDeskServer({
       }
       const { pathname } = new URL(request.url, `http://${host}`);
       const { method } = request;
+      if (pathname.startsWith('/api/')) desk.checkDeskContext();
       if (method === 'GET' && assets.has(pathname)) {
         const [file, type] = assets.get(pathname);
         return send(response, 200, await readFile(new URL(file, import.meta.url)), type);
       }
-      if (method === 'GET' && pathname === '/api/desk') return send(response, 200, desk.brief());
-      if (method === 'GET' && pathname === '/api/inspect') return send(response, 200, desk.inspect());
+      if (method === 'GET' && pathname === '/api/desk') return send(response, 200, desk.readWithContext(desk.brief));
+      if (method === 'GET' && pathname === '/api/inspect') return send(response, 200, desk.readWithContext(desk.inspect));
       if (method === 'GET' && pathname === '/api/fixture/refund' && refundFixture) {
-        return send(response, 200, refundFixture.inspect());
+        return send(response, 200, desk.readWithContext(refundFixture.inspect));
       }
       if (household && method === 'GET') {
         const provider = /^\/api\/fixture\/(visit|bill|receipt|outbox)$/.exec(pathname);
-        if (provider) return send(response, 200, household[provider[1]].fixture.inspect());
+        if (provider) return send(response, 200, desk.readWithContext(household[provider[1]].fixture.inspect));
       }
       if (household && method === 'POST' && pathname === '/api/checkpoint') {
-        const { checkpointId } = await jsonBody(request);
+        const { checkpointId } = await checkedBody(request);
         return send(response, 200, desk.checkpoint(checkpointId));
       }
       if (method === 'POST' && pathname === '/api/errands/preview') {
-        const { note, plannerMode: expected } = await jsonBody(request);
+        const { note, plannerMode: expected } = await checkedBody(request);
         checkPlannerMode(expected, true);
-        return send(response, 200, await desk.preview(note));
+        const preview = await desk.preview(note);
+        desk.checkDeskContext();
+        return send(response, 200, preview);
       }
       if (method === 'POST' && pathname === '/api/errands') {
-        const body = await jsonBody(request);
+        const body = await checkedBody(request);
         checkPlannerMode(body.plannerMode, false);
         return send(response, 201, desk.save(body));
       }
       const errand = /^\/api\/errands\/([\w-]+)(\/draft)?$/.exec(pathname);
-      if (errand && method === 'PUT' && !errand[2]) return send(response, 200, desk.edit(errand[1], await jsonBody(request)));
-      if (errand && method === 'POST' && errand[2]) return send(response, 200, desk.draft(errand[1]));
+      if (errand && method === 'PUT' && !errand[2]) return send(response, 200, desk.edit(errand[1], await checkedBody(request)));
+      if (errand && method === 'POST' && errand[2]) return send(response, 200, desk.readWithContext(() => desk.draft(errand[1])));
       const followup = /^\/api\/errands\/([\w-]+)\/queue-followup$/.exec(pathname);
       if (household && followup && method === 'POST') {
-        return send(response, 200, desk.queueFollowup(followup[1], await jsonBody(request)));
+        return send(response, 200, desk.queueFollowup(followup[1], await checkedBody(request)));
       }
       const tracking = /^\/api\/errands\/([\w-]+)\/tracking$/.exec(pathname);
-      if (tracking && method === 'POST') return send(response, 200, desk.tracking(tracking[1], await jsonBody(request)));
+      if (tracking && method === 'POST') return send(response, 200, desk.tracking(tracking[1], await checkedBody(request)));
       const refund = /^\/api\/errands\/([\w-]+)\/(refund-access|check-refund)$/.exec(pathname);
       if (refundFixture && refund && method === 'POST') {
         const [, id, action] = refund;
-        const body = await jsonBody(request);
+        const body = await checkedBody(request);
         return send(response, 200, action === 'refund-access' ? desk.refundAccess(id, body) : desk.checkRefund(id, body.checkpointId));
       }
       const decision = /^\/api\/errands\/([\w-]+)\/(household-access|bill-choice|visit-choice|setup)$/.exec(pathname);
       if (household && decision && method === 'POST') {
         const [, id, action] = decision;
-        const body = await jsonBody(request);
+        const body = await checkedBody(request);
         if (action === 'setup') return send(response, 200, desk.setup(id, body));
         if (action === 'visit-choice') return send(response, 200, desk.visitChoice(id, body));
         return send(response, 200, action === 'bill-choice' ? desk.billChoice(id, body) : desk.householdAccess(id, body));
@@ -144,21 +152,26 @@ export function createDeskServer({
     } catch (error) {
       const status = error instanceof ReceiptPlanError ? 400 : error.status;
       if (!status) console.error(error);
-      send(response, status ?? 500, { error: status ? error.message : 'Relay Desk could not finish this request.' });
+      send(response, status ?? 500, {
+        error: status ? error.message : 'Relay Desk could not finish this request.',
+        ...(error instanceof DeskError && error.code ? { code: error.code } : {})
+      });
     }
-  });
+  }
+  const server = createServer((request, response) =>
+    desk.withDeskContext(request.headers['x-relay-desk'], () => serve(request, response)));
   if (reset && refundFixture) {
     server.once('listening', () => {
       try {
-        refundFixture.reset();
-        desk.resetRefund(householdMode && warm);
-        if (household) {
-          household.bill.fixture.reset();
-          household.visit.fixture.reset();
-          household.receipt.fixture.reset();
-          household.outbox.fixture.reset();
-          desk.resetHousehold(warm);
-        }
+        desk.resetPractice(warm, () => {
+          refundFixture.reset();
+          if (household) {
+            household.bill.fixture.reset();
+            household.visit.fixture.reset();
+            household.receipt.fixture.reset();
+            household.outbox.fixture.reset();
+          }
+        });
       } catch (error) {
         server.close();
         server.emit('error', error);

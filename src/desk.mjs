@@ -1,5 +1,6 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openActionJournal } from './action-journal.mjs';
@@ -13,9 +14,10 @@ import { checkRefund, refundGrant, refundSources } from './refund.mjs';
 import { confirmVisitConflict } from './visit.mjs';
 
 export class DeskError extends Error {
-  constructor(message, status = 400) {
+  constructor(message, status = 400, code) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -55,15 +57,26 @@ function visitTime(value) {
 }
 
 const readErrand = row => row && JSON.parse(row.record);
+const changedContextCode = 'desk-context-changed';
 const followupTerms = Object.freeze({
   recipient: 'returns@practice-shop.example',
   subject: 'Check on return-demo-1249'
 });
 
 export function openDesk({ dataDir, clock = () => new Date(), refundFixture, household, planner }) {
-  const intakePlanner = household ? createIntakePlanner(planner) : undefined;
+  const candidate = typeof planner?.propose === 'function' ? {
+    mode: planner.mode,
+    timeoutMs: planner.timeoutMs,
+    propose(input) {
+      let pending;
+      readWithContext(() => { pending = planner.propose(input); });
+      return pending;
+    }
+  } : planner;
+  const intakePlanner = household ? createIntakePlanner(candidate) : undefined;
   mkdirSync(dataDir, { recursive: true });
-  const database = new DatabaseSync(join(dataDir, 'desk.sqlite'));
+  const directory = realpathSync(dataDir);
+  const database = new DatabaseSync(join(directory, 'desk.sqlite'));
   database.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA busy_timeout = 3000;
@@ -82,7 +95,27 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       checkpointId TEXT NOT NULL,
       PRIMARY KEY (errandId, checkpointId)
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS desk_identity (
+      singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+      id TEXT NOT NULL,
+      resetVersion INTEGER NOT NULL DEFAULT 0
+    ) STRICT;
   `);
+  database.prepare('INSERT INTO desk_identity (singleton, id) VALUES (1, ?) ON CONFLICT (singleton) DO NOTHING').run(randomUUID());
+  const readIdentity = database.prepare('SELECT id, resetVersion FROM desk_identity WHERE singleton = 1');
+  const rotateContext = database.prepare('UPDATE desk_identity SET resetVersion = resetVersion + 1 WHERE singleton = 1');
+  const role = household ? 'household' : refundFixture ? 'refund-practice' : 'private';
+  const requestContext = new AsyncLocalStorage();
+  const deskContext = () => {
+    const { id, resetVersion } = readIdentity.get();
+    return createHash('sha256').update(JSON.stringify([id, resetVersion, directory, role, intakePlanner?.mode ?? 'fixed-rule'])).digest('hex');
+  };
+  function checkDeskContext() {
+    const expected = requestContext.getStore();
+    if (expected !== undefined && expected !== deskContext()) {
+      throw new DeskError('The desk changed. Reload the page before continuing.', 409, changedContextCode);
+    }
+  }
   const get = database.prepare('SELECT record FROM errands WHERE id = ?');
   const getSave = database.prepare('SELECT record, intent FROM errands LEFT JOIN errand_saves USING (id) WHERE id = ?');
   const find = id => {
@@ -101,24 +134,33 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
   const seenReceiptCheck = database.prepare('SELECT 1 FROM receipt_checkpoints WHERE errandId = ? AND checkpointId = ?');
   const rememberReceiptCheck = database.prepare('INSERT INTO receipt_checkpoints VALUES (?, ?)');
   const update = database.prepare('UPDATE errands SET record = ?, revision = ? WHERE id = ? AND revision = ?');
+  let transactionOpen = false;
   function revise(record, revision) {
-    const next = { ...record, revision: revision + 1 };
-    if (!update.run(JSON.stringify(next), next.revision, next.id, revision).changes) {
-      throw new DeskError('This errand changed. Reload the desk before saving again.', 409);
-    }
-    return next;
+    return write(() => {
+      const next = { ...record, revision: revision + 1 };
+      if (!update.run(JSON.stringify(next), next.revision, next.id, revision).changes) {
+        throw new DeskError('This errand changed. Reload the desk before saving again.', 409);
+      }
+      return next;
+    });
   }
   function transaction(action) {
     database.exec('BEGIN IMMEDIATE');
+    transactionOpen = true;
     try {
+      checkDeskContext();
       const result = action();
       database.exec('COMMIT');
       return result;
     } catch (error) {
       database.exec('ROLLBACK');
       throw error;
+    } finally {
+      transactionOpen = false;
     }
   }
+  const write = action => transactionOpen ? action() : transaction(action);
+  const readWithContext = read => requestContext.getStore() === undefined ? read() : transaction(read);
   function changeCase(id, action) {
     return transaction(() => {
       const record = find(id);
@@ -139,7 +181,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       throw new DeskError('This errand changed. Reload the desk before saving again.', 409);
     }
   }
-  const journal = openActionJournal(database, find, transaction, clock);
+  const journal = openActionJournal(database, find, transaction, clock, write);
   function pendingFollowup(record) {
     if (!household?.outbox || !record.refund || record.queuedFollowup ||
         record.refund.reference !== refundFixture?.subject.reference) return null;
@@ -147,6 +189,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     return ['prepared', 'unknown', 'committed'].includes(action?.status) ? action.payload : null;
   }
   const brief = () => ({
+    deskContext: deskContext(),
     today: today(),
     now: clock().toISOString(),
     errands: orderChecks(list().map(record => pendingFollowup(record) ? { ...record, pendingFollowup: true } : record), household),
@@ -166,8 +209,56 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     return record;
   }
 
+  function resetCases(reset) {
+    return transaction(() => {
+      const result = reset();
+      rotateContext.run();
+      return result;
+    });
+  }
+
+  function resetRefundCase(warm) {
+    const { reference, amountMinor, currency } = refundFixture.subject;
+    const record = {
+      id: 'demo-refund',
+      revision: 1,
+      kind: 'refund',
+      goal: 'Check for my ₹1,249 refund',
+      note: 'The shop promised a refund for my return. Help me check for the credit on Friday.',
+      checkDate: '2026-11-27',
+      merchantDeadline: null,
+      status: 'open',
+      owner: 'Demo shop',
+      refund: { reference, amountMinor, currency },
+      refundAccess: warm
+        ? Object.fromEntries(refundSources.map(source => [source, refundGrant(refundFixture.subject, source, 'allowed', null, clock())]))
+        : {},
+      checks: {},
+      evidence: []
+    };
+    journal.reset(record.id);
+    return seed(record);
+  }
+
+  function resetHouseholdCases(warm) {
+    const extras = list().filter(record => record.practiceCase);
+    const remove = database.prepare('DELETE FROM errands WHERE id = ?');
+    for (const record of extras) {
+      journal.reset(record.id);
+      remove.run(record.id);
+    }
+    for (const record of seedHousehold(clock(), warm)) {
+      journal.reset(record.id);
+      seed(record);
+    }
+  }
+
   return {
     brief,
+    deskContext,
+    checkDeskContext,
+    readWithContext,
+    withDeskContext: (expected, action) => requestContext.run(expected, action),
     preview(input) {
       const note = requiredText(input, 'an errand', 4000);
       const day = today();
@@ -516,48 +607,20 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
             if (JSON.stringify(next) !== JSON.stringify(record)) revise(next, record.revision);
           }
         } catch (error) {
-          if (error.code !== 'operation-pending' && (!(error instanceof DeskError) || error.status !== 409)) throw error;
+          if (error.code === changedContextCode ||
+              (error.code !== 'operation-pending' && (!(error instanceof DeskError) || error.status !== 409))) throw error;
           conflicts.push(record.id);
         }
       }
-      return { ...brief(), conflicts };
+      return { ...readWithContext(brief), conflicts };
     },
-    resetRefund(warm = false) {
-      const { reference, amountMinor, currency } = refundFixture.subject;
-      const record = {
-        id: 'demo-refund',
-        revision: 1,
-        kind: 'refund',
-        goal: 'Check for my ₹1,249 refund',
-        note: 'The shop promised a refund for my return. Help me check for the credit on Friday.',
-        checkDate: '2026-11-27',
-        merchantDeadline: null,
-        status: 'open',
-        owner: 'Demo shop',
-        refund: { reference, amountMinor, currency },
-        refundAccess: warm
-          ? Object.fromEntries(refundSources.map(source => [source, refundGrant(refundFixture.subject, source, 'allowed', null, clock())]))
-          : {},
-        checks: {},
-        evidence: []
-      };
-      return transaction(() => {
-        journal.reset(record.id);
-        return seed(record);
-      });
-    },
-    resetHousehold(warm) {
-      transaction(() => {
-        const extras = list().filter(record => record.practiceCase);
-        const remove = database.prepare('DELETE FROM errands WHERE id = ?');
-        for (const record of extras) {
-          journal.reset(record.id);
-          remove.run(record.id);
-        }
-        for (const record of seedHousehold(clock(), warm)) {
-          journal.reset(record.id);
-          seed(record);
-        }
+    resetRefund: (warm = false) => resetCases(() => resetRefundCase(warm)),
+    resetHousehold: warm => resetCases(() => resetHouseholdCases(warm)),
+    resetPractice(warm, resetProviders) {
+      resetCases(() => {
+        resetProviders();
+        resetRefundCase(Boolean(household && warm));
+        if (household) resetHouseholdCases(warm);
       });
     },
     inspect() {

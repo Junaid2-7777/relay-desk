@@ -1,4 +1,4 @@
-export function openActionJournal(database, find, transaction, clock) {
+export function openActionJournal(database, find, transaction, clock, write = action => action()) {
   database.exec(`
     CREATE TABLE IF NOT EXISTS actions (
       key TEXT PRIMARY KEY,
@@ -42,7 +42,7 @@ export function openActionJournal(database, find, transaction, clock) {
       return decode(row);
     }),
     dispatch: (errandId, action) => transaction(() => action(find(errandId), clock(), clock)),
-    mark: (key, status) => update.run(status, key),
+    mark: (key, status) => write(() => update.run(status, key)),
     inspect: () => database.prepare('SELECT * FROM actions ORDER BY rowid').all().map(decode),
     reset: errandId => database.prepare('DELETE FROM actions WHERE errandId = ?').run(errandId)
   };
