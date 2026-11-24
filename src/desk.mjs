@@ -4,6 +4,7 @@ import { mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openActionJournal } from './action-journal.mjs';
+import { invoiceGrant } from './bill.mjs';
 import { orderChecks } from '../shared/brief-order.mjs';
 import { activeGrant, makeGrant, sameInvoice, scopes, seedHousehold } from './household.mjs';
 import { previewErrand, suggestPracticePlan } from './intake.mjs';
@@ -546,13 +547,15 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       return changeCase(id, record => {
         requireRevision(record, revision);
         const now = clock();
-        if (!record.bill || record.status !== 'open' || record.issue !== 'bill-review' || !activeGrant(record.grants.invoice, now)) {
+        if (!record.bill || record.status !== 'open' || record.issue !== 'bill-review' || !invoiceGrant(record, record.bill, now)) {
           throw new DeskError('There is no invoice ready for review.', 409);
         }
-        const invoice = household.bill.fixture.readInvoice(record.bill.invoiceId);
+        const invoice = household.bill.fixture.readInvoice(record.bill.invoiceId, at => invoiceGrant(record, record.bill, at));
+        if (invoice === undefined) throw new DeskError('Invoice access expired. Review access before checking again.', 409);
         if (!sameInvoice(invoice, record.invoice)) throw new DeskError('The invoice changed. Check your errands to see the new terms.', 409);
         if (choice === 'defer') return { ...record, approval: null, deferred: invoice, issue: 'bill-deferred' };
-        if (!activeGrant(record.grants.payment, now) || invoice.payee !== record.bill.payee ||
+        const approvalTime = clock();
+        if (!activeGrant(record.grants.payment, approvalTime) || invoice.payee !== record.bill.payee ||
             invoice.currency !== record.bill.currency) {
           throw new DeskError('This invoice needs a separate payment permission.', 409);
         }
@@ -566,7 +569,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
             amountMinor,
             currency,
             status: 'allowed',
-            expiresAt: new Date(+now + 15 * 60 * 1000).toISOString(),
+            expiresAt: new Date(+approvalTime + 15 * 60 * 1000).toISOString(),
             grantRevision: record.grants.payment.revision
           },
           deferred: null

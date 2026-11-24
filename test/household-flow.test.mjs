@@ -219,6 +219,22 @@ test('a one-time approval authorizes only the displayed invoice revision and exp
   }
 });
 
+test('an old review with a grant for another invoice cannot read or grant a bill exception', async t => {
+  const household = await startHousehold(t);
+  const bill = errand(await household.checkpoint(), 'bill');
+  const before = await household.native('bill');
+  const { invoice } = bill.grants;
+  household.persistLegacyErrand({ ...bill, grants: { ...bill.grants, invoice: {
+    ...invoice, scope: { ...invoice.scope, invoiceId: 'another-synthetic-invoice' }
+  } } });
+  for (const choice of ['defer', 'approve']) await household.billChoice(bill, choice, 409);
+  assert.deepEqual(await household.native('bill'), before);
+  const after = errand(await household.desk(), 'bill');
+  assert.equal(after.approval, null);
+  assert.equal(after.deferred, null);
+  assert.equal(after.revision, bill.revision);
+});
+
 test('a lost payment reply reconciles one exact committed payment across restart and waits for settlement', async t => {
   const household = await startHousehold(t);
   const provider = household.provider(openBillFixture);

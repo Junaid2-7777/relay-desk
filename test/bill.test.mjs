@@ -42,6 +42,51 @@ function approve(record) {
   return { ...record.invoice, status: 'allowed', expiresAt: later, grantRevision: record.grants.payment.revision };
 }
 
+function expireAtLookup(desk, method) {
+  return {
+    ...desk.fixture,
+    [method](...args) {
+      desk.moveTime(new Date(desk.record.grants.invoice.expiresAt));
+      return desk.fixture[method](...args);
+    }
+  };
+}
+
+test('invoice permission expiring at the biller prevents reading or presenting the replacement', t => {
+  const desk = setup(t);
+  const before = desk.record.invoice;
+  const result = desk.check(expireAtLookup(desk, 'readInvoice'));
+  assert.equal(result.issue, 'bill-permission');
+  assert.deepEqual(result.invoice, before);
+  assert.deepEqual(desk.fixture.inspect().reads, []);
+  assert.deepEqual(desk.fixture.inspect().attempts, []);
+});
+
+test('expiry during recovery preserves the uncertain payment without reading or retiring its key', t => {
+  const desk = setup(t);
+  const invoice = desk.check();
+  desk.update({ approval: approve(invoice) });
+  desk.fixture.failNextReply();
+  assert.equal(desk.check().issue, 'payment-unknown');
+  const before = desk.fixture.inspect();
+  assert.equal(desk.check(expireAtLookup(desk, 'paymentByKey')).issue, 'payment-unknown');
+  assert.equal(desk.journal.latest(invoice.id, 'pay').status, 'unknown');
+  assert.deepEqual(desk.fixture.inspect(), before);
+});
+
+test('an accepted bill waits for fresh read access if the grant expires at settlement lookup', t => {
+  const desk = setup(t);
+  const invoice = desk.check();
+  desk.update({ approval: approve(invoice) });
+  const { paymentRef, invoiceId, revision, payee, amountMinor, currency } = desk.check().payment;
+  desk.fixture.putSettlement({ paymentRef, invoiceId, revision, payee, amountMinor, currency, status: 'settled', settledAt: later });
+  const before = desk.fixture.inspect();
+  const result = desk.check(expireAtLookup(desk, 'readSettlement'));
+  assert.equal(result.status, 'accepted');
+  assert.equal(result.settlement, null);
+  assert.deepEqual(desk.fixture.inspect(), before);
+});
+
 test('a missing current invoice leaves the bill open without asking the person to pay cached terms', t => {
   const desk = setup(t, { seedInvoices: false });
   const cached = { ...desk.record.invoice, revision: 3, amountMinor: 129000 };

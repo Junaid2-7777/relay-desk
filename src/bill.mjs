@@ -6,7 +6,7 @@ function sameSubject(left, right) {
   return left && right && left.invoiceId === right.invoiceId && left.payee === right.payee && left.currency === right.currency;
 }
 
-function invoiceGrant(record, terms, now) {
+export function invoiceGrant(record, terms, now) {
   const grant = record?.grants?.invoice;
   return grant?.operation === 'invoice' && activeGrant(grant, now) && sameSubject(grant.scope, terms) ? grant : null;
 }
@@ -52,16 +52,19 @@ function canReadInvoice(record, current, terms, now, readTime) {
 }
 
 function readUnderGrant(record, terms, journal, now, read) {
-  return journal.dispatch(record.id, (current, currentTime) =>
-    canReadInvoice(record, current, terms, now, currentTime ?? now) ? { value: read() } : null);
+  return journal.dispatch(record.id, (current, currentTime) => {
+    const authorize = at => canReadInvoice(record, current, terms, now, at);
+    return authorize(currentTime ?? now) ? read(authorize) : undefined;
+  });
 }
 
 function recoverPayment(record, fixture, journal, now) {
   return journal.dispatch(record.id, (current, currentTime) => {
     const original = journal.latest(record.id, 'pay');
     if (!original || original.status === 'blocked') return null;
-    if (!canReadInvoice(record, current, original.payload, now, currentTime ?? now)) return { issue: 'payment-unknown' };
-    const payment = fixture.paymentByKey(original.key);
+    const authorize = at => canReadInvoice(record, current, original.payload, now, at);
+    if (!authorize(currentTime ?? now)) return { issue: 'payment-unknown' };
+    const payment = fixture.paymentByKey(original.key, authorize);
     if (isNativePayment(payment, original.payload)) {
       journal.mark(original.key, 'committed');
       return { payment };
@@ -73,7 +76,7 @@ function recoverPayment(record, fixture, journal, now) {
 }
 
 function presentPayment(record, payment, fixture, journal, now) {
-  const matching = readUnderGrant(record, payment, journal, now, () => fixture.readSettlement(payment.paymentRef))?.value;
+  const matching = readUnderGrant(record, payment, journal, now, authorize => fixture.readSettlement(payment.paymentRef, authorize));
   const settledAt = evidenceInstant(matching?.settledAt);
   const settlement = matching?.status === 'settled' && matching.paymentRef === payment.paymentRef &&
     sameInvoice(matching, payment) && settledAt >= evidenceInstant(payment.acceptedAt) ? matching : null;
@@ -102,9 +105,8 @@ export function runBill(record, fixture, journal, clockNow) {
   if (recovered?.issue) return openWith(record, recovered.issue);
 
   const readGrant = invoiceGrant(record, record.bill, now);
-  const result = readUnderGrant(record, record.bill, journal, now, () => fixture.readInvoice(record.bill.invoiceId));
-  if (!result) return openWith(record, 'bill-permission');
-  const invoice = result.value;
+  const invoice = readUnderGrant(record, record.bill, journal, now, authorize => fixture.readInvoice(record.bill.invoiceId, authorize));
+  if (invoice === undefined) return openWith(record, 'bill-permission');
   if (!invoice) {
     return openWith({ ...record, previousInvoice: record.invoice ?? record.previousInvoice, invoice: null, approval: null }, 'invoice-unavailable');
   }

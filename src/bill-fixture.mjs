@@ -122,9 +122,11 @@ export function openBillFixture({ dataDir, clock = () => new Date() }) {
     }
   }
 
-  function read(source, scope, lookup) {
+  function read(source, scope, authorize, lookup) {
     return transaction(() => {
-      writeRead.run(source, JSON.stringify(scope), clock().toISOString());
+      const now = clock();
+      if (authorize && !authorize(now)) return undefined;
+      writeRead.run(source, JSON.stringify(scope), now.toISOString());
       return plain(lookup());
     });
   }
@@ -200,11 +202,11 @@ export function openBillFixture({ dataDir, clock = () => new Date() }) {
       });
     },
     putInvoice,
-    readInvoice: invoiceId => read('invoice', { invoiceId }, () => latestInvoice.get(invoiceId)),
+    readInvoice: (invoiceId, authorize) => read('invoice', { invoiceId }, authorize, () => latestInvoice.get(invoiceId)),
     pay,
-    paymentByKey: key => read('payment', { key }, () => findPayment.get(key)),
+    paymentByKey: (key, authorize) => read('payment', { key }, authorize, () => findPayment.get(key)),
     putSettlement,
-    readSettlement: paymentRef => read('settlement', { paymentRef }, () => findSettlement.get(paymentRef)),
+    readSettlement: (paymentRef, authorize) => read('settlement', { paymentRef }, authorize, () => findSettlement.get(paymentRef)),
     inspect: () => ({
       invoices: database.prepare('SELECT * FROM bill_invoices ORDER BY invoiceId, revision').all().map(plain),
       payments: database.prepare('SELECT * FROM bill_payments ORDER BY rowid').all().map(plain),
