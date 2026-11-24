@@ -10,7 +10,7 @@ The release evidence requires independently supplied tasks after a freeze, match
 
 ### Rehearsal results from 24 November 2026
 
-Both runs of `npm run evaluate` passed all 226 tests from a clean checkout, once on Node.js 24.0.0 and once on 26.8.1. The commands below reproduce the local results at [revision 26c8a59](https://github.com/Junaid-alt1/relay-desk/commit/26c8a59878c394fafc35fa378596fa81df27ad94).
+Both runs of `npm run evaluate` passed all 226 tests from a clean checkout, once on Node.js 24.0.0 and once on 26.8.1. The commands below reproduce the local results at [revision 26c8a59](https://github.com/Junaid2-7777/relay-desk/commit/26c8a59878c394fafc35fa378596fa81df27ad94).
 
 | Rehearsal | Observed result |
 | --- | --- |
@@ -105,4 +105,4 @@ Run `node scripts/replay-scholarship-notices.mjs` for the read-only notice and d
 - **D03 field conflict.** Synthetic competing L1 dates hold the prior L1 date for review while a separate L2 revision applies. The later synthetic L1 resolution leaves L2 untouched.
 - **D10 date rollover and completed stages.** A date-only deadline stays due through the last second of its Indian calendar date and becomes overdue on the next date. Replaying the same instant preserves the projected state. A school receipt keeps L1 verified across a later two-stage notice, with a projected follow-up date only for L2.
 
-The replays exercise the listed paths offline. The full historical **D01–D12** extension still calls for notice ingestion, feed polling and recovery, scheduled wake handling, approval and outbox behavior, and independent calendar writes and readbacks. Report the historical extension separately from household generalization. [Scholarship source register](scholarship-sources.md) · [Pinned fixture definitions](https://github.com/Junaid-alt1/relay-desk/blob/e7b729d64489d5622118d55c8d9664f35bf3a9f0/docs/evaluation.md#deterministic-workflow-and-fault-cases)
+The replays exercise the listed paths offline. The full historical **D01–D12** extension still calls for notice ingestion, feed polling and recovery, scheduled wake handling, approval and outbox behavior, and independent calendar writes and readbacks. Report the historical extension separately from household generalization. [Scholarship source register](scholarship-sources.md) · [Pinned fixture definitions](https://github.com/Junaid2-7777/relay-desk/blob/e7b729d64489d5622118d55c8d9664f35bf3a9f0/docs/evaluation.md#deterministic-workflow-and-fault-cases)

@@ -18,7 +18,7 @@ These are the edition’s five published criteria. The evidence in the table is 
 
 Homingo’s published entry deadline is **6 December 2026 at 23:59 IST**. [Edition FAQ](https://hackathon.homingo.co.in/hackathons/edition-01#faq)
 
-- [x] Publish the build in a public repository and verify the README setup from a fresh clone. [Repository](https://github.com/Junaid-alt1/relay-desk) · [Build and tools](../README.md)
+- [x] Publish the build in a public repository and verify the README setup from a fresh clone. [Repository](https://github.com/Junaid2-7777/relay-desk) · [Build and tools](../README.md)
 - [x] Record a short working demo using synthetic errands, accounts and provider receipts. [Captioned recording and transcript](demo.md#recorded-walkthrough)
 - [x] Verify signed-out access to the repository and the complete recording. [Recording and transcript](demo.md#recorded-walkthrough)
 - [x] Report scripted rehearsal results with failures and denominators. [Local results for the pinned build](evaluation.md#rehearsal-results-from-24-november-2026)
