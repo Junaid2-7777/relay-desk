@@ -27,6 +27,8 @@ Use Node.js 24 or newer. There are no third-party runtime packages to install.
 - `npm run demo:evidence -- matching-credit` publishes a synthetic provider record from a second terminal. [Demo evidence commands](demo.md#prepare-the-fixture)
 - `RELAY_PORT`, `RELAY_DATA_DIR` and `RELAY_CLOCK` override the port, data directory and clock. Supply an ISO timestamp with an explicit offset for the clock.
 
+The `--cold` option belongs to `npm run reset -- --cold`. Reopening a practice desk reuses its saved permissions, so `npm run demo -- --cold` exits before opening the database. Run `npm start -- --help` for the available modes.
+
 If a practice reset is interrupted, the practice desk stops serving outcomes and running checks until a reset finishes. Stop any running practice process, run the same `npm run reset` command with your usual flags and data directory, then reload the browser. Saved private notes and drafts survive practice reset, including when both desks use the same data directory.
 
 The desk uses its check time to read dated evidence. Publishing a Tuesday credit, receipt or settlement while the desk is on Monday leaves that outcome pending. Reopen the same practice directory with Tuesday’s `RELAY_CLOCK` and check again to use the dated record. A provider can confirm a future appointment today.

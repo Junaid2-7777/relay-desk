@@ -198,12 +198,25 @@ export function createDeskServer({
   return server;
 }
 
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-  const fixtureMode = process.argv.includes('--fixture');
-  const recorded = process.argv.includes('--recorded');
-  const n8n = process.argv.includes('--n8n');
+async function startCli(args) {
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log('Use npm start for the private desk, npm run demo to reopen practice, or npm run reset to start a fresh practice household.');
+    console.log('Add -- --cold to reset with no grants. Choose --recorded or --n8n for an alternate practice planner.');
+    return;
+  }
+  const known = ['--fixture', '--reset', '--cold', '--recorded', '--n8n'];
+  if (args.some(arg => !known.includes(arg))) throw new Error('Unknown desk option. Use npm start -- --help to see the available modes.');
+  const fixtureMode = args.includes('--fixture');
+  const reset = args.includes('--reset');
+  const cold = args.includes('--cold');
+  const recorded = args.includes('--recorded');
+  const n8n = args.includes('--n8n');
+  if (cold && (!reset || !fixtureMode)) throw new Error('Use npm run reset -- --cold to start a practice household with no grants.');
+  if (reset && !fixtureMode) throw new Error('Use npm run reset to reset the practice household.');
   if ((recorded || n8n) && !fixtureMode) throw new Error('Use --recorded or --n8n with the practice household.');
   if (recorded && n8n) throw new Error('Choose one practice planner mode.');
+  const portValue = process.env.RELAY_PORT ?? '4173';
+  if (!/^\d+$/u.test(portValue) || Number(portValue) > 65535) throw new Error('Set RELAY_PORT to a whole number from 0 to 65535.');
   const dataDir = process.env.RELAY_DATA_DIR;
   const fixedTime = process.env.RELAY_CLOCK ?? (fixtureMode ? '2026-11-23T09:00:00+05:30' : undefined);
   let clock;
@@ -219,12 +232,17 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   } else if (n8n) {
     planner = createN8nPlannerFromEnv();
   }
-  const port = Number(process.env.RELAY_PORT ?? 4173);
   const server = createDeskServer({
-    dataDir, clock, fixtureMode, householdMode: fixtureMode, reset: process.argv.includes('--reset'),
-    warm: !process.argv.includes('--cold'), planner
+    dataDir, clock, fixtureMode, householdMode: fixtureMode, reset, warm: !cold, planner
   });
-  server.listen(port, '127.0.0.1', () => {
+  server.listen(Number(portValue), '127.0.0.1', () => {
     console.log(`Relay Desk is open at http://127.0.0.1:${server.address().port}`);
+  });
+}
+
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+  await startCli(process.argv.slice(2)).catch(error => {
+    console.error(error.message);
+    process.exitCode = 1;
   });
 }

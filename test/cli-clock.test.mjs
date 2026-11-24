@@ -35,6 +35,28 @@ test('the server and operator CLIs reject ambiguous and impossible clocks before
   assert.equal(existsSync(dataDir), false);
 });
 
+test('ambiguous desk modes and invalid ports stop before opening or creating household data', async t => {
+  const dataDir = await dataDirectory(t);
+  const env = { ...process.env, RELAY_PORT: '0', RELAY_DATA_DIR: dataDir };
+  const cases = [
+    [['--fixture', '--cold'], {}, /reset -- --cold/],
+    [['--reset'], {}, /reset the practice household/],
+    [['--fixture', '--reset', '--coldd'], {}, /Unknown desk option/],
+    [['--fixture', '--reset'], { RELAY_PORT: '65536' }, /RELAY_PORT/],
+    [[], { RELAY_PORT: '' }, /RELAY_PORT/]
+  ];
+  for (const [args, overrides, message] of cases) {
+    await assert.rejects(run(process.execPath, ['src/server.mjs', ...args], { cwd, env: { ...env, ...overrides }, timeout: 5000 }), error => {
+      assert.equal(error.code, 1);
+      assert.match(error.stderr, message);
+      return true;
+    });
+  }
+  const help = await run(process.execPath, ['src/server.mjs', '--help'], { cwd, env });
+  assert.match(help.stdout, /private desk/);
+  assert.equal(existsSync(dataDir), false);
+});
+
 test('the CLI clock and operator evidence agree on the instant across offsets', async t => {
   const dataDir = await dataDirectory(t);
   const env = { ...process.env, RELAY_CLOCK: '2026-11-23T09:15+05:45', RELAY_PORT: '0', RELAY_DATA_DIR: dataDir };
