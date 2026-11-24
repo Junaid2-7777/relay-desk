@@ -112,6 +112,16 @@ button:disabled { cursor: default; opacity: .65; }
   border-bottom: 1px solid var(--line);
 }
 .work-header h2 { border: 0; padding: 0; }
+.work-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem; }
+.work-actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding-inline: .35rem;
+  color: var(--violet);
+  font-weight: 700;
+  text-underline-offset: .2em;
+}
 .household { grid-template-columns: minmax(0, 1.25fr) minmax(0, .85fr); }
 .household h1 { font-size: clamp(2rem, 4vw, 3.6rem); }
 #errands { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.6rem; padding-top: 1.25rem; }

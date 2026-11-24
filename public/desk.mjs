@@ -14,6 +14,7 @@ const errorMessage = element('intake-error');
 const statusMessage = element('intake-status');
 const checkpointButton = element('checkpoint');
 const checkpointStatus = element('checkpoint-status');
+const addErrand = element('add-errand');
 const format = new Intl.DateTimeFormat('en-IN', {
   weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC'
 });
@@ -526,6 +527,7 @@ function showBrief({ today, now, errands: items, fixture, household, plannerMode
     ? 'Use a synthetic note. Reviewing it sends the note to the configured n8n workflow.'
     : 'Use your own words. The note is saved on this computer.';
   checkpointButton.hidden = !household;
+  addErrand.hidden = !household;
   householdMode = household;
   if (household) {
     element('main').classList.add('household');
@@ -592,6 +594,10 @@ async function checkErrands(focusId) {
 }
 
 checkpointButton.addEventListener('click', () => checkErrands());
+addErrand.addEventListener('click', event => {
+  event.preventDefault();
+  (review.hidden ? noteInput : goalInput).focus();
+});
 
 function showReview() {
   intake.hidden = true;
