@@ -25,6 +25,16 @@ Start with “The shop said it would refund me. Can you help me check on Friday?
 
 Run `npm run demo:evidence -- unrelated-credit` and `npm run demo:evidence -- matching-credit` from a second terminal while the practice desk is open. Choose **Check your errands** after each event and compare the brief with `/api/fixture/refund`. After a practice payment is accepted, `npm run demo:evidence -- settle-bill` publishes the biller's matching settlement. For the library example, save “Track my membership with Practice library reference member-17 until it is closed”, confirm the receipt plan for `member-17`, and allow its read. Publish `membership-acknowledged` and then `membership-closed` through the same command and check after each. These commands write synthetic records directly to the fixture stores. They target `.relay/demo` by default. For another practice directory, set `RELAY_DATA_DIR` in the operator terminal. Match the running desk's `RELAY_CLOCK` if it overrides the fixture date.
 
+## Rehearse an ambiguous refund and source outages
+
+Use a fresh practice household with both **Shop thread** and **Incoming credits** allowed. Use **Check refund sources** in **Refund evidence and access** after each step. The operator commands change the synthetic sources. The desk reads them when the person checks.
+
+1. Run `npm run demo:evidence -- refund-unlinked-credit credit-a` and check. Repeat with `credit-b` and check again. Both credits have the right amount and lack a return reference. The refund stays open.
+2. Run `npm run demo:evidence -- refund-link-credit credit-a unrelated` and check. An unrelated practice shop supplies the cross-reference and the refund stays open.
+3. Run `npm run demo:evidence -- refund-offline merchant`, then `npm run demo:evidence -- refund-link-credit credit-a merchant`. Check again. The correct link is present in `/api/fixture/refund`. The shop read fails and the refund stays open. Inspect the two failed attempts and the unchanged last successful shop check.
+4. Run `npm run demo:evidence -- refund-online merchant`, then `npm run demo:evidence -- refund-offline credits`. Check again. The ledger read fails and the refund stays open even though the shop can identify `credit-a`.
+5. Run `npm run demo:evidence -- refund-online credits` and check again. The brief verifies `demo-unlinked-refund-credit-a`. Compare the exact posted credit, the shop's link, and the ledger read restricted to that linked credit ID in `/api/fixture/refund`.
+
 ## Try an issuer of your own
 
 Use a running practice desk and a second terminal pointed at its practice directory. The operator can choose any synthetic issuer, subject, record type and required status. This rehearsal uses a community centre and a returned key.

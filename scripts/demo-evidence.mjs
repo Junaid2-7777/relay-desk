@@ -6,6 +6,7 @@ import { sameInvoice } from '../src/household.mjs';
 import { openOutboxFixture } from '../src/outbox-fixture.mjs';
 import { openReceiptFixture, practiceReceiptSource, receiptIdentifier } from '../src/receipt-fixture.mjs';
 import { mondayRefund, openRefundFixture } from '../src/refund-fixture.mjs';
+import { refundSources } from '../src/refund.mjs';
 import { mondayVisit, openVisitFixture } from '../src/visit-fixture.mjs';
 
 const dataDir = resolve(process.env.RELAY_DATA_DIR ?? '.relay/demo');
@@ -13,6 +14,10 @@ const clock = new Date(zonedInstant(process.env.RELAY_CLOCK ?? '2026-11-23T09:00
 const actions = new Map([
   ['unrelated-credit', [() => postCredit(false)]],
   ['matching-credit', [() => postCredit(true)]],
+  ['refund-unlinked-credit', [postUnlinkedCredit, 'CREDIT_LABEL']],
+  ['refund-link-credit', [linkRefundCredit, 'CREDIT_LABEL', 'merchant|unrelated']],
+  ['refund-offline', [source => refundAvailability(source, false), 'merchant|credits']],
+  ['refund-online', [source => refundAvailability(source, true), 'merchant|credits']],
   ['settle-bill', [settleBill]],
   ['bill-revision', [reviseBill, 'REVISION', 'AMOUNT_MINOR', 'CURRENCY', 'PAYEE']],
   ['lose-next-reply', [loseReply, 'payment|reservation|outbox']],
@@ -49,6 +54,51 @@ function postCredit(matches) {
   return withFixture(openRefundFixture, 'refund-fixture.sqlite', fixture => {
     fixture.putCredit(credit);
     return credit;
+  });
+}
+
+function withRefundCredit(label, publish) {
+  const id = `demo-unlinked-refund-${receiptIdentifier(label, 'a synthetic credit label')}`;
+  const { account, amountMinor, currency } = mondayRefund;
+  const terms = { id, account, amountMinor, currency, direction: 'incoming', status: 'posted', returnReference: null };
+  return withFixture(openRefundFixture, 'refund-fixture.sqlite', fixture => fixture.withinSnapshot(() => {
+    const previous = fixture.inspect().credits.find(credit => credit.id === id);
+    if (previous && (!Object.entries(terms).every(([field, value]) => previous[field] === value) ||
+        !Number.isFinite(evidenceInstant(previous.postedAt)))) {
+      throw new Error('That credit label already belongs to a different practice record.');
+    }
+    return publish(fixture, previous, terms);
+  }));
+}
+
+function postUnlinkedCredit(label) {
+  return withRefundCredit(label, (fixture, previous, terms) => {
+    if (previous) return previous;
+    const credit = { ...terms, postedAt: clock.toISOString() };
+    fixture.putCredit(credit);
+    return credit;
+  });
+}
+
+function linkRefundCredit(label, kind) {
+  if (kind !== 'merchant' && kind !== 'unrelated') throw new Error('Choose merchant or unrelated for the practice link issuer.');
+  return withRefundCredit(label, (fixture, credit) => {
+    if (!credit) throw new Error('Publish the unlinked practice credit first.');
+    const { merchantIssuer, thread, reference } = mondayRefund;
+    const link = {
+      issuer: kind === 'merchant' ? merchantIssuer : 'merchant-demo-unrelated',
+      thread, returnReference: reference, creditId: credit.id
+    };
+    fixture.putLink(link);
+    return link;
+  });
+}
+
+function refundAvailability(source, available) {
+  if (!refundSources.includes(source)) throw new Error('Choose merchant or credits for the practice refund source.');
+  return withFixture(openRefundFixture, 'refund-fixture.sqlite', fixture => {
+    fixture.setAvailable(source, available);
+    return { source, available };
   });
 }
 

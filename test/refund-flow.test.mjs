@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { mondayRefund, openRefundFixture } from '../src/refund-fixture.mjs';
 import { createDeskServer } from '../src/server.mjs';
 
@@ -18,6 +21,8 @@ const merchantScope = {
   reference: mondayRefund.reference
 };
 const creditScope = { account: mondayRefund.account, reference: mondayRefund.reference };
+const run = promisify(execFile);
+const evidenceScript = fileURLToPath(new URL('../scripts/demo-evidence.mjs', import.meta.url));
 
 async function startDesk(t, { fixtureMode = true } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), 'relay-refund-flow-'));
@@ -65,6 +70,12 @@ async function startDesk(t, { fixtureMode = true } = {}) {
     open,
     request,
     moveTime(date) { time = date; },
+    async operator(...args) {
+      const { stdout } = await run(process.execPath, [evidenceScript, ...args], {
+        env: { ...process.env, RELAY_DATA_DIR: dataDir, RELAY_CLOCK: time }, windowsHide: true
+      });
+      return JSON.parse(stdout);
+    },
     async record() { return (await request('/api/desk')).errands.find(item => item.id === 'demo-refund'); },
     inspect: () => request('/api/fixture/refund'),
     check: checkpointId => request(`${refund}/check-refund`, { body: { checkpointId } }),
@@ -169,29 +180,98 @@ test('a merchant promise and pending or unrelated credits leave the refund open 
   assert.deepEqual((await desk.inspect()).reads, completedReads);
 });
 
-test('a scoped merchant link identifies a single otherwise unmatched credit', async t => {
+test('operator credits and issuer links require a fresh allowed check on both refund feeds', async t => {
   const desk = await startDesk(t);
   const merchant = await desk.access(await desk.record(), 'merchant', 'allowed');
-  await desk.access(merchant, 'credits', 'allowed');
-  const linked = candidate('credit-demo-linked', { returnReference: null });
-  desk.fixture.putCredit(linked);
-  desk.fixture.putCredit(candidate('credit-demo-ambiguous', { returnReference: null }));
-  assert.equal((await desk.check()).status, 'open');
+  const ready = await desk.access(merchant, 'credits', 'allowed');
+  await assert.rejects(desk.operator('refund-link-credit', 'credit-a', 'merchant'), /Publish the unlinked practice credit first/u);
+  await assert.rejects(desk.operator('refund-offline', 'other'), /Choose merchant or credits/u);
+  const posted = await desk.operator('refund-unlinked-credit', 'credit-a');
+  assert.deepEqual(posted, candidate('demo-unlinked-refund-credit-a', { returnReference: null }));
+  assert.deepEqual(await desk.record(), ready);
+  assert.deepEqual((await desk.inspect()).reads, []);
+  const single = await desk.check('single-unlinked');
+  assert.equal(single.status, 'open');
+  assert.deepEqual(single.evidence, []);
 
-  const crossReference = {
+  const twin = await desk.operator('refund-unlinked-credit', 'credit-b');
+  assert.deepEqual(twin, { ...posted, id: 'demo-unlinked-refund-credit-b' });
+  const ambiguous = await desk.check('two-unlinked');
+  assert.equal(ambiguous.status, 'open');
+  assert.deepEqual(ambiguous.evidence, []);
+
+  const exactLink = {
     issuer: merchantScope.issuer,
     thread: merchantScope.thread,
     returnReference: merchantScope.reference,
-    creditId: linked.id
+    creditId: posted.id
   };
-  desk.fixture.putLink({ ...crossReference, issuer: 'merchant-demo-wrong-issuer' });
-  assert.equal((await desk.check()).status, 'open');
+  const wrongLink = await desk.operator('refund-link-credit', 'credit-a', 'unrelated');
+  assert.deepEqual(wrongLink, { ...exactLink, issuer: 'merchant-demo-unrelated' });
+  const wrong = await desk.check('wrong-issuer');
+  assert.equal(wrong.status, 'open');
+  const preOutage = await desk.inspect();
+  assert.deepEqual(preOutage.reads.at(-1).scope, { ...creditScope, linkedCreditIds: [] });
 
-  desk.fixture.putLink(crossReference);
-  const checked = await desk.check();
+  desk.moveTime(tuesday);
+  assert.deepEqual(await desk.operator('refund-offline', 'merchant'), { source: 'merchant', available: false });
+  assert.deepEqual(await desk.operator('refund-link-credit', 'credit-a', 'merchant'), exactLink);
+  assert.deepEqual(await desk.operator('refund-link-credit', 'credit-a', 'merchant'), exactLink);
+  assert.deepEqual(await desk.operator('refund-unlinked-credit', 'credit-a'), posted);
+  const published = await desk.inspect();
+  assert.deepEqual(published.links, [exactLink, wrongLink]);
+  assert.deepEqual(published.reads, preOutage.reads);
+  assert.deepEqual(await desk.record(), wrong);
+
+  const shopOutage = await desk.check('merchant-offline');
+  assert.equal(shopOutage.status, 'open');
+  assert.equal(shopOutage.checks.merchant.checkedAt, wrong.checks.merchant.checkedAt);
+  assert.equal(shopOutage.checks.merchant.status, 'unavailable');
+  const merchantUnavailable = { source: 'merchant', scope: merchantScope, checkedAt: tuesday, status: 'unavailable' };
+  assert.deepEqual((await desk.inspect()).reads.slice(-3), [merchantUnavailable, merchantUnavailable, {
+    source: 'credits', scope: { ...creditScope, linkedCreditIds: [] }, checkedAt: tuesday
+  }]);
+
+  desk.moveTime(wednesday);
+  assert.deepEqual(await desk.operator('refund-online', 'merchant'), { source: 'merchant', available: true });
+  assert.deepEqual(await desk.operator('refund-offline', 'credits'), { source: 'credits', available: false });
+  const ledgerOutage = await desk.check('credits-offline');
+  assert.equal(ledgerOutage.status, 'open');
+  assert.deepEqual(ledgerOutage.evidence, []);
+  assert.equal(ledgerOutage.checks.credits.checkedAt, shopOutage.checks.credits.checkedAt);
+  assert.equal(ledgerOutage.checks.credits.status, 'unavailable');
+  const ledgerUnavailable = {
+    source: 'credits', scope: { ...creditScope, linkedCreditIds: [posted.id] }, checkedAt: wednesday, status: 'unavailable'
+  };
+  const outageReads = (await desk.inspect()).reads;
+  assert.deepEqual(outageReads.slice(-3), [
+    { source: 'merchant', scope: merchantScope, checkedAt: wednesday }, ledgerUnavailable, ledgerUnavailable
+  ]);
+
+  assert.deepEqual(await desk.operator('refund-online', 'credits'), { source: 'credits', available: true });
+  assert.deepEqual(await desk.check('credits-offline'), ledgerOutage);
+  assert.deepEqual((await desk.inspect()).reads, outageReads);
+  await desk.access(ledgerOutage, 'merchant', 'withdrawn');
+  const creditsOnly = await desk.check('credit-without-issuer-grant');
+  assert.equal(creditsOnly.status, 'open');
+  assert.deepEqual((await desk.inspect()).reads.slice(outageReads.length), [{
+    source: 'credits', scope: { ...creditScope, linkedCreditIds: [] }, checkedAt: wednesday
+  }]);
+
+  desk.moveTime(friday);
+  await desk.access(creditsOnly, 'merchant', 'allowed');
+  const checked = await desk.check('both-restored');
   assert.equal(checked.status, 'verified');
-  assert.equal(checked.evidence[0].reference, linked.id);
-  assert.deepEqual((await desk.inspect()).reads.at(-1).scope, { ...creditScope, linkedCreditIds: [linked.id] });
+  assert.deepEqual(checked.evidence, [{
+    source: 'credits', reference: posted.id, amountMinor: posted.amountMinor, currency: posted.currency, postedAt: posted.postedAt
+  }]);
+  const proof = await desk.inspect();
+  assert.deepEqual(proof.reads.slice(-2), [
+    { source: 'merchant', scope: merchantScope, checkedAt: friday },
+    { source: 'credits', scope: { ...creditScope, linkedCreditIds: [posted.id] }, checkedAt: friday }
+  ]);
+  assert.deepEqual(proof.credits.filter(credit => credit.returnReference === null), [posted, twin]);
+  assert.deepEqual((await desk.request('/api/inspect')).effects, proof.reads);
 });
 
 test('refund activity follows issuer instants and ignores malformed evidence', async t => {
