@@ -105,7 +105,9 @@ export function runBill(record, fixture, journal, clockNow) {
   const result = readUnderGrant(record, record.bill, journal, now, () => fixture.readInvoice(record.bill.invoiceId));
   if (!result) return openWith(record, 'bill-permission');
   const invoice = result.value;
-  if (!invoice) return openWith(record, 'bill-review');
+  if (!invoice) {
+    return openWith({ ...record, previousInvoice: record.invoice ?? record.previousInvoice, invoice: null, approval: null }, 'invoice-unavailable');
+  }
   const spendGrant = paymentGrant(record, invoice, now);
   const updated = {
     ...record,

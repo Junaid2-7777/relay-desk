@@ -54,6 +54,7 @@ const issues = {
   'calendar-pending': 'The provider confirmed the visit. The calendar entry is pending.',
   'calendar-conflict': 'The provider confirmed the visit. Your calendar has an overlapping commitment.',
   'bill-permission': 'Review access to check the bill and see which payments are covered.',
+  'invoice-unavailable': 'The biller has no current invoice for this account. Check again when one is available.',
   'bill-deferred': 'You chose to leave this invoice unpaid.',
   'payment-unknown': 'Checking whether the payment went through.',
   'payment-pending': 'The biller accepted the payment. Settlement is pending.',
@@ -138,7 +139,9 @@ function renderAccess(panel, record, run, deskTime) {
 
 function renderBill(panel, list, record, run, deskTime) {
   const { invoice, previousInvoice, capMinor, bill, payment, settlement, approval, grants } = record;
-  if (previousInvoice) fact(list, 'Previous invoice', money(previousInvoice.amountMinor, previousInvoice.currency));
+  if (previousInvoice && previousInvoice.revision !== invoice?.revision) {
+    fact(list, invoice ? 'Previous invoice' : 'Last seen invoice', money(previousInvoice.amountMinor, previousInvoice.currency));
+  }
   if (invoice) {
     fact(list, 'Current invoice', money(invoice.amountMinor, invoice.currency));
     fact(list, 'Invoice', `${invoice.invoiceId} · revision ${invoice.revision}`);

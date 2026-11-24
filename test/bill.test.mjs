@@ -42,6 +42,23 @@ function approve(record) {
   return { ...record.invoice, status: 'allowed', expiresAt: later, grantRevision: record.grants.payment.revision };
 }
 
+test('a missing current invoice leaves the bill open without asking the person to pay cached terms', t => {
+  const desk = setup(t, { seedInvoices: false });
+  const cached = { ...desk.record.invoice, revision: 3, amountMinor: 129000 };
+  desk.update({ invoice: cached, approval: approve({ ...desk.record, invoice: cached }) });
+  const missing = desk.check();
+  assert.equal(missing.status, 'open');
+  assert.equal(missing.issue, 'invoice-unavailable');
+  assert.equal(missing.invoice, null);
+  assert.deepEqual(missing.previousInvoice, cached);
+  assert.equal(missing.approval, null);
+  assert.deepEqual(desk.fixture.inspect().attempts, []);
+  desk.fixture.putInvoice(cached);
+  assert.equal(desk.check().issue, 'bill-review');
+  assert.equal(desk.record.approval, null);
+  assert.deepEqual(desk.fixture.inspect().payments, []);
+});
+
 test('the original eligible invoice is paid under the standing permission', t => {
   const desk = setup(t, { seedInvoices: false });
   desk.fixture.putInvoice({ ...mondayBill, revision: 1, amountMinor: 85000 });
