@@ -194,6 +194,44 @@ test('a scoped merchant link identifies a single otherwise unmatched credit', as
   assert.deepEqual((await desk.inspect()).reads.at(-1).scope, { ...creditScope, linkedCreditIds: [linked.id] });
 });
 
+test('refund activity follows issuer instants and ignores malformed evidence', async t => {
+  const desk = await startDesk(t);
+  const merchant = await desk.access(await desk.record(), 'merchant', 'allowed');
+  await desk.access(merchant, 'credits', 'allowed');
+  const terms = {
+    issuer: merchantScope.issuer, thread: merchantScope.thread, returnReference: merchantScope.reference
+  };
+  const earlier = '2026-11-26T20:00:00+05:30';
+  const latest = '2026-11-26T15:00:00Z';
+  const lastUpdate = { ...terms, id: 'latest-update', type: 'acknowledgement', occurredAt: latest };
+  desk.fixture.putEvent({ ...terms, id: 'older-update', type: 'promise', occurredAt: earlier });
+  desk.fixture.putEvent(lastUpdate);
+  desk.fixture.putCredit(candidate('older-credit', { amountMinor: 1000, postedAt: earlier }));
+  desk.fixture.putCredit(candidate('latest-credit', { amountMinor: 1000, postedAt: latest }));
+
+  const checked = await desk.check();
+  assert.deepEqual(checked.merchantEvent, lastUpdate);
+  assert.equal(checked.checks.merchant.lastEventAt, latest);
+  assert.equal(checked.checks.credits.lastEventAt, latest);
+
+  desk.fixture.putEvent({ ...terms, id: 'invalid-update', type: 'promise', occurredAt: 'invalid-provider-time' });
+  desk.fixture.putCredit(candidate('ambiguous-credit', { postedAt: '2026-11-27T10:00:00' }));
+  desk.fixture.putCredit(candidate('impossible-credit', { postedAt: '2026-11-31T10:00:00Z' }));
+  const unchanged = await desk.check();
+  assert.equal(unchanged.status, 'open');
+  assert.deepEqual(unchanged.evidence, []);
+  assert.deepEqual(unchanged.merchantEvent, lastUpdate);
+  assert.equal(unchanged.checks.merchant.lastEventAt, latest);
+  assert.equal(unchanged.checks.credits.lastEventAt, latest);
+
+  const posted = candidate('matched-credit', { postedAt: friday });
+  desk.fixture.putCredit(posted);
+  const verified = await desk.check();
+  assert.equal(verified.status, 'verified');
+  assert.equal(verified.evidence[0].postedAt, posted.postedAt);
+  assert.equal(verified.checks.credits.lastEventAt, posted.postedAt);
+});
+
 test('withdrawal and expiry each stop their source at the provider and retain the last check', async t => {
   const desk = await startDesk(t);
   const merchant = await desk.access(await desk.record(), 'merchant', 'allowed');

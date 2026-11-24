@@ -1,14 +1,6 @@
 import { createHash } from 'node:crypto';
+import { evidenceInstant } from './evidence-time.mjs';
 import { activeGrant, sameInvoice } from './household.mjs';
-
-const zonedTimestamp = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/u;
-
-function receiptTime(value) {
-  if (typeof value !== 'string' || !zonedTimestamp.test(value)) return NaN;
-  const day = value.slice(0, 10);
-  const midnight = new Date(`${day}T00:00:00.000Z`);
-  return Number.isFinite(+midnight) && midnight.toISOString().slice(0, 10) === day ? Date.parse(value) : NaN;
-}
 
 function sameSubject(left, right) {
   return left && right && left.invoiceId === right.invoiceId && left.payee === right.payee && left.currency === right.currency;
@@ -50,7 +42,7 @@ function paymentIntent(id, { invoiceId, revision, payee, amountMinor, currency }
 
 function isNativePayment(payment, intent) {
   return payment?.status === 'accepted' && payment.key === intent.key && sameInvoice(payment, intent) &&
-    typeof payment.paymentRef === 'string' && payment.paymentRef.length > 0 && Number.isFinite(receiptTime(payment.acceptedAt));
+    typeof payment.paymentRef === 'string' && payment.paymentRef.length > 0 && Number.isFinite(evidenceInstant(payment.acceptedAt));
 }
 
 function canReadInvoice(record, current, terms, now, readTime) {
@@ -82,9 +74,9 @@ function recoverPayment(record, fixture, journal, now) {
 
 function presentPayment(record, payment, fixture, journal, now) {
   const matching = readUnderGrant(record, payment, journal, now, () => fixture.readSettlement(payment.paymentRef))?.value;
-  const settledAt = receiptTime(matching?.settledAt);
+  const settledAt = evidenceInstant(matching?.settledAt);
   const settlement = matching?.status === 'settled' && matching.paymentRef === payment.paymentRef &&
-    sameInvoice(matching, payment) && settledAt >= receiptTime(payment.acceptedAt) ? matching : null;
+    sameInvoice(matching, payment) && settledAt >= evidenceInstant(payment.acceptedAt) ? matching : null;
   const approval = record.approval?.status === 'allowed' && sameInvoice(record.approval, payment)
     ? { ...record.approval, status: 'consumed' }
     : record.approval;

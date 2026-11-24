@@ -1,19 +1,11 @@
+import { evidenceInstant, latestEvidence } from './evidence-time.mjs';
 import { RefundFeedUnavailable } from './refund-fixture.mjs';
-
-const postedTimestamp = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/u;
-
-function hasPostedTimestamp(value) {
-  if (typeof value !== 'string' || !postedTimestamp.test(value)) return false;
-  const date = value.slice(0, 10);
-  const midnight = new Date(`${date}T00:00:00.000Z`);
-  return Number.isFinite(midnight.getTime()) && midnight.toISOString().slice(0, 10) === date;
-}
 
 function isPostedCredit(credit, refund) {
   return typeof credit.id === 'string' && credit.id.length > 0 &&
     credit.account === refund.account && credit.amountMinor === refund.amountMinor &&
     credit.currency === refund.currency && credit.direction === 'incoming' &&
-    credit.status === 'posted' && hasPostedTimestamp(credit.postedAt);
+    credit.status === 'posted' && Number.isFinite(evidenceInstant(credit.postedAt));
 }
 
 function isLinked(credit, refund, links) {
@@ -85,9 +77,10 @@ export function checkRefund(record, fixture, now, checkpointId) {
 
   function saveCheck(source, successful, lastEventAt) {
     const previous = checks[source];
+    const previousEventAt = Number.isFinite(evidenceInstant(previous?.lastEventAt)) ? previous.lastEventAt : null;
     checks[source] = {
       checkedAt: successful ? checkedAt : previous?.checkedAt ?? null,
-      lastEventAt: lastEventAt ?? previous?.lastEventAt ?? null,
+      lastEventAt: lastEventAt ?? previousEventAt,
       status: successful ? 'checked' : 'unavailable',
       ...(checkpointId !== undefined ? { checkpointId } : {})
     };
@@ -98,10 +91,8 @@ export function checkRefund(record, fixture, now, checkpointId) {
   let credit = null;
   if (allowed('merchant')) {
     const merchant = readWithRetry(() => fixture.readMerchant(refundScope(subject, 'merchant')));
-    if (merchant) {
-      links = merchant.links;
-      merchantEvent = merchant.events.at(-1) ?? merchantEvent;
-    }
+    links = merchant?.links ?? [];
+    merchantEvent = latestEvidence(merchant?.events ?? [], 'occurredAt', merchantEvent);
     saveCheck('merchant', Boolean(merchant), merchantEvent?.occurredAt);
   }
   if (allowed('credits')) {
@@ -110,9 +101,7 @@ export function checkRefund(record, fixture, now, checkpointId) {
       linkedCreditIds: links.map(link => link.creditId)
     }));
     if (credits) credit = matchRefundCredit(subject, { credits, links });
-    const lastEventAt = credits?.reduce((latest, row) =>
-      Date.parse(row.postedAt) > Date.parse(latest ?? '1970-01-01') ? row.postedAt : latest,
-    checks.credits?.lastEventAt ?? null);
+    const lastEventAt = latestEvidence(credits ?? [], 'postedAt', { postedAt: checks.credits?.lastEventAt })?.postedAt;
     saveCheck('credits', Boolean(credits), lastEventAt);
   }
   return {
