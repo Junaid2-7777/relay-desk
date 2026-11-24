@@ -41,7 +41,7 @@ export function previewErrand(note, today) {
 
 export function suggestPracticePlan(note, sources) {
   const lower = note.toLowerCase();
-  const referenced = /\b(?:reference|ref\.?|id)\s*(?:[:#]\s*)?([a-z0-9][a-z0-9._:-]*)/iu.exec(note);
+  const referenced = /\b(?:reference|ref|id)\b\.?\s*(?:[:#]\s*)?([a-z0-9][a-z0-9._:-]*)/iu.exec(note);
   const subject = referenced?.[1].replace(/[.:]+$/u, '') ?? '';
   if (/\b(?:book|reserve|schedule)\b/u.test(lower)) return { capability: 'visit', subject };
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {previewErrand} from '../src/intake.mjs';
+import { previewErrand, suggestPracticePlan } from '../src/intake.mjs';
 
 const monday = '2026-11-23';
 
@@ -30,4 +30,9 @@ test('handles explicit today, tomorrow and a weekday on the local clock', () => 
   assert.equal(previewErrand('Follow up tomorrow.', '2026-12-31').checkDate, '2027-01-01');
   assert.equal(previewErrand('Check on Monday.', monday).checkDate, monday);
   assert.equal(previewErrand('Check the library account on Friday.', monday).checkDate, '2026-11-27');
+});
+
+test('suggests a practice reference only after a complete reference label', () => {
+  assert.equal(suggestPracticePlan('The shop said it would refund me.', []).subject, '');
+  assert.equal(suggestPracticePlan('Watch for the closure receipt with ref. #member-17.', []).subject, 'member-17');
 });
