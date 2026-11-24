@@ -27,6 +27,7 @@ let reviewedNote;
 let saveRequestId;
 let reviewId;
 let deskTime;
+let pagePlannerMode;
 let householdMode = false;
 let receiptSources = [];
 let checking = false;
@@ -390,6 +391,9 @@ function showErrands() {
 }
 
 function showBrief({ today, now, errands: items, fixture, household, plannerMode, receiptSources: sources = [] }) {
+  const mode = plannerMode ?? 'fixed-rule';
+  pagePlannerMode ??= mode;
+  if (mode !== pagePlannerMode) throw new Error('The planner changed. Reload the desk to review where your note will go.');
   deskTime = now;
   receiptSources = sources;
   element('today').dateTime = today;
@@ -458,7 +462,9 @@ intake.addEventListener('submit', async event => {
   const note = noteInput.value.trim();
   intakeFields.disabled = true;
   try {
-    const { goal, checkDate, previewId, plannerStatus } = await request('/api/errands/preview', { method: 'POST', body: { note } });
+    const { goal, checkDate, previewId, plannerStatus } = await request('/api/errands/preview', {
+      method: 'POST', body: { note, plannerMode: pagePlannerMode }
+    });
     reviewedNote = note;
     reviewId = previewId;
     if (plannerStatus === 'fallback') statusMessage.textContent = 'A local suggestion is ready to review.';
@@ -492,7 +498,7 @@ review.addEventListener('submit', async event => {
   try {
     const record = await request('/api/errands', {
       method: 'POST',
-      body: { note: reviewedNote, goal: goalInput.value, checkDate: checkInput.value, requestId: saveRequestId, previewId: reviewId }
+      body: { note: reviewedNote, goal: goalInput.value, checkDate: checkInput.value, requestId: saveRequestId, previewId: reviewId, plannerMode: pagePlannerMode }
     });
     records = [record, ...records.filter(item => item.id !== record.id)];
     showErrands();

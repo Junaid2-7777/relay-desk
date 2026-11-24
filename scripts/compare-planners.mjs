@@ -213,7 +213,7 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
 
     stage = 'interpretation';
     const previewTimeout = httpTimeoutMs + (candidate?.timeoutMs ?? 0);
-    const preview = await request('/api/errands/preview', { note }, 200, previewTimeout);
+    const preview = await request('/api/errands/preview', { note, plannerMode: mode }, 200, previewTimeout);
     inspectForLeaks('intake preview', preview);
     const { goal, checkDate, practicePlan, plannerMode, plannerStatus, plannerFailure, previewId } = preview;
     const proposal = { goal, checkDate, practicePlan };

@@ -4,6 +4,8 @@ The n8n planner interprets a synthetic errand and returns a draft for review. Th
 
 ## Set up n8n
 
+The browser sends the planner mode shown when the desk opened with each review. Direct callers of `POST /api/errands/preview` must include `"plannerMode": "n8n"` when asking n8n to review a note. If the mode changes while a tab is open, Relay returns HTTP 409 before contacting the workflow. Reload the tab to see the current mode.
+
 1. Import [Relay Desk practice planner](../n8n/relay-desk-planner.json). The OpenAI node uses **Generate a Model Response**, available in n8n 1.117.0 and newer. [n8n text operations](https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-langchain.openai/text-operations/#generate-a-model-response)
 2. In **Practice planner request**, select a Header Auth credential with name `Authorization` and value `Bearer <webhook token>`. Create a high-entropy token for this workflow. Set the same token, without the `Bearer ` prefix, in the desk process. [n8n Webhook credentials](https://docs.n8n.io/integrations/builtin/credentials/webhook/#using-header-auth)
 3. In **Propose an errand**, select the n8n OpenAI credential that holds your API key. The import pins `gpt-5.4-mini-2026-03-17`. If your project uses another model, choose a Responses API model with JSON Schema support and record its snapshot and settings before comparison. Leave tools disconnected and response storage disabled. [n8n OpenAI credentials](https://docs.n8n.io/integrations/builtin/credentials/openai/) · [Pinned model](https://developers.openai.com/api/docs/models/gpt-5.4-mini)

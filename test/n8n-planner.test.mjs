@@ -23,10 +23,17 @@ const proposal = {
   }
 };
 
-async function listen(t, server) {
-  server.listen(0, '127.0.0.1');
+async function close(server) {
+  if (!server.listening) return;
+  const closed = once(server, 'close');
+  server.close();
+  await closed;
+}
+
+async function listen(t, server, port = 0) {
+  server.listen(port, '127.0.0.1');
   await once(server, 'listening');
-  t.after(() => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
+  t.after(() => close(server));
   return `http://127.0.0.1:${server.address().port}`;
 }
 
@@ -44,18 +51,33 @@ async function setup(t, handle, { household = true, timeoutMs } = {}) {
   });
   if (!household) assert.throws(() => createDeskServer({ planner }), /practice household/);
   const dataDir = await mkdtemp(join(tmpdir(), 'relay-n8n-planner-'));
-  const desk = await listen(t, createDeskServer({
-    dataDir, clock, householdMode: household, reset: true, warm: false, planner: household ? planner : undefined
-  }));
-  t.after(() => rm(dataDir, { recursive: true, force: true }));
+  function open(householdMode) {
+    return createDeskServer({
+      dataDir: join(dataDir, householdMode ? 'practice' : 'private'), clock, householdMode,
+      reset: true, warm: false, planner: householdMode ? planner : undefined
+    });
+  }
+  let server = open(household);
+  const desk = await listen(t, server);
+  t.after(async () => {
+    await close(server);
+    await rm(dataDir, { recursive: true, force: true });
+  });
 
   return {
     messages,
+    async switchToN8n() {
+      const port = server.address().port;
+      await close(server);
+      server = open(true);
+      await listen(t, server, port);
+    },
     async request(path, body, status = 200) {
       const response = await fetch(desk + path, {
         ...(body === undefined ? {} : {
-          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
+          method: 'POST', body: JSON.stringify(body)
         }),
+        headers: { connection: 'close', ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
         signal: AbortSignal.timeout(5000)
       });
       const value = await response.json();
@@ -74,7 +96,7 @@ test('n8n uses ordinary intake and sends only the note, local day and source cat
   assert.equal(plannerMode, 'n8n');
   assert.deepEqual(messages, []);
 
-  const preview = await request('/api/errands/preview', { note });
+  const preview = await request('/api/errands/preview', { note, plannerMode: 'n8n' });
   assert.equal(preview.plannerMode, 'n8n');
   assert.equal(preview.plannerStatus, 'proposed');
   assert.equal(preview.goal, proposal.goal);
@@ -116,7 +138,7 @@ test('n8n failures fall back without returning the upstream payload or following
   for (const [name, failure, handler] of scenarios) {
     await t.test(name, async t => {
       const { messages, request } = await setup(t, handler);
-      const preview = await request('/api/errands/preview', { note });
+      const preview = await request('/api/errands/preview', { note, plannerMode: 'n8n' });
       assert.equal(preview.plannerMode, 'fixed-rule');
       assert.equal(preview.plannerStatus, 'fallback');
       assert.equal(preview.plannerFailure, failure);
@@ -138,6 +160,18 @@ test('private intake stays local and the CLI rejects incompatible modes', async 
     assert.equal(result.status, 1);
     assert.match(result.stderr, expected);
   }
+});
+
+test('a stale private review after switching the same desk address to n8n never forwards the note', async t => {
+  const { messages, request, switchToN8n } = await setup(t, response => response.end(), { household: false });
+  const privateMode = (await request('/api/desk')).plannerMode ?? 'fixed-rule';
+  assert.equal(privateMode, 'fixed-rule');
+  await switchToN8n();
+  assert.equal((await request('/api/desk')).plannerMode, 'n8n');
+
+  await request('/api/errands/preview', { note, plannerMode: privateMode }, 409);
+  await request('/api/errands/preview', { note }, 409);
+  assert.deepEqual(messages, []);
 });
 
 test('n8n configuration requires a token and restricts cleartext URLs to loopback', () => {

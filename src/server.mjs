@@ -65,6 +65,12 @@ export function createDeskServer({
 } = {}) {
   if (planner && !householdMode) throw new TypeError('Use planner proposals in the practice household.');
   if (householdMode) fixtureMode = true;
+  const plannerMode = planner?.mode ?? 'fixed-rule';
+  function checkPlannerMode(expected, preview) {
+    if ((expected !== undefined || (preview && plannerMode === 'n8n')) && expected !== plannerMode) {
+      throw new DeskError('The planner changed. Reload the desk to review where your note will go.', 409);
+    }
+  }
   dataDir ??= resolve(fixtureMode ? (practiceDirectories.get(planner?.mode) ?? '.relay/demo') : '.relay');
   const refundFixture = fixtureMode ? openRefundFixture({ dataDir, clock }) : undefined;
   const household = householdMode ? {
@@ -100,10 +106,14 @@ export function createDeskServer({
         return send(response, 200, desk.checkpoint(checkpointId));
       }
       if (method === 'POST' && pathname === '/api/errands/preview') {
-        return send(response, 200, await desk.preview((await jsonBody(request)).note));
+        const { note, plannerMode: expected } = await jsonBody(request);
+        checkPlannerMode(expected, true);
+        return send(response, 200, await desk.preview(note));
       }
       if (method === 'POST' && pathname === '/api/errands') {
-        return send(response, 201, desk.save(await jsonBody(request)));
+        const body = await jsonBody(request);
+        checkPlannerMode(body.plannerMode, false);
+        return send(response, 201, desk.save(body));
       }
       const errand = /^\/api\/errands\/([\w-]+)(\/draft)?$/.exec(pathname);
       if (errand && method === 'PUT' && !errand[2]) return send(response, 200, desk.edit(errand[1], await jsonBody(request)));
