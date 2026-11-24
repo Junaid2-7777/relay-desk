@@ -65,6 +65,7 @@ test('recovers one accepted payment across a lost response and restart, then rea
   const before = openBillFixture({ dataDir, clock: () => new Date(acceptedAt) });
   try {
     before.reset();
+    assert.deepEqual(before.readInvoice(intent.invoiceId), mondayBill);
     const operator = openBillFixture({ dataDir });
     try {
       operator.failNextReply();
@@ -96,11 +97,18 @@ test('recovers one accepted payment across a lost response and restart, then rea
     assert.deepEqual(after.readSettlement(paymentRef), settlement);
     assert.deepEqual(after.inspect().payments, [payment]);
     assert.deepEqual(after.inspect().attempts.map(({ status }) => status), ['reply-lost', 'recovered', 'blocked', 'blocked']);
+    assert.deepEqual(after.inspect().reads, [
+      { source: 'invoice', scope: { invoiceId }, checkedAt: acceptedAt },
+      { source: 'payment', scope: { key: intent.key }, checkedAt: settledAt },
+      { source: 'settlement', scope: { paymentRef }, checkedAt: settledAt },
+      { source: 'settlement', scope: { paymentRef }, checkedAt: settledAt }
+    ]);
 
     after.reset();
     assert.deepEqual(after.inspect().settlements, []);
     assert.deepEqual(after.inspect().payments, []);
     assert.deepEqual(after.inspect().attempts, []);
+    assert.deepEqual(after.inspect().reads, []);
   } finally {
     after.close();
   }

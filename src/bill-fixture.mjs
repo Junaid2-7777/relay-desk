@@ -72,6 +72,12 @@ export function openBillFixture({ dataDir, clock = () => new Date() }) {
       code TEXT,
       paymentRef TEXT
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS bill_reads (
+      id INTEGER PRIMARY KEY,
+      source TEXT NOT NULL CHECK (source IN ('invoice', 'payment', 'settlement')),
+      scope TEXT NOT NULL,
+      checkedAt TEXT NOT NULL
+    ) STRICT;
     CREATE TABLE IF NOT EXISTS bill_faults (name TEXT PRIMARY KEY) STRICT;
   `);
 
@@ -99,6 +105,8 @@ export function openBillFixture({ dataDir, clock = () => new Date() }) {
     INSERT INTO bill_attempts (key, invoiceId, revision, attemptedAt, status, code, paymentRef)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
+  const writeRead = database.prepare('INSERT INTO bill_reads (source, scope, checkedAt) VALUES (?, ?, ?)');
+  const listReads = database.prepare('SELECT source, scope, checkedAt FROM bill_reads ORDER BY id');
   const setLostReply = database.prepare("INSERT OR IGNORE INTO bill_faults VALUES ('lost-reply')");
   const consumeLostReply = database.prepare("DELETE FROM bill_faults WHERE name = 'lost-reply'");
 
@@ -112,6 +120,13 @@ export function openBillFixture({ dataDir, clock = () => new Date() }) {
       database.exec('ROLLBACK');
       throw error;
     }
+  }
+
+  function read(source, scope, lookup) {
+    return transaction(() => {
+      writeRead.run(source, JSON.stringify(scope), clock().toISOString());
+      return plain(lookup());
+    });
   }
 
   function putInvoice({ invoiceId, revision, payee, payeeLabel, amountMinor, currency }) {
@@ -179,22 +194,23 @@ export function openBillFixture({ dataDir, clock = () => new Date() }) {
     reset() {
       transaction(() => {
         database.exec('DELETE FROM bill_attempts; DELETE FROM bill_settlements; DELETE FROM bill_payments; DELETE FROM bill_invoices;');
-        database.exec('DELETE FROM bill_faults');
+        database.exec('DELETE FROM bill_faults; DELETE FROM bill_reads;');
         putInvoice({ ...mondayBill, revision: 1, amountMinor: 85000 });
         putInvoice(mondayBill);
       });
     },
     putInvoice,
-    readInvoice: invoiceId => plain(latestInvoice.get(invoiceId)),
+    readInvoice: invoiceId => read('invoice', { invoiceId }, () => latestInvoice.get(invoiceId)),
     pay,
-    paymentByKey: key => plain(findPayment.get(key)),
+    paymentByKey: key => read('payment', { key }, () => findPayment.get(key)),
     putSettlement,
-    readSettlement: paymentRef => plain(findSettlement.get(paymentRef)),
+    readSettlement: paymentRef => read('settlement', { paymentRef }, () => findSettlement.get(paymentRef)),
     inspect: () => ({
       invoices: database.prepare('SELECT * FROM bill_invoices ORDER BY invoiceId, revision').all().map(plain),
       payments: database.prepare('SELECT * FROM bill_payments ORDER BY rowid').all().map(plain),
       settlements: database.prepare('SELECT * FROM bill_settlements ORDER BY rowid').all().map(plain),
-      attempts: database.prepare('SELECT * FROM bill_attempts ORDER BY id').all().map(plain)
+      attempts: database.prepare('SELECT * FROM bill_attempts ORDER BY id').all().map(plain),
+      reads: listReads.all().map(row => ({ ...row, scope: JSON.parse(row.scope) }))
     }),
     failNextReply: () => { setLostReply.run(); },
     close: () => database.close()
