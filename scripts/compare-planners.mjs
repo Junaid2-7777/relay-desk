@@ -36,7 +36,7 @@ const eventMethods = {
   bill: ['putInvoice', 'putSettlement', 'failNextReply'],
   receipt: ['putSource', 'putReceipt', 'setAvailable'],
   refund: ['putEvent', 'putCredit', 'putLink', 'setAvailable'],
-  visit: ['putSlot', 'putCalendarEvent', 'failNextReservationReply', 'failNextCalendarWrite']
+  visit: ['putSlot', 'putCalendarEvent', 'failNextReservationReply', 'failNextCalendarWrite', 'failNextCalendarReply']
 };
 const zeroEffects = { reservations: 0, calendarWrites: 0, payments: 0, queuedMessages: 0 };
 const billSubjectFields = ['invoiceId', 'payee', 'currency'];

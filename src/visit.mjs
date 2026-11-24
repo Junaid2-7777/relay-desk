@@ -147,6 +147,8 @@ function runCalendar(record, reservation, fixture, journal, instant) {
   const conflictChoice = record.conflictChoice?.reservationId === reservation.id ? record.conflictChoice : null;
   const previousConflict = record.reservation?.id === reservation.id ? record.conflict : null;
   const booked = withState(record, 'booked', 'calendar-pending', { reservation, calendarEvent: null, conflictChoice });
+  const previous = journal.latest(record.id, 'calendar');
+  const awaitingReadback = previous?.status === 'unknown' ? { ...booked, issue: 'calendar-unknown' } : booked;
   const readConflict = () => readUnderGrant(record, 'freeBusy', journal, instant, authorize =>
     fixture.calendarConflictForReservation(reservation.id, authorize));
   function conflicting(conflict, calendarEvent = null, lastConflict = previousConflict) {
@@ -168,19 +170,21 @@ function runCalendar(record, reservation, fixture, journal, instant) {
     }
     return previousProof && record.status === 'verified'
       ? withState(booked, 'verified', null, { calendarEvent: previousProof })
-      : { ...booked, calendarEvent: previousProof };
+      : { ...awaitingReadback, calendarEvent: previousProof };
   }
 
-  const previous = journal.latest(record.id, 'calendar');
   if (previous && previous.payload.reservationId !== reservation.id) return booked;
-  const native = readUnderGrant(record, 'calendar', journal, instant, authorize =>
-    fixture.calendarByReservation(reservation.id, authorize));
-  if (native === undefined) return booked;
-  const existing = calendarProof(native, reservation);
-  if (native && !existing) return booked;
-  if (existing) {
-    if (previous?.status !== 'recorded' && previous) journal.mark(previous.key, 'recorded');
-    return presentCalendar(existing, previousConflict);
+  const canWrite = grantFor(record, 'freeBusy', instant);
+  if (record.calendarEvent || previousConflict || conflictChoice || !canWrite) {
+    const native = readUnderGrant(record, 'calendar', journal, instant, authorize =>
+      fixture.calendarByReservation(reservation.id, authorize));
+    if (native === undefined) return awaitingReadback;
+    const existing = calendarProof(native, reservation);
+    if (native && !existing) return booked;
+    if (existing) {
+      if (previous?.status !== 'recorded' && previous) journal.mark(previous.key, 'recorded');
+      return presentCalendar(existing, previousConflict);
+    }
   }
 
   if (previousConflict || conflictChoice) {
@@ -189,7 +193,7 @@ function runCalendar(record, reservation, fixture, journal, instant) {
     if (conflict) return conflicting(conflict);
     if (observed === undefined || conflictChoice?.choice === 'handle') return booked;
   }
-  if (!grantFor(record, 'freeBusy', instant)) return booked;
+  if (!canWrite) return booked;
   const key = previous?.key ?? `visit:${record.id}:calendar:${reservation.id}`;
   const calendarGrants = ['freeBusy', 'calendar'];
   const result = dispatchVisit(journal, record, 'calendar', key, { key, reservationId: reservation.id }, (current, payload, now, readClock) => {
@@ -197,10 +201,30 @@ function runCalendar(record, reservation, fixture, journal, instant) {
         (current.conflictChoice?.choice === 'handle' && current.conflictChoice.reservationId === reservation.id)) {
       return { status: 'blocked', reason: 'permission' };
     }
-    return fixture.addToCalendar(payload, fresh =>
-      permittedAtDispatch(record, current, calendarGrants, +readClock()) &&
-      fresh.reservationId === reservation.id && sameFields(eventFields, fresh, reservation));
+    // Hold the same desk lock for this lookup and write. Another process may have
+    // committed the entry after this runner prepared its intent.
+    const native = readWithGrant(record, current, 'calendar', +(now ?? instant), authorize =>
+      fixture.calendarByReservation(reservation.id, authorize));
+    if (native !== null) {
+      const existing = calendarProof(native, reservation);
+      return existing ? { status: 'already-recorded', event: existing } : { status: 'unknown' };
+    }
+    try {
+      return fixture.addToCalendar(payload, fresh =>
+        permittedAtDispatch(record, current, calendarGrants, +readClock()) &&
+        fresh.reservationId === reservation.id && sameFields(eventFields, fresh, reservation));
+    } catch {
+      return { status: 'unknown' };
+    }
   });
+  if (result?.status === 'already-recorded') {
+    journal.mark(key, 'recorded');
+    return presentCalendar(result.event, previousConflict);
+  }
+  if (result?.status === 'unknown') {
+    journal.mark(key, 'unknown');
+    return { ...booked, issue: 'calendar-unknown' };
+  }
   if (result?.status === 'conflict') {
     journal.mark(key, 'conflict');
     return conflicting(result.interval, null, null);
@@ -211,8 +235,8 @@ function runCalendar(record, reservation, fixture, journal, instant) {
   }
   const event = calendarProof(readUnderGrant(record, 'calendar', journal, instant, authorize =>
     fixture.calendarByReservation(reservation.id, authorize)), reservation);
-  journal.mark(key, event ? 'recorded' : 'failed');
-  return event ? presentCalendar(event, null) : booked;
+  journal.mark(key, event ? 'recorded' : 'unknown');
+  return event ? presentCalendar(event, null) : { ...booked, issue: 'calendar-unknown' };
 }
 
 export function runVisit(record, fixture, journal, now) {

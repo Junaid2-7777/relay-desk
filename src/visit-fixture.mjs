@@ -226,7 +226,9 @@ export function openVisitFixture({ dataDir, clock = () => new Date() }) {
       };
       const [start, end] = intervalBounds(event);
       insertCalendar.run(event.id, key, reservationId, start, end, JSON.stringify(event));
-      return finish({ status: 'recorded', event });
+      return finish(consumeFault.run('calendar-reply').changes
+        ? { status: 'unknown', reason: 'reply-lost' }
+        : { status: 'recorded', event });
     });
   }
 
@@ -268,6 +270,7 @@ export function openVisitFixture({ dataDir, clock = () => new Date() }) {
     }, authorize),
     failNextReservationReply: () => queueFault.run('reservation-reply'),
     failNextCalendarWrite: () => queueFault.run('calendar-write'),
+    failNextCalendarReply: () => queueFault.run('calendar-reply'),
     inspect() {
       return {
         slots: database.prepare('SELECT record FROM visit_slots ORDER BY id').all().map(rowRecord),

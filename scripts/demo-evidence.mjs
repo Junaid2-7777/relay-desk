@@ -20,7 +20,8 @@ const actions = new Map([
   ['refund-online', [source => refundAvailability(source, true), 'merchant|credits']],
   ['settle-bill', [settleBill]],
   ['bill-revision', [reviseBill, 'REVISION', 'AMOUNT_MINOR', 'CURRENCY', 'PAYEE']],
-  ['lose-next-reply', [loseReply, 'payment|reservation|outbox']],
+  ['lose-next-reply', [loseReply, 'payment|reservation|calendar|outbox']],
+  ['fail-next-calendar-write', [failCalendarWrite]],
   ['visit-slot', [publishVisitSlot, 'SLOT_ID', 'ISSUER', 'SERVICE', 'SUBJECT', 'START', 'END', 'FEE_MINOR']],
   ['visit-slot-withdraw', [withdrawVisitSlot, 'SLOT_ID']],
   ['calendar-commitment', [publishCommitment, 'EVENT_ID', 'START', 'END', 'TITLE']],
@@ -115,13 +116,21 @@ function loseReply(operation) {
   const faults = new Map([
     ['payment', [openBillFixture, 'failNextReply']],
     ['reservation', [openVisitFixture, 'failNextReservationReply']],
+    ['calendar', [openVisitFixture, 'failNextCalendarReply']],
     ['outbox', [openOutboxFixture, 'failNextReply']]
   ]);
-  if (!faults.has(operation)) throw new Error('Choose payment, reservation, or outbox for the next lost reply.');
+  if (!faults.has(operation)) throw new Error('Choose payment, reservation, calendar, or outbox for the next lost reply.');
   const [open, method] = faults.get(operation);
   return withFixture(open, 'providers.sqlite', fixture => {
     fixture[method]();
     return { operation, nextReply: 'will-be-lost' };
+  });
+}
+
+function failCalendarWrite() {
+  return withFixture(openVisitFixture, 'providers.sqlite', fixture => {
+    fixture.failNextCalendarWrite();
+    return { operation: 'calendar', nextWrite: 'will-fail' };
   });
 }
 

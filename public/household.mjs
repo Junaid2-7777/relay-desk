@@ -53,6 +53,7 @@ const issues = {
   'slot-unavailable': 'A free visit within your window is unavailable.',
   'reservation-unknown': 'Checking whether the provider booked the visit.',
   'calendar-pending': 'The provider confirmed the visit. The calendar entry is pending.',
+  'calendar-unknown': 'The provider confirmed the visit. Check again to see whether the calendar saved it.',
   'bill-permission': 'Review access to check the bill and see which payments are covered.',
   'invoice-unavailable': 'The biller has no current invoice for this account. Check again when one is available.',
   'bill-deferred': 'You chose to leave this invoice unpaid.',

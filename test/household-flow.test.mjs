@@ -484,10 +484,39 @@ test('a lost payment reply reconciles one exact committed payment across restart
   assert.equal((await household.inspect()).actions.find(action => action.key === payment.key).status, 'committed');
 });
 
+test('a lost calendar reply is reconciled against the original entry only after read access returns', async t => {
+  const household = await startHousehold(t);
+  household.operator(['lose-next-reply', 'calendar']);
+  const pending = errand(await household.checkpoint(), 'visit');
+  assert.equal(pending.status, 'booked');
+  assert.equal(pending.issue, 'calendar-unknown');
+  assert.equal(pending.calendarEvent, null);
+  const original = await household.native('visit');
+  const events = original.calendar.filter(event => event.reservationId === pending.reservation.id);
+  assert.equal(events.length, 1);
+  assert.deepEqual(original.attempts.map(({ status }) => status), ['confirmed', 'unknown']);
+  assert.equal((await household.inspect()).actions.find(action => action.operation === 'calendar').status, 'unknown');
+  await household.access(pending, 'calendar', 'withdrawn');
+  await household.restart();
+  const held = errand(await household.checkpoint(), 'visit');
+  assert.equal(held.issue, 'calendar-unknown');
+  assert.equal(held.calendarEvent, null);
+  assert.deepEqual((await household.native('visit')).reads, original.reads);
+  await household.access(held, 'calendar', 'allowed');
+  const recovered = errand(await household.checkpoint(), 'visit');
+  assert.equal(recovered.status, 'verified');
+  assert.equal(recovered.reservation.id, pending.reservation.id);
+  assert.equal(recovered.calendarEvent.id, events[0].id);
+  const final = await household.native('visit');
+  assert.deepEqual(final.reservations, original.reservations);
+  assert.deepEqual(final.calendar, original.calendar);
+  assert.deepEqual(final.attempts, original.attempts);
+});
+
 test('a protected event arriving after booking preserves the original reservation and reports a calendar conflict', async t => {
   const household = await startHousehold(t);
   const provider = household.provider(openVisitFixture);
-  provider.failNextCalendarWrite();
+  assert.deepEqual(household.operator(['fail-next-calendar-write']), { operation: 'calendar', nextWrite: 'will-fail' });
   const booked = errand(await household.checkpoint(), 'visit');
   assert.equal(booked.status, 'booked');
   assert.equal(booked.issue, 'calendar-pending');

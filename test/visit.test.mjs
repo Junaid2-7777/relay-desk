@@ -348,6 +348,42 @@ test('calendar readback reports a protected overlap added just after the calenda
   assert.deepEqual(fixture.inspect().attempts, native.attempts);
 });
 
+test('two runners recover a committed calendar entry without a second calendar write attempt', t => {
+  const clock = () => new Date('2026-11-23T09:00:00+05:30');
+  const dataDir = mkdtempSync(join(tmpdir(), 'relay-calendar-recovery-'));
+  const fixture = openVisitFixture({ dataDir, clock });
+  const record = seedHousehold(clock(), true).find(item => item.kind === 'visit');
+  const first = openVisitJournal(dataDir, () => record, clock);
+  const second = openVisitJournal(dataDir, () => record, clock);
+  t.after(() => {
+    first.close();
+    second.close();
+    fixture.close();
+    rmSync(dataDir, { force: true, recursive: true });
+  });
+  fixture.reset();
+  const lostReply = { ...fixture, addToCalendar(...args) {
+    assert.equal(fixture.addToCalendar(...args).status, 'recorded');
+    throw new Error('Connection closed after the calendar committed');
+  } };
+  let interrupted;
+  const interleaved = { ...first.journal, prepare(id, operation, ...args) {
+    if (operation === 'calendar' && !interrupted) {
+      interrupted = runVisit(record, lostReply, second.journal, clock());
+    }
+    return first.journal.prepare(id, operation, ...args);
+  } };
+  const recovered = runVisit(record, fixture, interleaved, clock());
+  assert.equal(interrupted.issue, 'calendar-unknown');
+  assert.equal(interrupted.calendarEvent, null);
+  assert.equal(recovered.status, 'verified');
+  assert.equal(recovered.calendarEvent.reservationId, interrupted.reservation.id);
+  assert.equal(first.journal.latest(record.id, 'calendar').status, 'recorded');
+  const native = fixture.inspect();
+  assert.deepEqual(native.attempts.map(row => row.operation), ['reserve', 'calendar.add']);
+  assert.equal(native.calendar.filter(event => event.reservationId).length, 1);
+});
+
 test('a legacy offer without an offset cannot take precedence over a valid zoned booking', t => {
   const clock = () => new Date('2026-11-23T09:00:00+05:30');
   const dataDir = mkdtempSync(join(tmpdir(), 'relay-visit-legacy-zone-'));
