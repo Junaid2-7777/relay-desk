@@ -140,10 +140,16 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     }
   }
   const journal = openActionJournal(database, find, transaction, clock);
+  function pendingFollowup(record) {
+    if (!household?.outbox || !record.refund || record.queuedFollowup ||
+        record.refund.reference !== refundFixture?.subject.reference) return null;
+    const action = journal.latest(record.id, 'followup');
+    return ['prepared', 'unknown', 'committed'].includes(action?.status) ? action.payload : null;
+  }
   const brief = () => ({
     today: today(),
     now: clock().toISOString(),
-    errands: orderChecks(list(), household),
+    errands: orderChecks(list().map(record => pendingFollowup(record) ? { ...record, pendingFollowup: true } : record), household),
     fixture: Boolean(refundFixture),
     household: Boolean(household),
     ...(household ? { receiptSources: household.receipt.fixture.sources(), plannerMode: intakePlanner.mode } : {})
@@ -233,6 +239,11 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     },
     draft(id) {
       const errand = find(id);
+      const pending = pendingFollowup(errand);
+      if (pending) {
+        const { recipient, subject, text } = pending;
+        return { recipient, subject, text, pendingFollowup: true };
+      }
       return {
         text: errand.kind === 'refund'
           ? 'Hello, could you check the status of the refund we discussed? Please let me know when it was issued and any reference I can use to find it. Thank you.'
@@ -240,44 +251,105 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
         ...(household?.outbox && errand.refund && errand.status === 'open' && !errand.queuedFollowup ? followupTerms : {})
       };
     },
-    queueFollowup(id, { revision, recipient, subject, text }) {
+    queueFollowup(id, { revision, recipient, subject, text, reconcileOnly = false }) {
       const outbox = household?.outbox.fixture;
-      if (!outbox || recipient !== followupTerms.recipient || subject !== followupTerms.subject ||
+      if (!outbox || !refundFixture || typeof reconcileOnly !== 'boolean' ||
+          recipient !== followupTerms.recipient || subject !== followupTerms.subject ||
           typeof text !== 'string' || !text.trim() || text.length > 4000) {
         throw new DeskError('Review the exact practice recipient, subject and message.');
       }
       const terms = { recipient, subject, text };
       const key = 'followup-' + createHash('sha256').update(JSON.stringify([id, terms])).digest('hex');
-      const record = find(id);
-      if (!record.refund) throw new DeskError('This errand has no practice shop.', 404);
-      const previous = journal.latest(id, 'followup');
-      const existing = previous ? outbox.get(previous.key) : null;
-      if (existing) {
-        if (existing.key !== key) throw new DeskError('A follow-up is already queued for this return.', 409);
-        journal.mark(key, 'committed');
-        return changeCase(id, current => current.queuedFollowup ? current : { ...current, queuedFollowup: existing });
+      const intent = { key, ...terms };
+      const unconfirmed = () => new DeskError('The practice outbox could not confirm the queue. Retry the original draft.', 409);
+      const exactTerms = (message, request) => message?.key === request.key && message.recipient === request.recipient &&
+        message.subject === request.subject && message.text === request.text;
+      function readback(request) {
+        let message;
+        try {
+          message = outbox.get(request.key);
+        } catch {
+          return undefined;
+        }
+        if (message === null) return null;
+        if (!exactTerms(message, request) || message.status !== 'queued' || typeof message.queuedAt !== 'string') return undefined;
+        const queuedAt = new Date(message.queuedAt);
+        return Number.isFinite(+queuedAt) && queuedAt.toISOString() === message.queuedAt
+          ? { ...request, status: 'queued', queuedAt: message.queuedAt } : undefined;
       }
-      requireRevision(record, revision);
-      if (record.status !== 'open') throw new DeskError('This refund no longer needs a follow-up.', 409);
-      if (previous?.status === 'prepared' && previous.key !== key) {
-        throw new DeskError('Retry the original draft before approving different text.', 409);
+      function recover(current, previous) {
+        if (!previous) return current.queuedFollowup ? undefined : null;
+        const queued = readback(previous.payload);
+        if (!queued) {
+          if (queued === null && previous.status !== 'committed' && !current.queuedFollowup) return null;
+          journal.mark(previous.key, 'unknown');
+          return undefined;
+        }
+        journal.mark(previous.key, 'committed');
+        return exactTerms(current.queuedFollowup, queued) && current.queuedFollowup.status === queued.status &&
+          current.queuedFollowup.queuedAt === queued.queuedAt
+          ? current : revise({ ...current, queuedFollowup: queued }, current.revision);
       }
-      journal.prepare(id, 'followup', key, { key, ...terms });
-      const result = journal.dispatch(id, (current, now) => {
+      function verifyResult(result) {
+        if (!result) throw unconfirmed();
+        if (result.queuedFollowup && result.queuedFollowup.key !== key) {
+          throw new DeskError('A follow-up is already queued for this return.', 409);
+        }
+        return result;
+      }
+      function requireOpen(current) {
         requireRevision(current, revision);
+        if (current.status !== 'open') throw new DeskError('This refund no longer needs a follow-up.', 409);
+      }
+
+      const existing = journal.dispatch(id, current => {
+        if (current.refund?.reference !== refundFixture.subject.reference) {
+          throw new DeskError('This errand has no practice shop.', 404);
+        }
+        const previous = journal.latest(id, 'followup');
+        if (reconcileOnly && !exactTerms(previous?.payload, intent)) {
+          throw new DeskError('Review the original approved draft before checking the practice outbox.', 409);
+        }
+        const recovered = recover(current, previous);
+        if (recovered !== null) return recovered;
+        if (reconcileOnly) {
+          journal.mark(previous.key, 'blocked');
+          return { ...current, pendingFollowup: false, followupReconciliation: 'not-queued' };
+        }
+        requireOpen(current);
+        if (previous) journal.mark(previous.key, 'blocked');
+        return null;
+      });
+      if (existing !== null) return verifyResult(existing);
+      try {
+        journal.prepare(id, 'followup', key, intent);
+      } catch (error) {
+        if (error.code === 'operation-pending') throw unconfirmed();
+        throw error;
+      }
+      const result = journal.dispatch(id, (current, _now, readClock) => {
+        const active = journal.latest(id, 'followup');
+        if (active?.key !== key || active.status !== 'prepared') return recover(current, active);
+        requireOpen(current);
         return refundFixture.withinSnapshot(() => {
-          const checked = checkRefund(current, refundFixture, now);
-          const canQueue = checked.status === 'open' && checked.checks.credits?.status !== 'unavailable';
-          const next = canQueue ? {
-            ...checked,
-            queuedFollowup: outbox.enqueue({ key, ...terms }, proposed =>
-              proposed.key === key && proposed.recipient === recipient && proposed.subject === subject && proposed.text === text)
-          } : checked;
-          return next === current ? current : revise(next, current.revision);
+          const checked = checkRefund(current, refundFixture, readClock());
+          const creditCheck = checked.checks?.credits;
+          const creditUnavailable = creditCheck !== current.checks?.credits && creditCheck?.status === 'unavailable';
+          if (checked.status !== 'open' || creditUnavailable) {
+            journal.mark(key, 'blocked');
+            return checked === current ? current : revise(checked, current.revision);
+          }
+          try {
+            outbox.enqueue(intent, proposed => exactTerms(proposed, intent));
+          } catch {
+            // An error can arrive after the provider commits. Only its native readback settles the queue outcome.
+          }
+          const queued = readback(intent);
+          journal.mark(key, queued ? 'committed' : 'unknown');
+          return queued ? revise({ ...checked, queuedFollowup: queued }, current.revision) : undefined;
         });
       });
-      journal.mark(key, result.queuedFollowup ? 'committed' : 'blocked');
-      return result;
+      return verifyResult(result);
     },
     refundAccess(id, { source, choice, revision }) {
       if (!refundSources.includes(source) || !['allowed', 'declined', 'withdrawn'].includes(choice)) {

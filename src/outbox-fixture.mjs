@@ -32,6 +32,7 @@ export function openOutboxFixture({ dataDir, clock = () => new Date() }) {
       code TEXT,
       attemptedAt TEXT NOT NULL
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS outbox_faults (name TEXT PRIMARY KEY) STRICT;
   `);
 
   const find = database.prepare('SELECT * FROM outbox_messages WHERE key = ?');
@@ -39,6 +40,8 @@ export function openOutboxFixture({ dataDir, clock = () => new Date() }) {
   const list = database.prepare('SELECT * FROM outbox_messages ORDER BY rowid');
   const writeAttempt = database.prepare('INSERT INTO outbox_attempts (key, status, code, attemptedAt) VALUES (?, ?, ?, ?)');
   const listAttempts = database.prepare('SELECT key, status, code, attemptedAt FROM outbox_attempts ORDER BY id');
+  const queueFault = database.prepare('INSERT OR IGNORE INTO outbox_faults VALUES (?)');
+  const consumeFault = database.prepare('DELETE FROM outbox_faults WHERE name = ?');
 
   function transaction(action) {
     database.exec('BEGIN IMMEDIATE');
@@ -52,9 +55,16 @@ export function openOutboxFixture({ dataDir, clock = () => new Date() }) {
     }
   }
 
-  function get(key) {
+  function findMessage(key) {
     const row = find.get(key);
     return row ? { ...row } : null;
+  }
+
+  function get(key) {
+    if (consumeFault.run('readback-unavailable').changes) {
+      throw new OutboxFixtureError('read-unavailable', 'The original practice outbox entry could not be checked.');
+    }
+    return findMessage(key);
   }
 
   function enqueue({ key, recipient, subject, text }, authorize) {
@@ -69,7 +79,7 @@ export function openOutboxFixture({ dataDir, clock = () => new Date() }) {
         log('blocked', code);
         return { error: new OutboxFixtureError(code, message) };
       };
-      const original = get(key);
+      const original = findMessage(key);
       if (original) {
         if (original.recipient !== recipient || original.subject !== subject || original.text !== text) {
           return block('operation-mismatch', 'The message key already belongs to a different draft.');
@@ -91,21 +101,27 @@ export function openOutboxFixture({ dataDir, clock = () => new Date() }) {
       }
       const queuedAt = clock().toISOString();
       insert.run(key, recipient, subject, text, queuedAt);
-      log('committed');
-      return { message: { ...draft, status: 'queued', queuedAt } };
+      const replyLost = consumeFault.run('reply-lost').changes > 0;
+      log('committed', replyLost ? 'reply-lost' : null);
+      return { message: { ...draft, status: 'queued', queuedAt }, replyLost };
     });
     if ('error' in result) throw result.error;
+    if (result.replyLost) {
+      throw new OutboxFixtureError('outcome-unknown', 'The practice outbox response did not arrive. Check the original draft.');
+    }
     return result.message;
   }
 
   return {
-    reset: () => transaction(() => database.exec('DELETE FROM outbox_messages; DELETE FROM outbox_attempts;')),
+    reset: () => transaction(() => database.exec('DELETE FROM outbox_messages; DELETE FROM outbox_attempts; DELETE FROM outbox_faults;')),
     enqueue,
     get,
     inspect: () => ({
       messages: list.all().map(row => ({ ...row })),
       attempts: listAttempts.all().map(row => ({ ...row }))
     }),
+    failNextReply: () => { queueFault.run('reply-lost'); },
+    failNextReadback: () => { queueFault.run('readback-unavailable'); },
     close: () => database.close()
   };
 }

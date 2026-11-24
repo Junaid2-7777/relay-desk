@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -6,6 +7,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { mondayBill, openBillFixture } from '../src/bill-fixture.mjs';
+import { openOutboxFixture } from '../src/outbox-fixture.mjs';
 import { mondayRefund, openRefundFixture } from '../src/refund-fixture.mjs';
 import { createDeskServer } from '../src/server.mjs';
 import { mondayVisit, openVisitFixture } from '../src/visit-fixture.mjs';
@@ -92,7 +94,7 @@ async function startHousehold(t, warm = true) {
       choice, revision: errand.revision
     }),
     draft: errand => request(`/api/errands/${errand.id}/draft`, {}),
-    queue: (errand, terms) => request(`/api/errands/${errand.id}/queue-followup`, { revision: errand.revision, ...terms }),
+    queue: (errand, terms, status) => request(`/api/errands/${errand.id}/queue-followup`, { revision: errand.revision, ...terms }, status),
     billChoice: (errand, choice, status) => request('/api/errands/demo-bill/bill-choice', {
       choice, revision: errand.revision
     }, status),
@@ -501,4 +503,77 @@ test('a practice reset clears the refund follow-up journal as well as the native
   const updated = await household.queue(reset, newDraft);
   assert.equal(updated.queuedFollowup.text, newDraft.text);
   assert.deepEqual((await household.native('outbox')).messages, [updated.queuedFollowup]);
+});
+
+test('an ambiguous outbox reply remains unknown across restart until the exact original is recovered', async t => {
+  const household = await startHousehold(t);
+  const fixture = household.provider(openOutboxFixture);
+  const refund = errand(await household.desk(), 'refund');
+  const draft = { ...await household.draft(refund), text: 'May I have the transfer reference, please?' };
+  fixture.failNextReply();
+  fixture.failNextReadback();
+
+  const uncertain = await household.queue(refund, draft, 409);
+  assert.match(uncertain.error, /original draft/i);
+  const waiting = errand(await household.desk(), 'refund');
+  assert.equal(waiting.queuedFollowup, undefined);
+  assert.equal(waiting.pendingFollowup, true);
+  assert.equal((await household.inspect()).actions.find(action => action.operation === 'followup').status, 'unknown');
+  const committed = await household.native('outbox');
+  assert.equal(committed.messages.length, 1);
+  assert.equal(committed.attempts.length, 1);
+  assert.equal(committed.attempts[0].code, 'reply-lost');
+
+  await household.restart(tuesday);
+  const stopped = await household.tracking(errand(await household.desk(), 'refund'), 'stop');
+  const beforeRecovery = await household.native('refund');
+  assert.equal(errand(await household.desk(), 'refund').pendingFollowup, true);
+  const restoredDraft = await household.draft(stopped);
+  assert.deepEqual(restoredDraft, { ...draft, pendingFollowup: true });
+  assert.deepEqual(await household.native('outbox'), committed);
+  assert.deepEqual(await household.native('refund'), beforeRecovery);
+  await household.queue(stopped, { ...restoredDraft, text: draft.text + ' ', reconcileOnly: true }, 409);
+  const recovered = await household.queue(refund, { ...restoredDraft, reconcileOnly: true });
+  assert.equal(recovered.status, stopped.status);
+  assert.deepEqual(recovered.queuedFollowup, committed.messages[0]);
+  assert.equal(errand(await household.desk(), 'refund').pendingFollowup, undefined);
+  assert.deepEqual(await household.native('refund'), beforeRecovery);
+  await household.queue(recovered, { ...draft, text: draft.text + ' ' }, 409);
+  assert.deepEqual(await household.native('outbox'), committed);
+  assert.equal((await household.inspect()).actions.find(action => action.operation === 'followup').status, 'committed');
+});
+
+test('outbox readback with the same key and different text cannot present a draft as queued', async t => {
+  const household = await startHousehold(t);
+  const fixture = household.provider(openOutboxFixture);
+  const refund = errand(await household.desk(), 'refund');
+  const { recipient, subject, text } = await household.draft(refund);
+  const draft = { recipient, subject, text };
+  const key = 'followup-' + createHash('sha256').update(JSON.stringify([refund.id, draft])).digest('hex');
+  const seeded = fixture.enqueue({ ...draft, key, text: 'Synthetic conflicting native text.' }, () => true);
+
+  await household.queue(refund, draft, 409);
+  await household.restart(tuesday);
+  await household.queue(refund, draft, 409);
+  assert.equal(errand(await household.desk(), 'refund').queuedFollowup, undefined);
+  assert.deepEqual((await household.native('outbox')).messages, [seeded]);
+  assert.equal((await household.inspect()).actions.find(action => action.operation === 'followup').status, 'unknown');
+});
+
+test('a fresh credit outage holds a follow-up but a withdrawn read cannot reuse the stale outage', async t => {
+  const household = await startHousehold(t);
+  household.provider(openRefundFixture).setAvailable('credits', false);
+  const refund = errand(await household.desk(), 'refund');
+  const draft = await household.draft(refund);
+  const held = await household.queue(refund, draft);
+  assert.equal(held.checks.credits.status, 'unavailable');
+  assert.equal(held.queuedFollowup, undefined);
+  assert.deepEqual((await household.native('outbox')).attempts, []);
+
+  const withdrawn = await household.refundAccess(held, 'credits', 'withdrawn');
+  const before = await household.native('refund');
+  const queued = await household.queue(withdrawn, draft);
+  assert.equal(queued.queuedFollowup.text, draft.text);
+  assert.deepEqual((await household.native('refund')).reads.slice(before.reads.length).map(({ source }) => source), ['merchant']);
+  assert.deepEqual((await household.native('outbox')).messages, [queued.queuedFollowup]);
 });
