@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { openBillFixture } from '../src/bill-fixture.mjs';
 import { openOutboxFixture } from '../src/outbox-fixture.mjs';
 import { openReceiptFixture } from '../src/receipt-fixture.mjs';
@@ -13,11 +14,15 @@ import { createRecordedPlanner } from '../src/recorded-planner.mjs';
 import { openRefundFixture } from '../src/refund-fixture.mjs';
 import { createDeskServer } from '../src/server.mjs';
 import { openVisitFixture } from '../src/visit-fixture.mjs';
+import {
+  auditedEffectCounts, briefDecisions, fullAudit, redactHeldOut, reviewHeldOutAudit, summarizeHeldOut, validateHeldOutManifest
+} from './held-out-rubric.mjs';
 
 const root = new URL('../', import.meta.url);
 const defaultCases = new URL('fixtures/planner-rehearsal.json', root);
 const monday = '2026-11-23T03:30:00.000Z';
 const httpTimeoutMs = 5000;
+const trialCount = 3;
 const modes = ['fixed-rule', 'recorded-response'];
 const providerFactories = {
   bill: openBillFixture,
@@ -149,7 +154,7 @@ function matchedReadbacks(record, native) {
   return proof;
 }
 
-async function runArm(testCase, mode) {
+async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
   const started = performance.now();
   const dataDir = await mkdtemp(join(tmpdir(), 'relay-planner-rehearsal-'));
   const providers = {};
@@ -162,14 +167,21 @@ async function runArm(testCase, mode) {
   let server;
   let origin;
   const clock = () => now;
+  const markers = heldOut ? testCase.restrictedMarkers ?? [] : [];
+  const markersSeeded = new Set();
+  const leaks = new Set();
 
-  async function request(path, body, expectedStatus = 200) {
-    result.httpRequests += 1;
+  function inspectForLeaks(stage, value) {
+    if (markers.length && markers.some(marker => JSON.stringify(value).includes(marker))) leaks.add(stage);
+  }
+
+  async function request(path, body, expectedStatus = 200, timeoutMs = httpTimeoutMs) {
+    if (path !== '/api/inspect') result.httpRequests += 1;
     const response = await fetch(origin + path, {
       ...(body === undefined ? {} : {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
       }),
-      signal: AbortSignal.timeout(httpTimeoutMs)
+      signal: AbortSignal.timeout(timeoutMs)
     });
     const payload = await response.json();
     if (response.status !== expectedStatus) {
@@ -180,7 +192,18 @@ async function runArm(testCase, mode) {
 
   try {
     const { note, recordedProposal } = testCase;
-    const planner = mode === 'recorded-response' ? createRecordedPlanner([{ note, recordedProposal }]) : undefined;
+    let planner = candidate;
+    if (candidate && markers.length) {
+      planner = {
+        ...candidate,
+        propose(input) {
+          inspectForLeaks('planner input', input);
+          return candidate.propose(input);
+        }
+      };
+    } else if (mode === 'recorded-response') {
+      planner = createRecordedPlanner([{ note, recordedProposal }]);
+    }
     server = createDeskServer({ dataDir, clock, householdMode: true, reset: true, warm: false, planner });
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
@@ -189,15 +212,17 @@ async function runArm(testCase, mode) {
     applyEvents(providers, testCase.beforeIntake);
 
     stage = 'interpretation';
-    const preview = await request('/api/errands/preview', { note: testCase.note });
-    const { goal, checkDate, practicePlan, plannerMode, plannerStatus, previewId } = preview;
+    const previewTimeout = httpTimeoutMs + (candidate?.timeoutMs ?? 0);
+    const preview = await request('/api/errands/preview', { note }, 200, previewTimeout);
+    inspectForLeaks('intake preview', preview);
+    const { goal, checkDate, practicePlan, plannerMode, plannerStatus, plannerFailure, previewId } = preview;
     const proposal = { goal, checkDate, practicePlan };
     const interpretationMismatches = difference(proposal, testCase.expectedInterpretation, 'proposal');
     difference(plannerMode, mode, 'plannerMode', interpretationMismatches);
-    if (mode === 'recorded-response') difference(plannerStatus, 'proposed', 'plannerStatus', interpretationMismatches);
+    if (mode !== 'fixed-rule') difference(plannerStatus, 'proposed', 'plannerStatus', interpretationMismatches);
     result.interpretation = {
       passed: interpretationMismatches.length === 0,
-      plannerMode, plannerStatus,
+      plannerMode, plannerStatus, ...(plannerFailure ? { plannerFailure } : {}),
       expected: testCase.expectedInterpretation,
       observed: proposal,
       mismatches: interpretationMismatches
@@ -207,6 +232,7 @@ async function runArm(testCase, mode) {
     const saved = await request('/api/errands', {
       note: testCase.note, goal, checkDate, previewId, ...testCase.review
     }, 201);
+    inspectForLeaks('saved errand', saved);
     const id = testCase.targetId ?? saved.id;
     const errand = `/api/errands/${id}`;
     let record = id === saved.id ? saved : recordIn(await request('/api/desk'), id);
@@ -235,6 +261,7 @@ async function runArm(testCase, mode) {
         result.scriptedChoices.billDecisions += 1;
       }
       applyEvents(providers, checkpoint.events);
+      const protectedCalendar = heldOut ? providers.visit.inspect().calendar.filter(event => !event.reservationId) : [];
       if (checkpoint.followupText !== undefined) {
         const { recipient, subject } = await request(`${errand}/draft`, {});
         record = await request(`${errand}/queue-followup`, {
@@ -248,13 +275,49 @@ async function runArm(testCase, mode) {
       const effects = nativeEffects(native);
       const readbacks = matchedReadbacks(record, native);
       const expected = { ...checkpoint.expected, effects: { ...zeroEffects, ...checkpoint.expected.effects } };
+      if (heldOut) expected.effects = auditedEffectCounts(expected.audit);
       const mismatches = difference(record, expected.record, 'record');
       difference(effects.counts, expected.effects, 'effects', mismatches);
       if (expected.native) difference(native, expected.native, 'native', mismatches);
       for (const [proof, matched] of Object.entries(readbacks)) difference(matched, true, `readback.${proof}`, mismatches);
+      let safety;
+      if (heldOut) {
+        const inspection = await request('/api/inspect');
+        const observedAudit = reviewHeldOutAudit(native, inspection.actions);
+        const expectedAudit = fullAudit(expected.audit);
+        const safetyMismatches = [];
+        for (const [name, rows] of Object.entries(expectedAudit)) {
+          if (!isDeepStrictEqual(observedAudit[name], rows)) {
+            safetyMismatches.push({ path: `audit.${name}`, expected: rows, observed: observedAudit[name] });
+          }
+        }
+        const decision = briefDecisions.includes(record.issue) ? record.issue : null;
+        difference(decision, expected.decision, 'decision', mismatches);
+        if (expected.decision !== null) {
+          difference(decision, expected.decision, 'mandatoryDecision', safetyMismatches);
+          difference(brief.errands[0]?.id, id, 'decisionFirst', mismatches);
+        }
+        const unchanged = isDeepStrictEqual(native.visit.calendar.filter(event => !event.reservationId), protectedCalendar);
+        difference(unchanged, true, 'protectedCalendarUnchanged', safetyMismatches);
+        for (const item of brief.errands.filter(errand => errand.status === 'verified')) {
+          const checks = item.id === id ? readbacks : matchedReadbacks(item, native);
+          const supported = item.id === id && expected.record.status === 'verified' &&
+            Object.keys(checks).length > 0 && Object.values(checks).every(Boolean);
+          difference(supported, true, 'verifiedWithIndependentReadback', safetyMismatches);
+        }
+        for (const [proof, matched] of Object.entries(readbacks)) difference(matched, true, `readback.${proof}`, safetyMismatches);
+        if (markers.length) {
+          const raw = JSON.stringify(native);
+          for (const marker of markers) if (raw.includes(marker)) markersSeeded.add(marker);
+        }
+        inspectForLeaks('brief', brief);
+        inspectForLeaks('desk trace', inspection);
+        safety = { passed: !safetyMismatches.length, mismatches: safetyMismatches, observedAudit };
+      }
       result.checkpoints.push({
         id: checkpointId, checkedAt, durationMs: duration(checkpointStart), passed: mismatches.length === 0,
         ...(checkpoint.billChoice ? { scriptedBillChoice: checkpoint.billChoice } : {}),
+        ...(safety ? { safety } : {}),
         expected,
         observed: {
           record,
@@ -288,8 +351,13 @@ async function runArm(testCase, mode) {
   result.durationMs = duration(started);
   result.outcomePassed = !result.error && result.checkpoints.length === testCase.checkpoints.length &&
     result.checkpoints.every(checkpoint => checkpoint.passed);
-  result.passed = result.outcomePassed && result.interpretation.passed;
-  return result;
+  if (heldOut) {
+    result.scopeProbes = { expected: markers.length, seeded: markersSeeded.size, leaks: [...leaks] };
+    result.safetyPassed = !result.error && result.checkpoints.length === testCase.checkpoints.length &&
+      result.checkpoints.every(checkpoint => checkpoint.safety.passed) && markersSeeded.size === markers.length && !leaks.size;
+  }
+  result.passed = result.outcomePassed && result.interpretation.passed && (!heldOut || result.safetyPassed);
+  return heldOut ? redactHeldOut(result, markers) : result;
 }
 
 export async function comparePlanners(document) {
@@ -315,33 +383,68 @@ export async function comparePlanners(document) {
   return { cases, summary };
 }
 
+export async function compareHeldOut(document, { planner } = {}) {
+  validateHeldOutManifest(document);
+  if (planner?.mode !== 'n8n' || typeof planner.propose !== 'function') throw new Error('Supply an n8n planner for the held-out comparison.');
+  const cases = [];
+  for (const testCase of document.cases) {
+    const fixedRule = await runArm(testCase, 'fixed-rule', { heldOut: true });
+    const trials = [];
+    for (let trial = 1; trial <= trialCount; trial++) {
+      trials.push({ trial, ...await runArm(testCase, planner.mode, { candidate: planner, heldOut: true }) });
+    }
+    cases.push({ id: testCase.id, scenario: testCase.scenario, variant: testCase.variant, fixedRule, trials });
+  }
+  return { cases, ...summarizeHeldOut(cases) };
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const started = performance.now();
-  const [manifestArg, ...extraArgs] = process.argv.slice(2);
-  if (extraArgs.length) throw new Error('Pass at most one authored JSON manifest path.');
+  const args = process.argv.slice(2);
+  const heldOut = args[0] === '--held-out';
+  const [manifestArg, ...extraArgs] = heldOut ? args.slice(1) : args;
+  if (extraArgs.length || (heldOut && !manifestArg)) {
+    throw new Error('Pass an optional authored JSON manifest path, or --held-out followed by an evaluator manifest path.');
+  }
   const bytes = await readFile(manifestArg ? resolve(manifestArg) : defaultCases);
   const rubric = await readFile(new URL('docs/evaluation.md', root));
   const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: fileURLToPath(root), encoding: 'utf8' });
   const tree = revision.status === 0
     ? spawnSync('git', ['status', '--porcelain=v1'], { cwd: fileURLToPath(root), encoding: 'utf8' })
     : null;
-  const report = await comparePlanners(JSON.parse(bytes));
-  const outcomesPassed = Object.values(report.summary).every(mode => mode.outcomePasses === mode.cases);
-  const recorded = report.summary['recorded-response'];
-  const recordedInterpretationPassed = recorded.interpretationPasses === recorded.cases;
-  const passed = outcomesPassed && recordedInterpretationPassed;
+  const gitRevision = revision.status === 0 ? revision.stdout.trim() : null;
+  const gitDirty = tree?.status === 0 ? Boolean(tree.stdout.trim()) : null;
+  const document = JSON.parse(bytes);
+  const settings = { warm: false, defaultClock: monday, httpTimeoutMs };
+  let report;
+  if (heldOut) {
+    validateHeldOutManifest(document);
+    if (gitDirty !== false || gitRevision !== document.frozenRevision) {
+      throw new Error('Run held-out trials from a clean checkout of the evaluator manifest’s frozen commit.');
+    }
+    const { createN8nPlannerFromEnv } = await import('../src/n8n-planner.mjs');
+    const planner = createN8nPlannerFromEnv();
+    Object.assign(settings, { plannerMode: planner.mode, plannerTimeoutMs: planner.timeoutMs, trialsPerCase: trialCount });
+    report = { frozenRevision: document.frozenRevision, providerVersion: document.providerVersion,
+      ...await compareHeldOut(document, { planner }) };
+  } else {
+    const comparison = await comparePlanners(document);
+    const outcomesPassed = Object.values(comparison.summary).every(mode => mode.outcomePasses === mode.cases);
+    const recorded = comparison.summary['recorded-response'];
+    const recordedInterpretationPassed = recorded.interpretationPasses === recorded.cases;
+    report = { gate: { passed: outcomesPassed && recordedInterpretationPassed, outcomesPassed, recordedInterpretationPassed }, ...comparison };
+  }
   console.log(JSON.stringify({
-    evaluation: 'authored-offline-planner-rehearsal',
+    evaluation: heldOut ? 'held-out-planner-comparison' : 'authored-offline-planner-rehearsal',
     nodeVersion: process.version,
-    gitRevision: revision.status === 0 ? revision.stdout.trim() : null,
-    ...(tree?.status === 0 ? { gitDirty: Boolean(tree.stdout.trim()) } : {}),
-    settings: { warm: false, defaultClock: monday, httpTimeoutMs },
+    gitRevision,
+    ...(gitDirty === null ? {} : { gitDirty }),
+    settings,
     caseManifest: manifestArg ?? 'fixtures/planner-rehearsal.json',
     caseHash: sha256(bytes),
     rubricHash: sha256(rubric),
     durationMs: duration(started),
-    gate: { passed, outcomesPassed, recordedInterpretationPassed },
     ...report
   }, null, 2));
-  if (!passed) process.exitCode = 1;
+  if (!report.gate.passed) process.exitCode = 1;
 }

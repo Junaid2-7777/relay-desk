@@ -12,6 +12,8 @@ Start with “The shop said it would refund me. Can you help me check on Friday?
 - Seed the electricity account with its ₹900 limit. Deliver the ₹850 invoice and its replacement for ₹1,180 **before the first payment decision**. Both versions refer to the same unpaid bill.
 - Start with no booking, no managed service-visit calendar entry and no bill payment. Give the judge separate controls over the provider records. The agent can inspect those records and exercise its own scoped tools. Only the responsible provider can issue a settlement, booking confirmation or account-closure record. [Proposed architecture](architecture.md)
 
+Run `npm run demo:evidence -- unrelated-credit` and `npm run demo:evidence -- matching-credit` from a second terminal while the practice desk is open. Choose **Check your errands** after each event and compare the brief with `/api/fixture/refund`. After a practice payment is accepted, `npm run demo:evidence -- settle-bill` publishes the biller's matching settlement. For the library example, save “Track my membership with Practice library reference member-17 until it is closed”, confirm the receipt plan for `member-17`, and allow its read. Publish `membership-acknowledged` and then `membership-closed` through the same command and check after each. These commands write synthetic records directly to the fixture stores. They target `.relay/demo` by default. For another practice directory, set `RELAY_DATA_DIR` in the operator terminal. Match the running desk's `RELAY_CLOCK` if it overrides the fixture date.
+
 ## Follow the session
 
 | Time | What happens on screen | What the audience can verify |

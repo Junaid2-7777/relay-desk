@@ -31,6 +31,8 @@ Run `npm run evaluate` for automated checks, or `npm run compare:planners` to re
 
 Run `npm run compare:morning` to compare scripted manual follow-up with fixed rules for the cold and warm practice mornings. [Scripted morning baseline](docs/evaluation.md#scripted-morning-baseline)
 
+Run `npm run compare:held-out -- .relay/evaluator.json` after freezing the build and collecting the evaluator's synthetic cases. The command pairs three n8n trials per case with a fixed-rule run. [Held-out comparison guide](docs/held-out.md)
+
 ## When you want Relay to take more off your hands
 
 Suppose you’ve asked Relay to watch a return, book a free broadband visit on Tuesday afternoon and pay your electricity bill up to ₹900. Here is the proposed morning brief for one synthetic household.
@@ -51,7 +53,7 @@ The evaluation asks someone outside the team to supply an unfamiliar errand afte
 
 ## Project materials
 
-Prepared for **Homingo Hack Days, Agents A3 · A personal staff for everyone**. The practice build uses synthetic records and amounts. Live model evaluation, participant testing and the submission video are planned. Codex assisted with research, writing, design and implementation. [Official brief](https://hackathon.homingo.co.in/hackathons/edition-01/problem-statements#a3)
+Prepared for **Homingo Hack Days, Agents A3 · A personal staff for everyone**. The practice build uses synthetic records and amounts. Live model evaluation and participant testing are pending. Codex assisted with research, writing, design and implementation. [Official brief](https://hackathon.homingo.co.in/hackathons/edition-01/problem-statements#a3)
 
 - [A3 design audit](docs/decision.md) · [Research and provider sources](docs/sources.md) · [Everyday experience](docs/experience.md)
 - [Build order](roadmap.md) · [First build review](docs/build.md) · [Contributor guide](agents.md)

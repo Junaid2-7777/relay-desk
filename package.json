@@ -9,7 +9,9 @@
     "test": "node --test",
     "evaluate": "node scripts/evaluate.mjs",
     "compare:planners": "node scripts/compare-planners.mjs",
+    "compare:held-out": "node scripts/compare-planners.mjs --held-out",
     "compare:morning": "node scripts/compare-morning.mjs",
+    "demo:evidence": "node scripts/demo-evidence.mjs",
     "demo": "node src/server.mjs --fixture",
     "reset": "node src/server.mjs --fixture --reset"
   }

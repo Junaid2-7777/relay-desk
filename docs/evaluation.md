@@ -4,7 +4,7 @@ The proposed release must carry several duties at once, bring the right exceptio
 
 ## Local rehearsal
 
-Run `npm run evaluate` with Node.js 24 or newer. Keep the test output and its revision, fixture, test source and rubric hashes with any result you share. The suite uses the fixed-rule desk, isolated data directories and independent native records. It covers first use, cold and warm starts, refund identity and exact outbox approval, booking and calendar recovery, invoice changes and settlement, and a disconnected feed. The receipt and new booking examples are authored transfer rehearsals.
+Run `npm run evaluate` with Node.js 24 or newer. Keep the test output and its revision, fixture, test source and rubric hashes with any result you share. The suite uses isolated data directories and independent native records. It covers first use, cold and warm starts, refund identity and exact outbox approval, booking and calendar recovery, invoice changes and settlement, and a disconnected feed. The receipt and new booking examples are authored transfer rehearsals. The n8n adapter and the held-out runner have local mock tests.
 
 The release evidence requires independently supplied tasks after a freeze, matched manual and model-backed runs, and sessions with people for effort and usability observations. [Run the local build](build.md#run-the-local-build)
 
@@ -15,6 +15,8 @@ Run `npm run compare:planners` for the offline comparison. The manifest covers t
 The JSON report includes the revision, settings, case and rubric hashes, interpretation mismatches, checkpoint states, native receipts and write attempts. Consent and scripted decisions are counted separately from HTTP requests. A fixture outcome failure or a mismatch in authored playback makes the command exit nonzero. Fixed-rule interpretation misses remain visible in the report.
 
 To replay another authored synthetic suite, pass its path after `npm run compare:planners --`. Keep each note and recorded proposal separate from the grading fields in the manifest. Authored playback exercises the harness. A live provider run and independently supplied tasks are needed to measure model interpretation.
+
+Run `npm run compare:held-out -- .relay/evaluator.json` with a published practice workflow and an independent manifest. The runner reports the initial interpretation, the outcome after the supplied household choices and the provider audit at each checkpoint. Live cases require one fixed-rule run and three fresh model trials each. [Held-out comparison guide](held-out.md)
 
 ## Scripted morning baseline
 
