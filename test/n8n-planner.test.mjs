@@ -366,12 +366,13 @@ test('an exported n8n workflow is checked offline without exposing its contents 
     ['reply behavior', /JSON response version or parameters/, workflow => { workflow.nodes[3].typeVersion = 1; }],
     ['pinned notes', /pinned data or workflow state/, workflow => { workflow.pinData[workflow.nodes[0].name] = [{ json: { note: secret } }]; }]
   ];
-  for (const [name, message, mutate] of drift) {
+  for (const [index, [name, message, mutate]] of drift.entries()) {
     await t.test(name, async () => {
       const changed = structuredClone(template);
       mutate(changed);
-      await writeFile(filename, JSON.stringify(changed));
-      const output = await run(['--workflow', filename]);
+      const variant = join(directory, `${secret}-${index}.json`);
+      await writeFile(variant, JSON.stringify(changed));
+      const output = await run(['--workflow', variant]);
       assert.equal(output.status, 1);
       assert.match(output.stderr, message);
     });
