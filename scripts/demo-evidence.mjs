@@ -10,13 +10,17 @@ import { mondayVisit, openVisitFixture } from '../src/visit-fixture.mjs';
 const dataDir = resolve(process.env.RELAY_DATA_DIR ?? '.relay/demo');
 const clock = new Date(process.env.RELAY_CLOCK ?? '2026-11-23T09:00:00+05:30');
 const actions = new Map([
-  ['unrelated-credit', () => postCredit(false)],
-  ['matching-credit', () => postCredit(true)],
-  ['settle-bill', settleBill],
-  ['visit-conflict', () => publishVisitConflict(false)],
-  ['visit-conflict-moved', () => publishVisitConflict(true)],
-  ['membership-acknowledged', () => postMembership(false)],
-  ['membership-closed', () => postMembership(true)]
+  ['unrelated-credit', [() => postCredit(false)]],
+  ['matching-credit', [() => postCredit(true)]],
+  ['settle-bill', [settleBill]],
+  ['visit-conflict', [() => publishVisitConflict(false)]],
+  ['visit-conflict-moved', [() => publishVisitConflict(true)]],
+  ['membership-acknowledged', [() => postMembership(false)]],
+  ['membership-closed', [() => postMembership(true)]],
+  ['receipt-source', [registerIssuer, 'ISSUER', 'LABEL']],
+  ['receipt-record', [publishReceipt, 'ISSUER', 'SUBJECT', 'TYPE', 'STATUS', 'RECEIPT_ID']],
+  ['receipt-offline', [issuer => issuerAvailability(issuer, false), 'ISSUER']],
+  ['receipt-online', [issuer => issuerAvailability(issuer, true), 'ISSUER']]
 ]);
 
 function withFixture(open, tableFile, write) {
@@ -84,25 +88,31 @@ function publishVisitConflict(moved) {
 }
 
 function postMembership(closed) {
-  const receipt = {
-    id: closed ? 'demo-library-closure' : 'demo-library-acknowledgement',
-    issuer: practiceReceiptSource.issuer, subject: 'member-17',
-    type: closed ? 'receipt' : 'acknowledgement', status: closed ? 'closed' : 'received', occurredAt: clock.toISOString()
-  };
-  return withFixture(openReceiptFixture, 'providers.sqlite', fixture => {
-    if (!fixture.sources().some(source => source.issuer === receipt.issuer)) {
-      throw new Error('Reset the practice household to register the library fixture.');
-    }
-    fixture.putReceipt(receipt);
-    return receipt;
-  });
+  return publishReceipt(practiceReceiptSource.issuer, 'member-17',
+    closed ? 'receipt' : 'acknowledgement', closed ? 'closed' : 'received',
+    closed ? 'demo-library-closure' : 'demo-library-acknowledgement');
+}
+
+function registerIssuer(issuer, label) {
+  return withFixture(openReceiptFixture, 'providers.sqlite', fixture => fixture.putSource({ issuer, label }));
+}
+
+function publishReceipt(issuer, subject, type, status, id) {
+  return withFixture(openReceiptFixture, 'providers.sqlite', fixture =>
+    fixture.putReceipt({ issuer, subject, type, status, id, occurredAt: clock.toISOString() }));
+}
+
+function issuerAvailability(issuer, available) {
+  return withFixture(openReceiptFixture, 'providers.sqlite', fixture => fixture.setAvailable(issuer, available));
 }
 
 const [choice, ...extra] = process.argv.slice(2);
 try {
-  if (!actions.has(choice) || extra.length) throw new Error(`Choose one practice event (${[...actions.keys()].join(', ')}).`);
+  if (!actions.has(choice)) throw new Error(`Choose one practice event (${[...actions.keys()].join(', ')}).`);
+  const [publish, ...parameters] = actions.get(choice);
+  if (extra.length !== parameters.length) throw new Error(`Use: npm run demo:evidence -- ${[choice, ...parameters].join(' ')}`);
   if (!Number.isFinite(+clock)) throw new Error('Set RELAY_CLOCK to the ISO timestamp used by the practice desk.');
-  console.log(JSON.stringify(actions.get(choice)(), null, 2));
+  console.log(JSON.stringify(publish(...extra), null, 2));
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;

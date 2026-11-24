@@ -31,7 +31,7 @@ Open checks in the private desk appear in check-date order. On the date chosen f
 
 In the practice desk, **Edit receipt check** lets the person correct an open errand’s issuer, reference, record type or required status. A change of issuer or reference withdraws access to the old record and clears its last check. A change to the proof required from the same record preserves its scoped permission. The original note and check date stay on the card.
 
-To rehearse a new errand, save “Track my membership with Practice library reference member-17 until it is closed.” Open **Set up a practice check** and confirm the issuer, reference, record type and expected status. The suggestion uses fixed rules. After saving, allow just the issuer receipt and select **Check your errands**. An evaluator can publish an acknowledgement or closure through `openReceiptFixture` and inspect the native records at `/api/fixture/receipt`. Run `node --test test/transfer-flow.test.mjs` to replay the receipt, unavailable issuer and new booking subjects without manual setup.
+To rehearse a new errand, save “Track my membership with Practice library reference member-17 until it is closed.” Open **Set up a practice check** and confirm the issuer, reference, record type and expected status. After saving, allow just the issuer receipt and select **Check your errands**. The operator can register a different synthetic issuer, publish an acknowledgement or matching receipt, and disconnect or restore the source through `npm run demo:evidence`. Inspect the native records at `/api/fixture/receipt`. Run `node --test test/transfer-flow.test.mjs` to replay receipt and booking cases. [Rehearse a new issuer](demo.md#try-an-issuer-of-your-own)
 
 ## Seed one Monday
 

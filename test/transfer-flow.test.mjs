@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -57,6 +58,13 @@ async function rehearsal(t) {
   await open(true);
 
   return {
+    publish(...args) {
+      const output = execFileSync(process.execPath, ['scripts/demo-evidence.mjs', ...args], {
+        cwd: new URL('../', import.meta.url), encoding: 'utf8',
+        env: { ...process.env, RELAY_DATA_DIR: dataDir, RELAY_CLOCK: time }
+      });
+      return JSON.parse(output);
+    },
     provider(openFixture) {
       const provider = openFixture({ dataDir, clock });
       providers.push(provider);
@@ -163,18 +171,21 @@ test('a disconnected issuer preserves the last successful check and cannot verif
   const plan = { ...membershipProof, issuer: 'practice-fitness-office' };
   const configured = await desk.setup(saved, { ...plan, capability: 'receipt' });
   assert.equal(configured.issue, 'evidence-needed');
-  provider.putSource({ issuer: plan.issuer, label: 'Practice fitness office' });
+  assert.deepEqual(desk.publish('receipt-source', plan.issuer, 'Practice fitness office'), {
+    issuer: plan.issuer, label: 'Practice fitness office'
+  });
   const available = recordFrom(await desk.checkpoint('discover'), saved.id);
   assert.equal(available.owner, 'Practice fitness office');
   assert.equal(available.issue, 'receipt-permission');
   assert.deepEqual(provider.inspect().reads, []);
   await desk.allow(available, 'receipt');
-  provider.putReceipt({ ...plan, type: 'acknowledgement', status: 'received', occurredAt: monday, id: 'practice-ack' });
+  desk.publish('receipt-record', plan.issuer, plan.subject, 'acknowledgement', 'received', 'practice-ack');
   const waiting = recordFrom(await desk.checkpoint('initial'), saved.id);
   assert.deepEqual(waiting.receiptCheck, { checkedAt: monday, lastEventAt: monday });
-  provider.setAvailable(plan.issuer, false);
-  provider.putReceipt({ ...plan, id: 'practice-closure', occurredAt: friday });
+  assert.deepEqual(desk.publish('receipt-offline', plan.issuer), { issuer: plan.issuer, available: false });
   await desk.restart(friday);
+  const receipt = desk.publish('receipt-record', plan.issuer, plan.subject, plan.type, plan.status, 'practice-closure');
+  assert.equal(receipt.occurredAt, friday);
   const failure = recordFrom(await desk.checkpoint('friday-read'), saved.id);
   assert.equal(failure.issue, 'receipt-unavailable');
   assert.equal(failure.status, 'open');
@@ -187,7 +198,7 @@ test('a disconnected issuer preserves the last successful check and cannot verif
     ['unavailable', plan.issuer, plan.subject], ['unavailable', plan.issuer, plan.subject]
   ]);
   await desk.restart(friday);
-  provider.setAvailable(plan.issuer, true);
+  assert.deepEqual(desk.publish('receipt-online', plan.issuer), { issuer: plan.issuer, available: true });
   assert.deepEqual(recordFrom(await desk.checkpoint('friday-read'), saved.id), failure);
   assert.deepEqual(provider.inspect().reads, failedReads);
   const recovered = recordFrom(await desk.checkpoint('manual-retry'), saved.id);

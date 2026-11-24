@@ -95,7 +95,9 @@ export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
     if (typeof label !== 'string' || !label.trim() || label.trim().length > 100) {
       throw new ReceiptPlanError('Enter a source label with up to 100 characters.');
     }
-    insertSource.run(receiptIdentifier(issuer, 'an issuer identifier'), label.trim());
+    const source = { issuer: receiptIdentifier(issuer, 'an issuer identifier'), label: label.trim() };
+    insertSource.run(source.issuer, source.label);
+    return source;
   }
 
   return {
@@ -106,6 +108,7 @@ export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
       if (!issuerExists.get(issuer)) throw new ReceiptPlanError('Register the issuer before changing its availability.');
       if (available) database.prepare('DELETE FROM receipt_offline WHERE issuer = ?').run(issuer);
       else database.prepare('INSERT OR IGNORE INTO receipt_offline VALUES (?)').run(issuer);
+      return { issuer, available };
     },
     putReceipt(receipt) {
       const issuer = receiptIdentifier(receipt.issuer, 'an issuer identifier');
@@ -113,8 +116,10 @@ export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
       const type = receiptIdentifier(receipt.type, 'a record type');
       const status = receiptIdentifier(receipt.status, 'a record status');
       const id = receiptIdentifier(receipt.id, 'a receipt identifier');
+      if (!issuerExists.get(issuer)) throw new ReceiptPlanError('Register this issuer before publishing a receipt.');
       const fields = receipt.fields === undefined ? null : JSON.stringify(receipt.fields);
       insertReceipt.run(issuer, id, subject, type, status, receipt.occurredAt, fields);
+      return { issuer, id, subject, type, status, occurredAt: receipt.occurredAt };
     },
     read(scope) {
       const issuer = receiptIdentifier(scope.issuer, 'an issuer identifier');

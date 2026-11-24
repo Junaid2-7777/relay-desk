@@ -14,6 +14,15 @@ Start with “The shop said it would refund me. Can you help me check on Friday?
 
 Run `npm run demo:evidence -- unrelated-credit` and `npm run demo:evidence -- matching-credit` from a second terminal while the practice desk is open. Choose **Check your errands** after each event and compare the brief with `/api/fixture/refund`. After a practice payment is accepted, `npm run demo:evidence -- settle-bill` publishes the biller's matching settlement. For the library example, save “Track my membership with Practice library reference member-17 until it is closed”, confirm the receipt plan for `member-17`, and allow its read. Publish `membership-acknowledged` and then `membership-closed` through the same command and check after each. These commands write synthetic records directly to the fixture stores. They target `.relay/demo` by default. For another practice directory, set `RELAY_DATA_DIR` in the operator terminal. Match the running desk's `RELAY_CLOCK` if it overrides the fixture date.
 
+## Try an issuer of your own
+
+Use a running practice desk and a second terminal pointed at its practice directory. The operator can choose any synthetic issuer, subject, record type and required status. This rehearsal uses a community centre and a returned key.
+
+1. Run `npm run demo:evidence -- receipt-source practice-centre "Practice community centre"`. Save “I returned the key to the community centre. Can you check on Friday?” In **Set up a practice check**, choose **Watch for a receipt** and enter `practice-centre`, `key-17`, `key-return` and `received`. Confirm the plan and allow the issuer receipt read in **Permissions**.
+2. Run `npm run demo:evidence -- receipt-record practice-centre key-17 acknowledgement pending ack-1`. Select **Check your errands**. The acknowledgement appears as issuer activity and the errand stays open.
+3. Run `npm run demo:evidence -- receipt-offline practice-centre`, then publish the matching record with `npm run demo:evidence -- receipt-record practice-centre key-17 key-return received proof-1`. Check the desk again. It shows the issuer outage and preserves the previous successful check. The fixture's native read log at `/api/fixture/receipt` shows the two failed attempts.
+4. Run `npm run demo:evidence -- receipt-online practice-centre` and check again. The card shows the matching receipt `proof-1`. Compare its issuer and reference with the native record. The receipt timestamp comes from the operator’s `RELAY_CLOCK`.
+
 ## Follow the session
 
 | Time | What happens on screen | What the audience can verify |
