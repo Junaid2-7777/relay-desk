@@ -15,6 +15,16 @@ The browser sends the planner mode shown when the desk opened with each review. 
 
 Run `npm run check:n8n` to inspect the shipped template and validate local webhook settings offline. It reports which variables are set without showing their values. A usable template exits `0` when the webhook settings are valid or the URL or token is still missing. An unusable template or invalid settings with both required variables supplied exit `1`.
 
+After applying the template in n8n, download the saved workflow JSON from the editor, or export just that workflow with the n8n Server CLI. Use the published version if the instance supports that export. Keep the JSON local because it can contain credential names and IDs. [Export and import workflows](https://docs.n8n.io/build/manage-workflows/export-and-import) · [Server CLI workflow export](https://docs.n8n.io/deploy/host-n8n/configure-n8n/use-the-command-line/#workflows)
+
+```console
+npm run --silent check:n8n -- --workflow .relay/n8n-workflow.json
+```
+
+This checks one local export up to 1 MiB against the template in this checkout. It checks the four-node path, Header Auth, execution timeout and retention settings, the model snapshot, the forwarded fields, prompt, schema, formatter, and JSON reply. It accepts renamed or repositioned nodes and credential ID/name references. Changing the model or any other executable part of the template is reported as drift. A match exits `0`. An unreadable export or a mismatch exits `1` with a description of the affected section. The command makes no requests, does not run workflow code, and keeps file paths and contents out of its diagnostics.
+
+The export can show the workflow definition and its declared settings. Use the published webhook probe to check reachability and credentials, and review instance logging and credential configuration in n8n. The `--workflow` and `--live` flags are separate commands.
+
 After publishing the workflow and setting the webhook variables, run `npm run check:n8n -- --live` to send one fixed synthetic note through the ordinary planner adapter and validator. It exits `0` only if the webhook returns a valid n8n proposal. A fixed-rule fallback, unusable template, or invalid live configuration exits `1`. Invalid command arguments exit `2`. The command keeps the endpoint, credentials, and upstream response out of its output. A successful probe verifies the webhook round trip and proposal shape. Use the held-out comparison to evaluate planning quality. [Held-out comparison](held-out.md)
 
 ## Open the practice desk

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -268,4 +268,122 @@ test('the readiness command contacts the webhook once only with --live and keeps
     assert.ok([webhookUrl, token, sentinel, 'http://invalid-synthetic-endpoint.example', 'synthetic malformed token'].every(value =>
       !(stdout + stderr).includes(value)));
   }
+});
+
+test('an exported n8n workflow is checked offline without exposing its contents or evaluating its code', async t => {
+  const { webhookUrl, messages } = await setup(t, response => response.writeHead(501).end());
+  const template = JSON.parse(await readFile(new URL('../n8n/relay-desk-planner.json', import.meta.url)));
+  const directory = await mkdtemp(join(tmpdir(), 'relay-n8n-export-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/check-n8n.mjs', import.meta.url));
+  const secret = 'synthetic-export-secret';
+  const filename = join(directory, `${secret}.json`);
+  const exec = promisify(execFile);
+  const run = async args => {
+    let output;
+    try {
+      output = { status: 0, ...await exec(process.execPath, [script, ...args], {
+        timeout: 5000,
+        env: { ...process.env, RELAY_N8N_WEBHOOK_URL: webhookUrl, RELAY_N8N_WEBHOOK_TOKEN: token }
+      }) };
+    } catch (error) {
+      if (typeof error.code !== 'number') throw error;
+      output = { status: error.code, stdout: error.stdout, stderr: error.stderr };
+    }
+    assert.deepEqual(messages, []);
+    assert.ok([secret, webhookUrl, token, filename].every(value => !(output.stderr + output.stdout).includes(value)));
+    return output;
+  };
+
+  const downloaded = structuredClone(template);
+  const [hook, model, formatter] = downloaded.nodes;
+  const originalConnections = downloaded.connections;
+  const names = new Map();
+  downloaded.nodes.forEach((node, index) => {
+    names.set(node.name, `${secret}-${index}`);
+    Object.assign(node, { id: `synthetic-node-${index}`, position: [10, index * 24], notesInFlow: true, disabled: false });
+    node.name = names.get(node.name);
+  });
+  downloaded.connections = Object.fromEntries(Object.entries(originalConnections).map(([name, outputs]) => [names.get(name), {
+    main: [[{ ...outputs.main[0][0], node: names.get(outputs.main[0][0].node) }]]
+  }]));
+  downloaded.nodes.reverse();
+  Object.assign(downloaded, {
+    active: true, id: secret, name: secret, versionId: secret, activeVersionId: secret, tags: [], nodeGroups: [],
+    meta: { instanceId: secret, templateCredsSetupCompleted: true }
+  });
+  downloaded.settings.availableInMCP = false;
+  hook.webhookId = secret;
+  hook.credentials = { httpHeaderAuth: { id: secret, name: secret } };
+  model.credentials = { openAiApi: { id: secret, name: secret } };
+  Object.assign(model.parameters.modelId, { mode: 'list', cachedResultName: secret, cachedResultUrl: webhookUrl });
+  const format = model.parameters.options.textFormat.textOptions;
+  format.schema = JSON.stringify(JSON.parse(format.schema));
+  Object.assign(formatter.parameters, { language: 'javaScript', mode: 'runOnceForAllItems' });
+
+  for (const file of [downloaded, [{ ...downloaded, staticData: null, versionMetadata: { name: secret } }]]) {
+    await writeFile(filename, JSON.stringify(file));
+    const output = await run(['--workflow', filename]);
+    assert.equal(output.status, 0, output.stderr);
+    assert.match(output.stdout, /local workflow export matches/);
+    assert.doesNotMatch(output.stdout, /RELAY_N8N_/);
+  }
+
+  const drift = [
+    ['retention', /retention/, workflow => { workflow.settings.saveManualExecutions = true; }],
+    ['missing retention override', /retention/, workflow => { delete workflow.settings.saveDataErrorExecution; }],
+    ['execution timeout', /execution or retention/, workflow => { workflow.settings.executionTimeout = 60; }],
+    ['error workflow', /execution or retention/, workflow => { workflow.settings.errorWorkflow = secret; }],
+    ['MCP exposure', /execution or retention/, workflow => { workflow.settings.availableInMCP = true; }],
+    ['extra node', /exactly one node/, workflow => { workflow.nodes.push({ name: secret, type: 'n8n-nodes-base.httpRequest' }); }],
+    ['extra edge', /single planner path/, workflow => {
+      workflow.connections[workflow.nodes[0].name].main[0].push({ node: workflow.nodes[2].name, type: 'main', index: 0 });
+    }],
+    ['tool connection', /single planner path/, workflow => {
+      workflow.connections[workflow.nodes[2].name].ai_tool = [[{ node: workflow.nodes[1].name, type: 'ai_tool', index: 0 }]];
+    }],
+    ['webhook authentication', /Webhook version or parameters/, workflow => { workflow.nodes[0].parameters.authentication = 'none'; }],
+    ['disabled webhook', /Webhook execution settings/, workflow => { workflow.nodes[0].disabled = true; }],
+    ['credential payload', /OpenAI execution settings/, workflow => {
+      workflow.nodes[1].credentials = { openAiApi: { id: secret, name: secret, data: secret } };
+    }],
+    ['model', /OpenAI version or parameters/, workflow => { workflow.nodes[1].parameters.modelId.value = secret; }],
+    ['model-retention flag', /OpenAI version or parameters/, workflow => { workflow.nodes[1].parameters.options.store = true; }],
+    ['built-in tool', /OpenAI version or parameters/, workflow => { workflow.nodes[1].parameters.builtInTools = { webSearch: {} }; }],
+    ['prompt', /OpenAI version or parameters/, workflow => { workflow.nodes[1].parameters.options.instructions = secret; }],
+    ['forwarded fields', /OpenAI version or parameters/, workflow => {
+      workflow.nodes[1].parameters.responses.values[0].content = '={{ JSON.stringify($json) }}';
+    }],
+    ['schema', /OpenAI version or parameters/, workflow => {
+      const format = workflow.nodes[1].parameters.options.textFormat.textOptions;
+      const schema = JSON.parse(format.schema);
+      schema.properties.practicePlan.anyOf[1].additionalProperties = true;
+      format.schema = JSON.stringify(schema);
+    }],
+    ['formatter code', /Proposal formatter version or parameters/, workflow => {
+      workflow.nodes[2].parameters.jsCode = `fetch('${webhookUrl}'); process.exit(86); // ${secret}`;
+    }],
+    ['reply behavior', /JSON response version or parameters/, workflow => { workflow.nodes[3].typeVersion = 1; }],
+    ['pinned notes', /pinned data or workflow state/, workflow => { workflow.pinData[workflow.nodes[0].name] = [{ json: { note: secret } }]; }]
+  ];
+  for (const [name, message, mutate] of drift) {
+    await t.test(name, async () => {
+      const changed = structuredClone(template);
+      mutate(changed);
+      await writeFile(filename, JSON.stringify(changed));
+      const output = await run(['--workflow', filename]);
+      assert.equal(output.status, 1);
+      assert.match(output.stderr, message);
+    });
+  }
+
+  await writeFile(filename, `{ "${secret}":`);
+  assert.match((await run(['--workflow', filename])).stderr, /Could not read a local JSON workflow export/);
+  await writeFile(filename, Buffer.alloc(1024 * 1024 + 1));
+  assert.equal((await run(['--workflow', filename])).status, 1);
+  assert.equal((await run(['--workflow', webhookUrl])).status, 1);
+  assert.equal((await run(['--workflow', join(directory, 'absent.json')])).status, 1);
+  assert.equal((await run(['--workflow'])).status, 2);
+  assert.equal((await run(['--workflow', filename, '--live'])).status, 2);
+  assert.equal((await run(['--live', '--workflow', filename])).status, 2);
 });
