@@ -75,7 +75,7 @@ function manifest() {
   const conflictCheckpoint = (time, decision, issueReads, changes, choice = null) => ({
     ...changes, expected: {
       record: { owner: owners.visit, status: 'booked', issue: 'calendar-conflict', conflict: time,
-        ...(choice ? { conflictChoice: { ...time, choice } } : {}) },
+        conflictChoice: choice ? { ...time, choice } : null },
       decision, audit: { ...booked.audit, visitReads: [...booked.audit.visitReads, ...issueReads] }
     }
   });

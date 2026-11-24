@@ -375,10 +375,13 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
           throw new Error('There is no eligible calendar conflict choice at this checkpoint.');
         }
         const beforeChoice = writeSnapshot(providers);
+        const { reservation, conflict } = record;
         record = await request(`${errand}/visit-choice`, { choice: checkpoint.visitChoice, revision: record.revision });
         result.scriptedChoices.visitDecisions += 1;
         visitChoiceEvidence = {
-          choice: checkpoint.visitChoice, recorded: matchesVisitChoice(record, checkpoint.visitChoice),
+          choice: checkpoint.visitChoice,
+          recorded: matchesVisitChoice(record, checkpoint.visitChoice) && sameFields(record.reservation, reservation, ['id']) &&
+            sameFields(record.conflict, conflict, ['start', 'end']),
           providerWritesUnchanged: isDeepStrictEqual(writeSnapshot(providers), beforeChoice)
         };
         difference(visitChoiceEvidence.recorded, true, 'visitChoice.recorded', choiceMismatches);
