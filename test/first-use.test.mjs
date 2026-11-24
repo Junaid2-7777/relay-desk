@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -10,8 +11,8 @@ const note = 'The shop said it would refund me. Can you help me check on Friday?
 const monday = '2026-11-22T19:00:00.000Z';
 const friday = '2026-11-26T19:00:00.000Z';
 
-async function startDesk(dataDir, date) {
-  const server = createDeskServer({ dataDir, clock: () => new Date(date) });
+async function startDesk(dataDir, date, options) {
+  const server = createDeskServer({ ...options, dataDir, clock: () => new Date(date) });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -51,8 +52,8 @@ async function startFreshDesk(t) {
     await Promise.all(desks.map((desk) => desk.close()));
     await rm(dataDir, { recursive: true, force: true });
   });
-  async function open(date = monday) {
-    const desk = await startDesk(dataDir, date);
+  async function open(date = monday, options) {
+    const desk = await startDesk(dataDir, date, options);
     desks.push(desk);
     return desk;
   }
@@ -97,6 +98,63 @@ test('a refund note survives a restart with its chosen check and no outside effe
   assert.deepEqual(inspection.errands, [saved]);
   assert.deepEqual(inspection.grants, []);
   assert.deepEqual(inspection.effects, []);
+});
+
+test('private follow-up updates survive restart while the original errand and its evidence stay intact', async t => {
+  const { desk, open } = await startFreshDesk(t);
+  const errand = await desk.request('/api/errands', { method: 'POST', body: { note } });
+  const path = `/api/errands/${errand.id}`;
+  const history = `${path}/updates`;
+  const first = { requestId: randomUUID(), text: ' The shop said the transfer should arrive on Tuesday.\n' };
+  assert.deepEqual(await desk.request(history), { updates: [] });
+  const saved = await desk.request(history, { method: 'POST', body: first, status: 201 });
+  assert.deepEqual(saved, { id: first.requestId, text: first.text, recordedAt: monday });
+  await desk.close();
+  const reopened = await open(friday);
+  const second = { requestId: randomUUID(), text: 'I still cannot see the credit.' };
+  const next = await reopened.request(history, { method: 'POST', body: second, status: 201 });
+  assert.equal(next.recordedAt, friday);
+  assert.deepEqual(await reopened.request(history), { updates: [saved, next] });
+  assert.deepEqual(await reopened.request('/api/inspect'), { errands: [errand], grants: [], effects: [] });
+  const stopped = await reopened.request(`${path}/tracking`, { method: 'POST', body: { choice: 'stop', revision: errand.revision } });
+  assert.deepEqual(await reopened.request(history, { method: 'POST', body: first, status: 201 }), saved);
+  const third = { requestId: randomUUID(), text: 'I spoke with the shop again.' };
+  await reopened.request(history, { method: 'POST', body: third, status: 409 });
+  assert.deepEqual(await reopened.request(history), { updates: [saved, next] });
+  await reopened.request(`${path}/tracking`, { method: 'POST', body: { choice: 'resume', revision: stopped.revision } });
+  await reopened.request(history, { method: 'POST', body: third, status: 201 });
+  assert.equal((await reopened.request(history)).updates.length, 3);
+});
+
+test('concurrent private updates append once per request and never enter the practice desk', async t => {
+  const { desk, open } = await startFreshDesk(t);
+  const rival = await open();
+  const create = note => desk.request('/api/errands', { method: 'POST', body: { note } });
+  const a = await create(note);
+  const b = await create('Call about the delivery.');
+  const path = id => `/api/errands/${id}/updates`;
+  const post = (client, id, body, status) => client.request(path(id), { method: 'POST', body, status });
+  const first = { requestId: randomUUID(), text: 'They expect to reply next week.' };
+  const second = { requestId: randomUUID(), text: 'I saved the receipt.' };
+  const [saved, other, replay] = await Promise.all([
+    post(desk, a.id, first, 201), post(rival, a.id, second, 201),
+    post(rival, a.id, { ...first, requestId: first.requestId.toUpperCase() }, 201)
+  ]);
+  assert.deepEqual(saved, replay);
+  assert.deepEqual(new Set((await rival.request(path(a.id))).updates.map(entry => entry.id)), new Set([saved.id, other.id]));
+  const conflict = await post(desk, b.id, first, 409);
+  assert.ok(!JSON.stringify(conflict).includes(first.text));
+  await post(desk, a.id, { ...first, text: 'Changed words.' }, 409);
+  for (const body of [{ text: 'Missing ID.' }, { requestId: randomUUID(), text: '  ' }, { requestId: randomUUID(), text: 'a'.repeat(2001) }]) {
+    await post(desk, b.id, body, 400);
+  }
+  assert.deepEqual(await desk.request(path(b.id)), { updates: [] });
+  const practice = await open(monday, { householdMode: true, reset: true });
+  await practice.request(path(a.id), { status: 404 });
+  await post(practice, a.id, second, 404);
+  await post(practice, 'demo-refund', second, 404);
+  await desk.request(path('demo-refund'), { status: 404 });
+  assert.deepEqual((await desk.request(path(a.id))).updates.length, 2);
 });
 
 test('editing a saved errand preserves the original note and rejects a stale edit', async (t) => {

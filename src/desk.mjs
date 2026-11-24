@@ -58,6 +58,7 @@ function sameVisitScope(left, right) {
 }
 
 const readErrand = row => row && JSON.parse(row.record);
+const requestIdPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const changedContextCode = 'desk-context-changed';
 const maximumLocalDraftLength = 8000;
 const followupTerms = Object.freeze({
@@ -97,6 +98,13 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       draftRevision INTEGER NOT NULL CHECK (draftRevision > 0),
       text TEXT NOT NULL
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS errand_updates (
+      id TEXT PRIMARY KEY,
+      errandId TEXT NOT NULL REFERENCES errands (id) ON DELETE CASCADE,
+      text TEXT NOT NULL,
+      recordedAt TEXT NOT NULL
+    ) STRICT;
+    CREATE INDEX IF NOT EXISTS updates_by_errand ON errand_updates (errandId);
     CREATE TABLE IF NOT EXISTS receipt_checkpoints (
       errandId TEXT NOT NULL REFERENCES errands(id) ON DELETE CASCADE,
       checkpointId TEXT NOT NULL,
@@ -162,6 +170,9 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
   }
   const insert = database.prepare('INSERT OR IGNORE INTO errands VALUES (?, ?, ?)');
   const insertSave = database.prepare('INSERT INTO errand_saves VALUES (?, ?)');
+  const listUpdates = database.prepare('SELECT id, text, recordedAt FROM errand_updates WHERE errandId = ? ORDER BY rowid');
+  const getUpdate = database.prepare('SELECT errandId, text, recordedAt FROM errand_updates WHERE id = ?');
+  const insertUpdate = database.prepare('INSERT INTO errand_updates (id, errandId, text, recordedAt) VALUES (?, ?, ?, ?)');
   const readLocalDraft = database.prepare('SELECT text, draftRevision FROM local_drafts WHERE errandId = ?');
   const writeLocalDraft = database.prepare(`
     INSERT INTO local_drafts (errandId, draftRevision, text) VALUES (?, ?, ?)
@@ -314,7 +325,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       return intakePlanner ? intakePlanner.review(note, day, sources, fixed) : fixed;
     },
     save({ note: input, goal, checkDate, requestId, previewId }) {
-      if (requestId !== undefined && (typeof requestId !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(requestId))) {
+      if (requestId !== undefined && (typeof requestId !== 'string' || !requestIdPattern.test(requestId))) {
         throw new DeskError('Use a valid save reference.');
       }
       const note = requiredText(input, 'an errand', 4000);
@@ -375,6 +386,29 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
         goal: requiredText(goal, 'a goal', 4000),
         checkDate: optionalDate(checkDate)
       }, revision));
+    },
+    updates(id) {
+      if (practice) throw new DeskError('Follow-up notes are available in the private desk.', 404);
+      find(id);
+      return { updates: listUpdates.all(id) };
+    },
+    addUpdate(id, { requestId, text }) {
+      if (practice) throw new DeskError('Follow-up notes are available in the private desk.', 404);
+      if (typeof requestId !== 'string' || !requestIdPattern.test(requestId)) throw new DeskError('Use a valid update reference.');
+      if (typeof text !== 'string' || !text.trim() || text.length > 2000) throw new DeskError('Enter an update of up to 2000 characters.');
+      const updateId = requestId.toLowerCase();
+      return transaction(() => {
+        const errand = find(id);
+        const previous = getUpdate.get(updateId);
+        if (previous) {
+          if (previous.errandId !== id || previous.text !== text) throw new DeskError('This update reference has already been used.', 409);
+          return { id: updateId, text, recordedAt: previous.recordedAt };
+        }
+        if (errand.status === 'stopped') throw new DeskError('Resume tracking before adding a follow-up update.', 409);
+        const recordedAt = clock().toISOString();
+        insertUpdate.run(updateId, id, text, recordedAt);
+        return { id: updateId, text, recordedAt };
+      });
     },
     draft(id) {
       const errand = find(id);
