@@ -7,7 +7,7 @@ import { orderChecks } from '../shared/brief-order.mjs';
 import { activeGrant, makeGrant, sameInvoice, scopes, seedHousehold } from './household.mjs';
 import { previewErrand, suggestPracticePlan } from './intake.mjs';
 import { createIntakePlanner } from './intake-planner.mjs';
-import { normalizeReceiptPlan } from './receipt.mjs';
+import { normalizeReceiptPlan, sameReceiptProof, sameReceiptScope } from './receipt.mjs';
 import { receiptIdentifier } from './receipt-fixture.mjs';
 import { checkRefund, refundGrant, refundSources } from './refund.mjs';
 
@@ -309,18 +309,28 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       if (!household || !['receipt', 'visit'].includes(capability)) throw new DeskError('Choose a practice capability.');
       return changeCase(id, record => {
         requireRevision(record, revision);
-        if (!Object.hasOwn(record, 'practicePlan') || record.status !== 'open') throw new DeskError('This errand cannot change its agreed plan.', 409);
+        const editingReceipt = capability === 'receipt' && Boolean(record.receiptPlan);
+        if (record.status !== 'open' || (!editingReceipt && !Object.hasOwn(record, 'practicePlan'))) {
+          throw new DeskError('This errand cannot change its agreed plan.', 409);
+        }
         const { practicePlan, ...existing } = record;
         if (capability === 'receipt') {
           const sources = household.receipt.fixture.sources();
           const receiptPlan = normalizeReceiptPlan({ issuer, subject, type, status }, sources);
+          if (sameReceiptProof(record.receiptPlan, receiptPlan) && record.receiptPlan.available === receiptPlan.available) return record;
+          const sameScope = sameReceiptScope(record.receiptPlan, receiptPlan);
+          const previous = record.grants?.receipt;
+          const grant = previous && !sameScope ? makeGrant('receipt', previous.scope, 'withdrawn', previous, clock()) : previous;
+          const allowed = sameScope && activeGrant(grant, clock());
           return {
             ...existing,
             kind: 'receipt',
             owner: sources.find(source => source.issuer === receiptPlan.issuer)?.label ?? receiptPlan.issuer,
             receiptPlan,
-            issue: receiptPlan.available ? 'receipt-permission' : 'evidence-needed',
-            grants: {}
+            receiptCheck: sameScope ? record.receiptCheck ?? null : null,
+            receiptProof: null,
+            issue: receiptPlan.available ? (allowed ? 'receipt-pending' : 'receipt-permission') : 'evidence-needed',
+            grants: grant ? { receipt: grant } : {}
           };
         }
         const visit = {

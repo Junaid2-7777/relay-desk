@@ -67,7 +67,7 @@ async function rehearsal(t) {
       await open();
     },
     save: note => request('/api/errands', { note }, 201),
-    setup: (errand, params) => request(`/api/errands/${errand.id}/setup`, { revision: errand.revision, ...params }),
+    setup: (errand, params, status) => request(`/api/errands/${errand.id}/setup`, { revision: errand.revision, ...params }, status),
     allow: (errand, operation) => request(`/api/errands/${errand.id}/household-access`, {
       revision: errand.revision, operation, choice: 'allowed'
     }),
@@ -154,6 +154,47 @@ test('R7 rehearsal retains an unsupported errand with its missing evidence and n
   assert.deepEqual(open.grants ?? {}, {});
   assert.deepEqual(provider.inspect().reads, []);
   assert.deepEqual((await desk.inspect()).actions.filter(action => action.errandId === saved.id), []);
+});
+
+test('correcting a receipt preserves the original note and renews access only for a changed scope', async t => {
+  const desk = await rehearsal(t);
+  const provider = desk.provider(openReceiptFixture);
+  const saved = await desk.save('Check on the practice membership on Friday.');
+  const plan = { capability: 'receipt', ...membershipProof };
+  const configured = await desk.setup(saved, plan);
+  const granted = await desk.allow(configured, 'receipt');
+  const checked = recordFrom(await desk.checkpoint(), saved.id);
+  const revisedPlan = { ...plan, status: 'cancelled' };
+  const revised = await desk.setup(checked, revisedPlan);
+  assert.deepEqual(revised.grants, granted.grants);
+  assert.deepEqual(revised.receiptCheck, checked.receiptCheck);
+  assert.deepEqual(await desk.setup(revised, revisedPlan), revised);
+  await desk.setup(checked, plan, 409);
+
+  provider.putReceipt({ ...membershipProof, occurredAt: monday, id: 'old-proof' });
+  const pending = recordFrom(await desk.checkpoint(), saved.id);
+  assert.equal(pending.status, 'open');
+  const newPlan = { ...revisedPlan, subject: 'membership-corrected-302' };
+  const corrected = await desk.setup(pending, newPlan);
+  assert.equal(corrected.receiptCheck, null);
+  assert.equal(corrected.grants.receipt.status, 'withdrawn');
+  assert.deepEqual(corrected.grants.receipt.scope, granted.grants.receipt.scope);
+  const priorReads = provider.inspect().reads;
+  await desk.restart(friday);
+  const waiting = recordFrom(await desk.checkpoint(), saved.id);
+  assert.equal(waiting.issue, 'receipt-permission');
+  assert.deepEqual(provider.inspect().reads, priorReads);
+  await desk.setup(waiting, { ...newPlan, capability: 'visit' }, 409);
+  const renewed = await desk.allow(waiting, 'receipt');
+  assert.equal(renewed.grants.receipt.scope.subject, newPlan.subject);
+  assert.ok(renewed.grants.receipt.revision > granted.grants.receipt.revision);
+  provider.putReceipt({ ...membershipProof, subject: newPlan.subject, status: 'cancelled', occurredAt: friday, id: 'corrected-proof' });
+  const verified = recordFrom(await desk.checkpoint(), saved.id);
+  assert.equal(verified.status, 'verified');
+  assert.equal(verified.receiptProof.id, 'corrected-proof');
+  assert.equal(verified.note, saved.note);
+  assert.equal(verified.checkDate, saved.checkDate);
+  await desk.setup(verified, plan, 409);
 });
 
 test('R7 rehearsal books a new free seat only under its own provider, service and subject grants', async t => {

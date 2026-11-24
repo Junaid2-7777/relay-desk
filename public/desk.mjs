@@ -36,6 +36,13 @@ let receiptSources = [];
 let checking = false;
 const openEdits = new Set();
 const localDrafts = new Map();
+const editReminder = 'Finish editing your errand before checking.';
+
+function updateCheckpointButton() {
+  checkpointButton.disabled = checking || Boolean(openEdits.size);
+  if (householdMode && openEdits.size && !checking) checkpointStatus.textContent = editReminder;
+  else if (checkpointStatus.textContent === editReminder) checkpointStatus.textContent = '';
+}
 
 const dateLabel = value => format.format(new Date(value));
 
@@ -162,6 +169,8 @@ function renderErrand(record) {
     fact(part('facts'), 'Merchant deadline', merchantDeadline ? dateLabel(merchantDeadline) : 'Unknown');
   }
   const replaceCard = (result, showEvidence = false) => {
+    openEdits.delete(`setup-${id}`);
+    updateCheckpointButton();
     records = records.map(item => item.id === id ? result : item);
     showErrands(id);
     const updated = element(card.id);
@@ -203,14 +212,24 @@ function renderErrand(record) {
       } catch (error) {
         part('error').textContent = error.message;
         panel.disabled = false;
-        part('edit').disabled = false;
-        part('draft').disabled = false;
-        part('tracking').disabled = false;
+        part('edit').disabled = openEdits.has(`setup-${id}`);
+        part('draft').disabled = part('edit').disabled;
+        part('tracking').disabled = part('edit').disabled;
         current.focus();
       }
     };
-    if (canSetUp) renderPracticeSetup(panel, record, receiptSources, run);
-    else renderHousehold(panel, part('facts'), record, run, deskTime);
+    if (!canSetUp) renderHousehold(panel, part('facts'), record, run, deskTime);
+    if (canSetUp || (record.receiptPlan && record.status === 'open')) {
+      renderPracticeSetup(panel, record, receiptSources, run, (dirty, details) => {
+        const key = `setup-${id}`;
+        if (dirty) openEdits.add(key);
+        else openEdits.delete(key);
+        updateCheckpointButton();
+        for (const button of [part('edit'), part('draft'), part('tracking'), ...panel.querySelectorAll('button')]) {
+          if (!details.contains(button)) button.disabled = dirty;
+        }
+      });
+    }
   }
   const trackingButton = part('tracking');
   trackingButton.hidden = record.status === 'verified';
@@ -241,7 +260,7 @@ function renderErrand(record) {
   restoreDraft();
   part('edit').addEventListener('click', () => {
     openEdits.add(id);
-    checkpointButton.disabled = true;
+    updateCheckpointButton();
     part('edit').disabled = true;
     part('draft').disabled = true;
     trackingButton.disabled = true;
@@ -265,7 +284,7 @@ function renderErrand(record) {
       trackingButton.disabled = false;
       part('evidence').disabled = false;
       openEdits.delete(id);
-      checkpointButton.disabled = checking || Boolean(openEdits.size);
+      updateCheckpointButton();
       part('edit').focus();
     });
     form.addEventListener('submit', async event => {
@@ -280,7 +299,7 @@ function renderErrand(record) {
           body: { goal: editedGoal.value, checkDate: editedDate.value, revision: record.revision }
         });
         openEdits.delete(id);
-        checkpointButton.disabled = checking || Boolean(openEdits.size);
+        updateCheckpointButton();
         replaceCard(result);
       } catch (error) {
         part('error').textContent = error.message;
@@ -445,17 +464,30 @@ async function load() {
 async function checkErrands(focusId) {
   if (checking || openEdits.size) return;
   checking = true;
-  checkpointButton.disabled = true;
+  updateCheckpointButton();
+  const controls = [...errands.querySelectorAll('[data-edit], [data-draft], [data-tracking], [data-evidence], [data-queue]')]
+    .filter(control => !control.disabled);
+  for (const control of controls) control.disabled = true;
+  const before = new Map(records.map(record => [record.id, record]));
   checkpointStatus.textContent = 'Checking your errands…';
   try {
     const result = await request('/api/checkpoint', { method: 'POST', body: {} });
+    // A save or action already in flight can return before this checkpoint response.
+    const newer = new Map(records.filter(record => before.get(record.id) !== record).map(record => [record.id, record]));
+    result.errands = result.errands.map(record => {
+      const local = newer.get(record.id);
+      newer.delete(record.id);
+      return local?.revision > record.revision ? local : record;
+    });
+    result.errands.unshift(...newer.values());
     showBrief(result);
     checkpointStatus.textContent = result.conflicts.length ? 'Some errands changed during the check. Check again to update them.' : 'Errands checked.';
   } catch (error) {
     checkpointStatus.textContent = error.message;
   } finally {
     checking = false;
-    checkpointButton.disabled = Boolean(openEdits.size);
+    for (const control of controls) control.disabled = false;
+    updateCheckpointButton();
     if (focusId) element(`errand-${focusId}`)?.querySelector('h3')?.focus();
     else if (document.activeElement === document.body) checkpointButton.focus();
   }

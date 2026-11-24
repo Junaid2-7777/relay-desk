@@ -182,30 +182,37 @@ export function renderHousehold(panel, list, record, run, deskTime) {
       fact(list, 'Issued', `${when(record.receiptProof.occurredAt)} IST`);
     }
     if (record.receiptCheck?.checkedAt) fact(list, 'Last successful check', `${when(record.receiptCheck.checkedAt)} IST`);
+    if (record.receiptCheck?.lastEventAt) fact(list, 'Last issuer event', `${when(record.receiptCheck.lastEventAt)} IST`);
   }
   if (record.status !== 'stopped') renderAccess(panel, record, run, deskTime);
 }
 
-export function renderPracticeSetup(panel, record, sources, run) {
-  const suggestion = record.practicePlan ?? {};
+export function renderPracticeSetup(panel, record, sources, run, onEdit) {
+  const editing = Boolean(record.receiptPlan);
+  const suggestion = record.receiptPlan ?? record.practicePlan ?? {};
   const details = document.createElement('details');
   details.className = 'source evidence';
-  addText(details, 'summary', 'Set up a practice check');
-  addText(details, 'p', 'Confirm the details. You can review each permission after saving.');
+  const summary = addText(details, 'summary', editing ? 'Edit receipt check' : 'Set up a practice check');
+  addText(details, 'p', editing
+    ? 'Changing the issuer or record reference requires fresh permission to read it.'
+    : 'Confirm the details. You can review each permission after saving.');
   const form = document.createElement('form');
   form.noValidate = true;
   form.className = 'setup';
-  const typeLabel = addText(form, 'label', 'What should Relay do?');
   const select = document.createElement('select');
   select.id = `capability-${record.id}`;
-  typeLabel.htmlFor = select.id;
   addText(select, 'option', 'Watch for a receipt').value = 'receipt';
   addText(select, 'option', 'Reserve a free slot').value = 'visit';
   select.value = suggestion.capability ?? 'receipt';
   const fields = document.createElement('div');
-  const submit = addText(form, 'button', 'Save agreed check');
+  const submit = addText(form, 'button', editing ? 'Save receipt check' : 'Save agreed check');
   submit.type = 'submit';
-  form.prepend(typeLabel, select, fields);
+  form.prepend(fields);
+  if (!editing) {
+    const typeLabel = addText(form, 'label', 'What should Relay do?');
+    typeLabel.htmlFor = select.id;
+    form.prepend(typeLabel, select);
+  }
   const common = [['issuer', 'Issuer identifier'], ['subject', 'Record reference']];
   const variants = {
     receipt: [['type', 'Record type'], ['status', 'Required status']],
@@ -249,6 +256,23 @@ export function renderPracticeSetup(panel, record, sources, run) {
   }
   select.addEventListener('change', showFields);
   showFields();
+  const formValues = () => JSON.stringify([select.value, ...new FormData(form)]);
+  const initial = formValues();
+  const discard = action(form, 'Discard changes', () => {
+    select.value = suggestion.capability ?? 'receipt';
+    showFields();
+    updateDraftState();
+    details.open = false;
+    summary.focus();
+  });
+  function updateDraftState() {
+    const dirty = formValues() !== initial;
+    discard.hidden = !dirty;
+    onEdit(dirty, details);
+  }
+  discard.hidden = true;
+  form.addEventListener('input', updateDraftState);
+  form.addEventListener('change', updateDraftState);
   form.addEventListener('submit', event => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(form));
