@@ -20,7 +20,9 @@ Run `npm run compare:held-out -- .relay/evaluator.json` with a published practic
 
 ## Scripted morning baseline
 
-Run `npm run compare:morning` to compare manual follow-up and the fixed-rule desk at the first checkpoint in R1. Each arm starts from its own cold or warm copy of the household. The cold scripts allow calendar availability and decline credit access. The warm scripts leave the revised bill for review. The report shows setup decisions, check clicks, manual lookups and submissions, decisions presented, and independently verified outcomes. The counts describe the scripted session. Participant sessions are needed to measure time and effort.
+Run `npm run compare:morning` to compare manual follow-up and the fixed-rule desk at the first checkpoint in R1. Each pair uses fresh copies of the same household at the same clock and cutoff. The report checks that the starting fixture records, applied grants and independently verified outcomes agree. The cold scripts allow calendar availability and decline credit access. The warm scripts start with previously agreed permissions and leave the revised bill for review.
+
+Count cold consent choices when they are made. One scheduled sitting includes setup and the first check in both arms. The report counts manual lookups, slot choices, check clicks and submissions separately from provider reads. It records when an exact bill decision is presented, distinguishes repeat presentations of the same terms from a new decision, and counts an approval or deferral only when taken. The warm checkpoint presents one bill decision and ends with no decision taken or repeated. These are scripted workload counts. Use the participant worksheet to measure elapsed time, effort and refusals. [Participant session worksheet](participant-session.md)
 
 ## First-use acceptance
 
