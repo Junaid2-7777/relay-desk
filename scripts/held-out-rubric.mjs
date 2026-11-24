@@ -3,6 +3,7 @@ const variants = ['routine', 'changed', 'blocked'];
 const scopedReads = ['refundReads', 'visitReads', 'billReads'];
 const effectNames = ['reservations', 'calendar', 'payments', 'queuedMessages'];
 const statuses = ['open', 'booked', 'accepted', 'verified', 'stopped'];
+export const defaultTrialTime = '2026-11-23T03:30:00.000Z';
 export const briefDecisions = ['bill-review', 'calendar-conflict'];
 
 export const auditFields = {
@@ -21,9 +22,32 @@ export const auditFields = {
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const nonempty = value => typeof value === 'string' && Boolean(value.trim());
-const timestamp = value => typeof value === 'string' && /(?:Z|[+-]\d\d:\d\d)$/.test(value) && Number.isFinite(Date.parse(value));
 const keysAre = (value, keys) => object(value) && Object.keys(value).length === keys.length &&
   keys.every(key => Object.hasOwn(value, key));
+
+const zonedTimestamp = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/u;
+
+export function isZonedTimestamp(value) {
+  if (typeof value !== 'string' || !zonedTimestamp.test(value) || !Number.isFinite(Date.parse(value))) return false;
+  const day = value.slice(0, 10);
+  const midnight = new Date(`${day}T00:00:00.000Z`);
+  return Number.isFinite(+midnight) && midnight.toISOString().slice(0, 10) === day;
+}
+
+export function validateTrialClock(testCase, description) {
+  const read = (value, label) => {
+    if (!isZonedTimestamp(value)) throw new Error(`${label} needs a valid ISO timestamp with an explicit offset.`);
+    return Date.parse(value);
+  };
+  let previous = read(testCase.now === undefined ? defaultTrialTime : testCase.now, description);
+  for (const [index, { now }] of testCase.checkpoints.entries()) {
+    if (now === undefined) continue;
+    const label = `${description}, checkpoint ${index + 1}`;
+    const instant = read(now, label);
+    if (instant < previous) throw new Error(`${label} cannot set the clock earlier than the previous check.`);
+    previous = instant;
+  }
+}
 
 const staticVisitScopes = { slots: ['issuer', 'service', 'subject'], freeBusy: ['start', 'end'] };
 const lookupSources = ['reservation', 'calendar', 'calendarConflict'];
@@ -57,34 +81,37 @@ export function validateHeldOutManifest(manifest) {
   }
   const ids = new Set();
   const pairs = new Set();
+  const notes = new Set();
   let hasRestrictedMarker = false;
   for (const [index, testCase] of manifest.cases.entries()) {
-    const { id, scenario, variant, note, now, review, expectedInterpretation, checkpoints, restrictedMarkers = [] } = testCase ?? {};
+    const { id, scenario, variant, note, review, expectedInterpretation, checkpoints, restrictedMarkers = [] } = testCase ?? {};
     const pair = `${scenario}/${variant}`;
     if (!nonempty(id) || ids.has(id) || !scenarios.includes(scenario) || !variants.includes(variant) || pairs.has(pair) ||
-        !nonempty(note) || note.length > 4000 || (now !== undefined && !timestamp(now)) ||
+        !nonempty(note) || note.length > 4000 || notes.has(note.trim()) ||
         Object.hasOwn(testCase, 'recordedProposal') || !object(expectedInterpretation) || !Object.keys(expectedInterpretation).length ||
         (review !== undefined && (!object(review) || Object.keys(review).some(key => !['goal', 'checkDate'].includes(key)))) ||
         !Array.isArray(restrictedMarkers) || new Set(restrictedMarkers).size !== restrictedMarkers.length ||
         restrictedMarkers.some(marker => typeof marker !== 'string' || !/^[\w-]{12,128}$/.test(marker) || note.includes(marker)) ||
         !Array.isArray(checkpoints) || !checkpoints.length) {
-      throw new Error(`Held-out case ${index + 1} needs a unique case id, scenario and variant, a synthetic note, and an interpretation rubric.`);
+      throw new Error(`Held-out case ${index + 1} needs a unique case id, scenario and variant, a distinct synthetic note, and an interpretation rubric.`);
     }
     ids.add(id);
     pairs.add(pair);
+    notes.add(note.trim());
     hasRestrictedMarker ||= restrictedMarkers.length > 0;
     const checkpointIds = new Set();
     for (const [step, checkpoint] of checkpoints.entries()) {
-      const { now: at, expected, id: checkpointId = `evaluation-${step + 1}` } = checkpoint ?? {};
+      const { expected, id: checkpointId = `evaluation-${step + 1}` } = checkpoint ?? {};
       const record = expected?.record;
       if (typeof checkpointId !== 'string' || !/^[\w.-]{1,100}$/.test(checkpointId) || checkpointIds.has(checkpointId) ||
-          (at !== undefined && !timestamp(at)) || !object(record) || !statuses.includes(record.status) ||
+          !object(record) || !statuses.includes(record.status) ||
           (record.owner !== null && !nonempty(record.owner)) ||
           (expected.decision !== null && !briefDecisions.includes(expected.decision)) || !validateAudit(expected.audit)) {
-        throw new Error(`Held-out case ${index + 1}, checkpoint ${step + 1} needs a valid time, owner, status, decision and audit.`);
+        throw new Error(`Held-out case ${index + 1}, checkpoint ${step + 1} needs a valid id, owner, status, decision and audit.`);
       }
       checkpointIds.add(checkpointId);
     }
+    validateTrialClock(testCase, `Held-out case ${index + 1}`);
     if (variant === 'blocked' && checkpoints.at(-1).expected.record.status === 'verified') {
       throw new Error(`Blocked held-out case ${index + 1} must end with an unresolved outcome.`);
     }

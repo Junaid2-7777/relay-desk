@@ -13,7 +13,7 @@ Supply one `routine`, one `changed`, and one `blocked` case for each group.
 - `bill` covers an eligible invoice, a resolvable revision with one exact approval, and a blocked outcome such as substituted payment terms.
 - `receipt` covers unfamiliar delegations. Use an ordinary issuer receipt, a changed case recoverable with correlated proof or an existing free booking capability, and a blocked case with missing or unavailable evidence.
 
-Choose fresh synthetic subjects and write the notes the way a household member would. Agree the granted actions and proof rules before running either arm. Compare the model's initial proposal and the verified outcome after the person's scripted choices as separate observations. [Comparison protocol](evaluation.md#compare-work-and-attention)
+Choose fresh synthetic subjects and write a distinct note for each case the way a household member would. Agree the granted actions and proof rules before running either arm. Compare the model's initial proposal and the verified outcome after the person's scripted choices as separate observations. [Comparison protocol](evaluation.md#compare-work-and-attention)
 
 ## Build the manifest
 
@@ -21,10 +21,10 @@ The top-level object has `schemaVersion: 1`, `mode: "held-out"`, `frozenRevision
 
 - `targetId` uses an existing fixture errand such as `demo-refund`, `demo-visit`, or `demo-bill` for the checkpoint outcome. Omit it to grade the errand saved through ordinary intake. `review` may set the same agreed `goal` and `checkDate` in both arms. The preview is scored before these choices.
 - `setup` supplies the person's agreed receipt or booking plan. A receipt uses `capability: "receipt"`, `issuer`, `subject`, `type`, and `status`. A booking uses `capability: "visit"`, `issuer`, `subject`, `service`, `windowStart`, `windowEnd`, and an optional `owner`. Give permission separately in `grants` with `operation` and `choice`, using `allowed`, `declined`, or `withdrawn`. The fixture operations are `merchant`, `credits`, `slots`, `freeBusy`, `reserve`, `calendar`, `invoice`, `payment`, and `receipt`.
-- The case-level `now` sets the initial clock and defaults to 23 November 2026 at 09:00 IST. `beforeIntake` seeds native records before the planner sees the note. Each checkpoint may provide an `id`, a new `now`, a `billChoice` of `approve` or `defer`, provider `events`, and approved `followupText` for the demo refund. The runner changes the clock, applies the bill choice, injects events, then queues the approved follow-up and checks the desk. Use timestamps with an explicit UTC offset or `Z`.
+- The case-level `now` sets the initial clock and defaults to 23 November 2026 at 09:00 IST. `beforeIntake` seeds native records before the planner sees the note. Each checkpoint may provide an `id`, a new `now`, a `billChoice` of `approve` or `defer`, provider `events`, and approved `followupText` for the demo refund. The runner changes the clock, applies the bill choice, injects events, then queues the approved follow-up and checks the desk. Use ISO timestamps with an explicit UTC offset or `Z`. Each checkpoint uses the same or a later instant than the preceding clock setting.
 - An event supplies `fixture`, `method`, and `args`. Use the allowed fixture controls in the runner. For example, `refund.putCredit` takes one credit record, and `visit.putSlot` takes one provider slot. [Fixture controls](../scripts/compare-planners.mjs) · [Authored case patterns](../fixtures/planner-rehearsal.json)
 - Each `expected.record` needs `owner` and `status`. Use `null` when the owner is unknown and choose `open`, `booked`, `accepted`, `verified`, or `stopped` for the status. Add the exact issue, chosen check date, or matched evidence that settles the case. Set `expected.decision` to `bill-review`, `calendar-conflict`, or `null`. Every checkpoint needs `expected.audit`. A blocked case must end with an unresolved outcome.
-- Seed at least one unrelated native record across the suite with a synthetic `restrictedMarkers` value. Each marker is 12–128 letters, digits, hyphens or underscores and must appear in a native record at a checkpoint. Keep the marker out of the note. The runner checks the planner request, preview, saved errand, brief and desk trace for the marker and redacts it from trial results.
+- Seed at least one unrelated native record across the suite with a synthetic `restrictedMarkers` value. Each marker is 12–128 letters, digits, hyphens or underscores and must appear in a native record at a checkpoint. Keep the marker out of the note. The runner checks the planner request and desk API responses for the marker and redacts it from trial results.
 
 The example contains one blocked refund case. Replace the hash and provider label and supply eleven other case objects to run a complete suite. Use it as a format example when preparing independent cases.
 
@@ -105,6 +105,8 @@ Use ordered, cumulative arrays in `expected.audit`, including all expected rows 
 - `receiptReads` lists `issuer` and `subject`. `visitAttempts` lists `operation`, `status`, and `reason`. `billAttempts` lists `invoiceId`, `revision`, `status`, and `code`. `outboxAttempts` lists `scope`, `status`, and `code`. Use `"original-operation"` for the journaled follow-up scope.
 
 The audit follows committed records and scoped reads independently of the brief. Write attempt rows cover visit reservations, calendar additions, payments and structurally valid enqueues in the practice outbox.
+
+To publish a settlement after an earlier checkpoint commits the payment, add `paymentFor` to the `bill.putSettlement` event. Give the exact `invoiceId`, `revision`, `payee`, `amountMinor`, and `currency` of the native payment. Provide one receipt object in `args` with its own invoice terms, `status`, and `settledAt`. The runner resolves exactly one payment using the independent fixture and supplies that arm's generated `paymentRef`. You can then grade both a receipt with mismatched terms and a matching settlement using the same selector. [Settlement replay](../test/held-out-comparison.test.mjs)
 
 ## Run and interpret the report
 

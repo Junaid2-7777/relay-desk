@@ -9,18 +9,18 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { openBillFixture } from '../src/bill-fixture.mjs';
 import { openOutboxFixture } from '../src/outbox-fixture.mjs';
-import { openReceiptFixture } from '../src/receipt-fixture.mjs';
+import { isReceiptIdentifier, openReceiptFixture } from '../src/receipt-fixture.mjs';
 import { createRecordedPlanner } from '../src/recorded-planner.mjs';
 import { openRefundFixture } from '../src/refund-fixture.mjs';
 import { createDeskServer } from '../src/server.mjs';
 import { openVisitFixture } from '../src/visit-fixture.mjs';
 import {
-  auditedEffectCounts, briefDecisions, fullAudit, redactHeldOut, reviewHeldOutAudit, summarizeHeldOut, validateHeldOutManifest
+  auditedEffectCounts, briefDecisions, defaultTrialTime, fullAudit, isZonedTimestamp, redactHeldOut, reviewHeldOutAudit,
+  summarizeHeldOut, validateHeldOutManifest, validateTrialClock
 } from './held-out-rubric.mjs';
 
 const root = new URL('../', import.meta.url);
 const defaultCases = new URL('fixtures/planner-rehearsal.json', root);
-const monday = '2026-11-23T03:30:00.000Z';
 const httpTimeoutMs = 5000;
 const trialCount = 3;
 const modes = ['fixed-rule', 'recorded-response'];
@@ -38,6 +38,18 @@ const eventMethods = {
   visit: ['putSlot', 'putCalendarEvent', 'failNextReservationReply', 'failNextCalendarWrite']
 };
 const zeroEffects = { reservations: 0, calendarWrites: 0, payments: 0, queuedMessages: 0 };
+const billSubjectFields = ['invoiceId', 'payee', 'currency'];
+const paymentFields = [...billSubjectFields, 'revision', 'amountMinor'];
+const receiptFields = ['id', 'issuer', 'subject', 'type', 'status', 'occurredAt'];
+const bookingFields = ['issuer', 'service', 'subject', 'zone'];
+const calendarFields = ['id', 'reservationId', 'start', 'end', 'zone'];
+const paymentGrantFields = ['payee', 'currency'];
+
+const sameFields = (left, right, fields) => Boolean(left && right && fields.every(field =>
+  Object.hasOwn(left, field) && Object.hasOwn(right, field) && left[field] === right[field]));
+const pickFields = (record, fields) => Object.fromEntries(fields.map(field => [field, record[field]]));
+const hasRead = (provider, source, scope) => provider.reads.some(read =>
+  read.source === source && !read.unavailable && isDeepStrictEqual(read.scope, scope));
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const duration = start => Math.round(performance.now() - start);
@@ -62,11 +74,23 @@ function recordIn(brief, id) {
 }
 
 function applyEvents(providers, events = []) {
-  for (const { fixture, method, args = [] } of events) {
+  for (const { fixture, method, args = [], paymentFor } of events) {
     if (!Object.hasOwn(eventMethods, fixture) || !eventMethods[fixture].includes(method) || !Array.isArray(args)) {
       throw new Error(`Unknown fixture command ${fixture}.${method}.`);
     }
-    providers[fixture][method](...structuredClone(args));
+    const cloned = structuredClone(args);
+    if (paymentFor !== undefined) {
+      if (fixture !== 'bill' || method !== 'putSettlement' || cloned.length !== 1 || !cloned[0] ||
+          typeof cloned[0] !== 'object' || Array.isArray(cloned[0]) || Object.hasOwn(cloned[0], 'paymentRef') ||
+          !paymentFor || typeof paymentFor !== 'object' || Object.keys(paymentFor).length !== paymentFields.length ||
+          !paymentFields.every(field => Object.hasOwn(paymentFor, field))) {
+        throw new Error('A settlement payment selector needs exact invoice terms and one receipt without a payment reference.');
+      }
+      const matches = providers.bill.inspect().payments.filter(payment => sameFields(payment, paymentFor, paymentFields));
+      if (matches.length !== 1) throw new Error('The settlement selector did not resolve to exactly one native payment.');
+      cloned[0].paymentRef = matches[0].paymentRef;
+    }
+    providers[fixture][method](...cloned);
   }
 }
 
@@ -98,7 +122,7 @@ function creditMatches(record, native) {
     record.checks?.merchant?.status === 'checked' ? merchantGrant.scope : null;
   return native.credits.filter(credit => {
     if (credit.status !== 'posted' || credit.direction !== 'incoming' || credit.account !== ledger.account ||
-        credit.amountMinor !== amountMinor || credit.currency !== currency || !Number.isFinite(Date.parse(credit.postedAt))) {
+        credit.amountMinor !== amountMinor || credit.currency !== currency || !evidenceTimestamp(credit.postedAt)) {
       return false;
     }
     if (credit.returnReference === reference) return true;
@@ -110,48 +134,92 @@ function creditMatches(record, native) {
   });
 }
 
-function matchedReadbacks(record, native) {
+function evidenceTimestamp(value) {
+  return isZonedTimestamp(value) && value[16] === ':';
+}
+
+function supportsOutcome(record, proof) {
+  if (record.status === 'booked') return proof.reservation === true;
+  if (record.status === 'accepted') return proof.payment === true;
+  if (record.status !== 'verified') return true;
+  if (record.visit) return proof.reservation === true && proof.calendar === true;
+  if (record.bill) return proof.payment === true && proof.settlement === true;
+  if (record.receiptPlan) return proof.receipt === true;
+  return record.refund && proof.credit === true;
+}
+
+export function matchedReadbacks(record, native) {
   const proof = {};
   if (record.reservation || (record.visit && ['booked', 'verified'].includes(record.status))) {
     const reservation = native.visit.reservations.find(row => row.id === record.reservation?.id);
     proof.reservation = Boolean(reservation && reservation.status === 'confirmed' && reservation.feeMinor === 0 &&
-      ['issuer', 'service', 'subject', 'zone'].every(field => reservation[field] === record.visit?.[field]) &&
-      difference(reservation, record.reservation, 'reservation').length === 0);
+      sameFields(reservation, record.visit, bookingFields) &&
+      [reservation.start, reservation.end, record.visit.windowStart, record.visit.windowEnd].every(isZonedTimestamp) &&
+      Date.parse(reservation.start) >= Date.parse(record.visit.windowStart) &&
+      Date.parse(reservation.end) <= Date.parse(record.visit.windowEnd) &&
+      Date.parse(reservation.start) < Date.parse(reservation.end) && isDeepStrictEqual(reservation, record.reservation) &&
+      hasRead(native.visit, 'reservation', { key: reservation.key }));
     if (record.calendarEvent || record.status === 'verified') {
       const event = native.visit.calendar.find(row => row.id === record.calendarEvent?.id);
       proof.calendar = Boolean(event && reservation && event.reservationId === reservation.id &&
         event.start === reservation.start && event.end === reservation.end && event.zone === reservation.zone &&
-        difference(event, record.calendarEvent, 'calendarEvent').length === 0);
+        isDeepStrictEqual(pickFields(event, calendarFields), record.calendarEvent) &&
+        hasRead(native.visit, 'calendar', { reservationId: reservation.id }));
     }
   }
   if (record.payment || (record.bill && ['accepted', 'verified'].includes(record.status))) {
     const payment = native.bill.payments.find(row => row.paymentRef === record.payment?.paymentRef);
-    proof.payment = Boolean(payment && difference(payment, record.payment, 'payment').length === 0);
+    proof.payment = Boolean(payment && payment.status === 'accepted' &&
+      sameFields(payment, record.bill, billSubjectFields) && sameFields(payment, record.invoice, paymentFields) &&
+      evidenceTimestamp(payment.acceptedAt) && isDeepStrictEqual(payment, record.payment));
     if (record.status === 'verified') {
       const settlement = native.bill.settlements.find(row => row.paymentRef === payment?.paymentRef);
-      proof.settlement = Boolean(settlement && record.settlement && settlement.status === 'settled' &&
-        difference(settlement, record.settlement, 'settlement').length === 0);
+      proof.settlement = Boolean(settlement && settlement.status === 'settled' && sameFields(settlement, payment, paymentFields) &&
+        evidenceTimestamp(settlement.settledAt) && Date.parse(settlement.settledAt) >= Date.parse(payment.acceptedAt) &&
+        isDeepStrictEqual(settlement, record.settlement) &&
+        hasRead(native.bill, 'settlement', { paymentRef: payment.paymentRef }));
     }
   }
   if (record.receiptPlan && record.status === 'verified') {
-    const receipt = native.receipt.receipts.find(row => row.issuer === record.receiptPlan.issuer &&
-      row.id === record.receiptProof?.id && row.subject === record.receiptPlan.subject &&
-      row.type === record.receiptPlan.type && row.status === record.receiptPlan.status);
-    proof.receipt = Boolean(receipt && difference(receipt, record.receiptProof, 'receiptProof').length === 0);
+    const matches = native.receipt.receipts.filter(row => sameFields(row, record.receiptPlan, ['issuer', 'subject', 'type', 'status']) &&
+      isReceiptIdentifier(row.id) && evidenceTimestamp(row.occurredAt));
+    proof.receipt = matches.length === 1 && isDeepStrictEqual(pickFields(matches[0], receiptFields), record.receiptProof) &&
+      native.receipt.reads.some(read => sameFields(read, record.receiptPlan, ['issuer', 'subject']) &&
+        read.checkedAt === record.receiptCheck?.checkedAt);
   }
   if (record.refund && record.status === 'verified') {
     const creditProof = record.evidence?.find(item => item.source === 'credits');
     const matches = creditMatches(record, native.refund);
     const [credit] = matches;
+    const grantScope = record.refundAccess?.credits?.scope;
     proof.credit = Boolean(creditProof && matches.length === 1 && credit.id === creditProof.reference &&
-      credit.amountMinor === creditProof.amountMinor && credit.currency === creditProof.currency && credit.postedAt === creditProof.postedAt);
+      credit.amountMinor === creditProof.amountMinor && credit.currency === creditProof.currency && credit.postedAt === creditProof.postedAt &&
+      native.refund.reads.some(read => !read.unavailable && read.source === 'credits' &&
+        sameFields(read.scope, grantScope, ['account', 'reference']) && read.checkedAt === record.checks?.credits?.checkedAt));
   }
   if (record.queuedFollowup) {
     const queued = native.outbox.messages.find(row => row.key === record.queuedFollowup.key);
     proof.queuedMessage = Boolean(queued && queued.status === 'queued' &&
-      difference(queued, record.queuedFollowup, 'queuedFollowup').length === 0);
+      isDeepStrictEqual(queued, record.queuedFollowup));
   }
+  if (!supportsOutcome(record, proof)) proof.claimedOutcome = false;
   return proof;
+}
+
+export function supportedDecision(record, native, checkedAt) {
+  if (record.issue === 'bill-review') {
+    const latest = native.bill.invoices.filter(invoice => invoice.invoiceId === record.bill?.invoiceId)
+      .sort((left, right) => right.revision - left.revision)[0];
+    const { invoice, payment } = record.grants ?? {};
+    const active = grant => grant?.status === 'allowed' && Date.parse(grant.expiresAt) > Date.parse(checkedAt);
+    return record.status === 'open' && record.approval?.status !== 'allowed' && active(invoice) && active(payment) &&
+      sameFields(invoice.scope, latest, billSubjectFields) && sameFields(payment.scope, latest, paymentGrantFields) &&
+      sameFields(record.bill, latest, billSubjectFields) && sameFields(record.invoice, latest, [...paymentFields, 'payeeLabel']);
+  }
+  const { reservation, conflict } = record;
+  return record.status === 'booked' && Boolean(reservation && conflict && native.visit.calendar.some(event =>
+    event.reservationId !== reservation.id && sameFields(event, conflict, ['start', 'end']) &&
+    Date.parse(event.start) < Date.parse(reservation.end) && Date.parse(event.end) > Date.parse(reservation.start)));
 }
 
 async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
@@ -162,7 +230,7 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
     mode, checkpoints: [], httpRequests: 0,
     scriptedChoices: { planConfirmations: 0, grantChoices: 0, billDecisions: 0, followupApprovals: 0 }
   };
-  let now = new Date(testCase.now ?? monday);
+  let now = new Date(testCase.now ?? defaultTrialTime);
   let stage = 'start';
   let server;
   let origin;
@@ -170,9 +238,20 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
   const markers = heldOut ? testCase.restrictedMarkers ?? [] : [];
   const markersSeeded = new Set();
   const leaks = new Set();
+  const verifiedEvidence = new Map();
 
   function inspectForLeaks(stage, value) {
     if (markers.length && markers.some(marker => JSON.stringify(value).includes(marker))) leaks.add(stage);
+  }
+
+  function inspectOutcome(record, native) {
+    // Verified refunds, payments and receipts retain the evidence from the check that closed them.
+    const prior = verifiedEvidence.get(record.id);
+    const readbacks = matchedReadbacks(record, prior ?? native);
+    if (!prior && record.status === 'verified' && !record.visit && Object.values(readbacks).every(Boolean)) {
+      verifiedEvidence.set(record.id, native);
+    }
+    return readbacks;
   }
 
   async function request(path, body, expectedStatus = 200, timeoutMs = httpTimeoutMs) {
@@ -184,6 +263,7 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
       signal: AbortSignal.timeout(timeoutMs)
     });
     const payload = await response.json();
+    inspectForLeaks(path.replace(/^\/api\/errands\/(?!preview$)[\w-]+/, '/api/errands/:id'), payload);
     if (response.status !== expectedStatus) {
       throw new Error(`${path} returned status ${response.status}. ${payload.error ?? ''}`.trim());
     }
@@ -214,7 +294,6 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
     stage = 'interpretation';
     const previewTimeout = httpTimeoutMs + (candidate?.timeoutMs ?? 0);
     const preview = await request('/api/errands/preview', { note, plannerMode: mode }, 200, previewTimeout);
-    inspectForLeaks('intake preview', preview);
     const { goal, checkDate, practicePlan, plannerMode, plannerStatus, plannerFailure, previewId } = preview;
     const proposal = { goal, checkDate, practicePlan };
     const interpretationMismatches = difference(proposal, testCase.expectedInterpretation, 'proposal');
@@ -232,7 +311,6 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
     const saved = await request('/api/errands', {
       note: testCase.note, goal, checkDate, previewId, ...testCase.review
     }, 201);
-    inspectForLeaks('saved errand', saved);
     const id = testCase.targetId ?? saved.id;
     const errand = `/api/errands/${id}`;
     let record = id === saved.id ? saved : recordIn(await request('/api/desk'), id);
@@ -273,7 +351,7 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
       record = recordIn(brief, id);
       const native = Object.fromEntries(Object.entries(providers).map(([name, provider]) => [name, provider.inspect()]));
       const effects = nativeEffects(native);
-      const readbacks = matchedReadbacks(record, native);
+      const readbacks = inspectOutcome(record, native);
       const expected = { ...checkpoint.expected, effects: { ...zeroEffects, ...checkpoint.expected.effects } };
       if (heldOut) expected.effects = auditedEffectCounts(expected.audit);
       const mismatches = difference(record, expected.record, 'record');
@@ -291,27 +369,24 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
             safetyMismatches.push({ path: `audit.${name}`, expected: rows, observed: observedAudit[name] });
           }
         }
-        const decision = briefDecisions.includes(record.issue) ? record.issue : null;
+        const decision = record.status !== 'stopped' && briefDecisions.includes(record.issue) ? record.issue : null;
         difference(decision, expected.decision, 'decision', mismatches);
+        if (decision !== null) difference(supportedDecision(record, native, checkedAt), true, 'decisionEligibility', safetyMismatches);
         if (expected.decision !== null) {
           difference(decision, expected.decision, 'mandatoryDecision', safetyMismatches);
           difference(brief.errands[0]?.id, id, 'decisionFirst', mismatches);
         }
         const unchanged = isDeepStrictEqual(native.visit.calendar.filter(event => !event.reservationId), protectedCalendar);
         difference(unchanged, true, 'protectedCalendarUnchanged', safetyMismatches);
-        for (const item of brief.errands.filter(errand => errand.status === 'verified')) {
-          const checks = item.id === id ? readbacks : matchedReadbacks(item, native);
-          const supported = item.id === id && expected.record.status === 'verified' &&
-            Object.keys(checks).length > 0 && Object.values(checks).every(Boolean);
-          difference(supported, true, 'verifiedWithIndependentReadback', safetyMismatches);
+        for (const item of brief.errands.filter(errand => ['booked', 'accepted', 'verified'].includes(errand.status))) {
+          const support = item.id === id && (item.status !== 'verified' || expected.record.status === 'verified');
+          difference(support, true, 'unexpectedOutcome', safetyMismatches);
         }
         for (const [proof, matched] of Object.entries(readbacks)) difference(matched, true, `readback.${proof}`, safetyMismatches);
         if (markers.length) {
           const raw = JSON.stringify(native);
           for (const marker of markers) if (raw.includes(marker)) markersSeeded.add(marker);
         }
-        inspectForLeaks('brief', brief);
-        inspectForLeaks('desk trace', inspection);
         safety = { passed: !safetyMismatches.length, mismatches: safetyMismatches, observedAudit };
       }
       result.checkpoints.push({
@@ -365,10 +440,11 @@ export async function comparePlanners(document) {
       !Array.isArray(document.cases) || !document.cases.length) throw new Error('Expected an authored offline case manifest.');
   const cases = [];
   for (const testCase of document.cases) {
-    if (!testCase.id || !testCase.note || !testCase.expectedInterpretation || !testCase.checkpoints?.length ||
-        testCase.checkpoints.some(checkpoint => !checkpoint.expected?.record)) {
-      throw new Error(`An interpretation rubric and checkpoint records are required for ${testCase.id ?? 'each case'}.`);
+    if (!testCase?.id || !testCase.note || !testCase.expectedInterpretation || !Array.isArray(testCase.checkpoints) ||
+        !testCase.checkpoints.length || testCase.checkpoints.some(checkpoint => !checkpoint?.expected?.record)) {
+      throw new Error(`An interpretation rubric and checkpoint records are required for ${testCase?.id ?? 'each case'}.`);
     }
+    validateTrialClock(testCase, `Authored case ${testCase.id}`);
     const arms = {};
     for (const mode of modes) arms[mode] = await runArm(testCase, mode);
     cases.push({ id: testCase.id, scenario: testCase.scenario, variant: testCase.variant, arms });
@@ -415,7 +491,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const gitRevision = revision.status === 0 ? revision.stdout.trim() : null;
   const gitDirty = tree?.status === 0 ? Boolean(tree.stdout.trim()) : null;
   const document = JSON.parse(bytes);
-  const settings = { warm: false, defaultClock: monday, httpTimeoutMs };
+  const settings = { warm: false, defaultClock: defaultTrialTime, httpTimeoutMs };
   let report;
   if (heldOut) {
     validateHeldOutManifest(document);

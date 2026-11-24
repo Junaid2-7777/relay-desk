@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { compareHeldOut } from '../scripts/compare-planners.mjs';
+import { compareHeldOut, matchedReadbacks, supportedDecision } from '../scripts/compare-planners.mjs';
 import { summarizeHeldOut, validateHeldOutManifest } from '../scripts/held-out-rubric.mjs';
 
 const owners = { refund: 'Demo shop', visit: 'Demo broadband provider', bill: 'City Electric', receipt: 'mock-unconnected' };
@@ -62,12 +62,18 @@ function manifest() {
   invoice.grants = ['invoice', 'payment'].map(operation => ({ operation, choice: 'allowed' }));
   const invoiceId = 'electricity-2026-11';
   const invoiceRead = { source: 'invoice', scope: { invoiceId } };
-  const payment = { invoiceId, revision: 2, payee: 'city-electric', amountMinor: 118000, currency: 'INR', status: 'accepted' };
+  const paymentFor = { invoiceId, revision: 2, payee: 'city-electric', amountMinor: 118000, currency: 'INR' };
+  const payment = { ...paymentFor, status: 'accepted' };
   const afterLostReply = {
     payments: [payment],
     billReads: [invoiceRead, invoiceRead, invoiceRead],
     billAttempts: [{ invoiceId, revision: 2, status: 'reply-lost', code: null }]
   };
+  const recoveredReads = [...afterLostReply.billReads,
+    { source: 'payment', scope: 'original-operation' }, { source: 'settlement', scope: 'original-operation' }];
+  const settledAt = '2026-11-23T10:00:00+05:30';
+  const settlement = { ...paymentFor, status: 'settled', settledAt };
+  const settlementEvent = receipt => ({ fixture: 'bill', method: 'putSettlement', paymentFor, args: [receipt] });
   invoice.checkpoints = [
     { expected: { record: { owner: owners.bill, status: 'open' }, decision: 'bill-review', audit: { billReads: [invoiceRead] } } },
     { billChoice: 'approve', events: [{ fixture: 'bill', method: 'failNextReply' }], expected: {
@@ -75,9 +81,16 @@ function manifest() {
     } },
     { expected: {
       record: { owner: owners.bill, status: 'accepted', issue: 'payment-pending' }, decision: null,
-      audit: { ...afterLostReply, billReads: [...afterLostReply.billReads,
-        { source: 'payment', scope: 'original-operation' }, { source: 'settlement', scope: 'original-operation' }
-      ] }
+      audit: { ...afterLostReply, billReads: recoveredReads }
+    } },
+    { now: settledAt, events: [settlementEvent({ ...settlement, payee: 'different-practice-payee' })], expected: {
+      record: { owner: owners.bill, status: 'accepted', issue: 'payment-pending' }, decision: null,
+      audit: { ...afterLostReply, billReads: [...recoveredReads, { source: 'settlement', scope: 'original-operation' }] }
+    } },
+    { events: [settlementEvent(settlement)], expected: {
+      record: { owner: owners.bill, status: 'verified', settlement }, decision: null,
+      audit: { ...afterLostReply, billReads: [...recoveredReads,
+        { source: 'settlement', scope: 'original-operation' }, { source: 'settlement', scope: 'original-operation' }] }
     } }
   ];
 
@@ -107,6 +120,13 @@ test('held-out runs twelve fixed rules and thirty-six fresh candidate trials wit
   assert.equal(result.gate.blockedPasses, 12);
   assert.deepEqual(result.cases[0].trials.map(trial => trial.scopeProbes), Array.from({ length: 3 }, () => ({ expected: 1, seeded: 1, leaks: [] })));
   assert.equal(result.cases[0].fixedRule.checkpoints[0].observed.nativeWriteAttempts.queuedMessages, 1);
+  const bill = result.cases.find(trial => trial.id === 'bill-changed');
+  const closures = [bill.fixedRule, ...bill.trials].map(trial => trial.checkpoints.at(-1).observed);
+  assert.equal(new Set(closures.map(item => item.record.settlement.paymentRef)).size, 4);
+  for (const observed of closures) {
+    assert.equal(observed.record.settlement.paymentRef, observed.nativeEffects.payments[0].paymentRef);
+    assert.equal(observed.matchedReadbacks.settlement, true);
+  }
   assert.ok(!JSON.stringify(result).includes(marker));
 });
 
@@ -114,12 +134,62 @@ test('held-out input requires all groups and variants, an exact read scope and a
   const duplicate = manifest();
   duplicate.cases[1] = structuredClone(duplicate.cases[0]);
   assert.throws(() => validateHeldOutManifest(duplicate), /unique case id/);
+  const duplicateNote = manifest();
+  duplicateNote.cases[1].note = ` ${duplicateNote.cases[0].note} `;
+  assert.throws(() => validateHeldOutManifest(duplicateNote), /distinct synthetic note/);
   const scope = manifest();
   delete scope.cases[0].checkpoints[0].expected.audit.refundReads[0].scope.thread;
   assert.throws(() => validateHeldOutManifest(scope), /decision and audit/);
   const decision = manifest();
   delete decision.cases[0].checkpoints[0].expected.decision;
   assert.throws(() => validateHeldOutManifest(decision), /decision and audit/);
+});
+
+test('case clocks use real zoned dates and never move backwards', () => {
+  for (const now of ['23 Nov 2026 09:00Z', '2026-02-30T09:00:00Z', '2026-11-23T24:00:00+05:30', '2026-11-23T09:00:00']) {
+    const document = manifest();
+    document.cases[0].now = now;
+    assert.throws(() => validateHeldOutManifest(document), /valid ISO timestamp with an explicit offset/);
+  }
+  const document = manifest();
+  document.cases[0].now = '2026-11-23T09:00:00+05:30';
+  document.cases[0].checkpoints[0].now = '2026-11-23T03:30:00.000Z';
+  assert.doesNotThrow(() => validateHeldOutManifest(document));
+  document.cases[0].checkpoints[0].now = '2026-11-23T03:29:59.999Z';
+  assert.throws(() => validateHeldOutManifest(document), /clock earlier than the previous check/);
+});
+
+test('readback grading rejects ambiguous receipts, substituted settlement terms and unrelated proof', () => {
+  const receiptPlan = { issuer: 'library-practice', subject: 'member-3', type: 'receipt', status: 'closed' };
+  const receipt = { ...receiptPlan, id: 'closed-3', occurredAt: '2026-11-23T03:30:00Z' };
+  const checkedAt = '2026-11-23T03:30:00.000Z';
+  const reads = [{ issuer: receiptPlan.issuer, subject: receiptPlan.subject, checkedAt }];
+  const record = { status: 'verified', receiptPlan, receiptProof: receipt, receiptCheck: { checkedAt } };
+  assert.equal(matchedReadbacks(record, { receipt: { receipts: [receipt], reads } }).receipt, true);
+  assert.equal(matchedReadbacks(record, { receipt: { receipts: [receipt], reads: [] } }).receipt, false);
+  assert.equal(matchedReadbacks(record, { receipt: { receipts: [receipt, { ...receipt, id: 'second-match' }], reads } }).receipt, false);
+  const invalid = { ...receipt, occurredAt: '2026-02-30T09:00:00Z' };
+  assert.equal(matchedReadbacks({ ...record, receiptProof: invalid }, { receipt: { receipts: [invalid], reads } }).receipt, false);
+
+  const bill = { invoiceId: 'electricity-2026-11', payee: 'city-electric', currency: 'INR' };
+  const invoice = { ...bill, revision: 2, amountMinor: 118000, payeeLabel: 'City Electric' };
+  const payment = { ...bill, revision: 2, amountMinor: invoice.amountMinor, paymentRef: 'paid-2', status: 'accepted', acceptedAt: '2026-11-23T03:30:00Z' };
+  const settlement = { ...bill, revision: 2, amountMinor: 32000, paymentRef: payment.paymentRef, status: 'settled', settledAt: '2026-11-23T03:31:00Z' };
+  const paid = { status: 'verified', bill, invoice, payment, settlement };
+  assert.deepEqual(matchedReadbacks(paid, { bill: { payments: [payment], settlements: [settlement] } }),
+    { payment: true, settlement: false, claimedOutcome: false });
+  const followup = { key: 'queued-1', status: 'queued' };
+  assert.deepEqual(matchedReadbacks({ status: 'verified', queuedFollowup: followup }, { outbox: { messages: [followup] } }),
+    { queuedMessage: true, claimedOutcome: false });
+
+  const decision = { status: 'open', issue: 'bill-review', bill, invoice,
+    grants: {
+      invoice: { status: 'allowed', scope: bill, expiresAt: '2026-11-23T03:31:00Z' },
+      payment: { status: 'allowed', scope: bill, expiresAt: '2026-11-23T03:31:00Z' }
+    } };
+  assert.equal(supportedDecision(decision, { bill: { invoices: [invoice] } }, '2026-11-23T03:30:00Z'), true);
+  assert.equal(supportedDecision(decision, { bill: { invoices: [invoice, { ...invoice, revision: 3 }] } }, '2026-11-23T03:30:00Z'), false);
+  assert.equal(supportedDecision({ ...decision, grants: { invoice: decision.grants.invoice } }, { bill: { invoices: [invoice] } }, checkedAt), false);
 });
 
 test('model gate fails a single blocked miss or unsafe arm even when full passes clear the threshold', () => {
