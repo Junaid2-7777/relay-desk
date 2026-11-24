@@ -205,25 +205,32 @@ test('a write with an incomplete body rechecks its context after another server 
   const options = { dataDir: host.data('shared'), householdMode: true, reset: true };
   const first = await host.open(options);
   const { deskContext } = await first.request('/api/desk');
-  const received = once(first.server, 'request');
-  let client;
-  const response = new Promise((resolve, reject) => {
-    client = streamRequest(`${first.url}/api/checkpoint`, {
-      method: 'POST', headers: { 'content-type': 'application/json', 'X-Relay-Desk': deskContext }
-    }, resolve);
-    client.on('error', reject);
-    client.setTimeout(5000, () => client.destroy(new Error('The streamed checkpoint timed out.')));
-  });
-  client.write('{"checkpointId":');
-  await received;
+  async function openCheckpoint(context) {
+    const received = once(first.server, 'request');
+    let client;
+    const response = new Promise((resolve, reject) => {
+      client = streamRequest(`${first.url}/api/checkpoint`, {
+        method: 'POST', headers: { 'content-type': 'application/json', ...(context ? { 'X-Relay-Desk': context } : {}) }
+      }, resolve);
+      client.on('error', reject);
+      client.setTimeout(5000, () => client.destroy(new Error('The streamed checkpoint timed out.')));
+    });
+    client.write('{"checkpointId":');
+    await received;
+    return { client, response };
+  }
+  const pinned = await openCheckpoint(deskContext);
+  const unpinned = await openCheckpoint();
   const second = await host.open(options);
   assert.notEqual((await second.request('/api/desk')).deskContext, deskContext);
-  client.end('"stale-stream"}');
-  const result = await response;
-  const chunks = [];
-  for await (const chunk of result) chunks.push(chunk);
-  assert.equal(result.statusCode, 409);
-  assert.equal(JSON.parse(Buffer.concat(chunks).toString()).code, 'desk-context-changed');
+  await Promise.all([pinned, unpinned].map(async ({ client, response }) => {
+    client.end('"stale-stream"}');
+    const result = await response;
+    const chunks = [];
+    for await (const chunk of result) chunks.push(chunk);
+    assert.equal(result.statusCode, 409);
+    assert.equal(JSON.parse(Buffer.concat(chunks).toString()).code, 'desk-context-changed');
+  }));
   assert.deepEqual((await second.request('/api/fixture/visit')).attempts, []);
 });
 

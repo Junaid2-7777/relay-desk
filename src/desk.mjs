@@ -107,10 +107,19 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       id TEXT NOT NULL,
       resetVersion INTEGER NOT NULL DEFAULT 0
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS practice_reset (
+      singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+      role TEXT NOT NULL
+    ) STRICT;
   `);
   database.prepare('INSERT INTO desk_identity (singleton, id) VALUES (1, ?) ON CONFLICT (singleton) DO NOTHING').run(randomUUID());
-  const readIdentity = database.prepare('SELECT id, resetVersion FROM desk_identity WHERE singleton = 1');
+  const readIdentity = database.prepare(`
+    SELECT id, resetVersion, practice_reset.role AS resetting FROM desk_identity
+    LEFT JOIN practice_reset USING (singleton) WHERE desk_identity.singleton = 1
+  `);
   const rotateContext = database.prepare('UPDATE desk_identity SET resetVersion = resetVersion + 1 WHERE singleton = 1');
+  const startReset = database.prepare('INSERT OR REPLACE INTO practice_reset VALUES (1, ?)');
+  const finishReset = database.prepare('DELETE FROM practice_reset WHERE singleton = 1');
   const role = household ? 'household' : refundFixture ? 'refund-practice' : 'private';
   const practice = role !== 'private';
   // Earlier builds marked household intake with practiceCase and used fixed IDs for the three seeds.
@@ -121,13 +130,19 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       = ${practice ? 1 : 0}
   `);
   const requestContext = new AsyncLocalStorage();
-  const deskContext = () => {
-    const { id, resetVersion } = readIdentity.get();
+  const deskContext = ({ id, resetVersion } = readIdentity.get()) => {
     return createHash('sha256').update(JSON.stringify([id, practice ? resetVersion : 0, directory, role, intakePlanner?.mode ?? 'fixed-rule'])).digest('hex');
   };
+  const resetIncomplete = () => new DeskError('The practice reset is unfinished. If it was interrupted, run npm run reset again and reload.', 503, 'practice-reset-incomplete');
   function checkDeskContext() {
-    const expected = requestContext.getStore();
-    if (expected !== undefined && expected !== deskContext()) {
+    const request = requestContext.getStore();
+    if (!practice && request?.expected === undefined) return;
+    const identity = readIdentity.get();
+    if (practice && identity.resetting) throw resetIncomplete();
+    if (!request) return;
+    const current = deskContext(identity);
+    if (practice) request.expected ??= current;
+    if (request.expected !== current) {
       throw new DeskError('The desk changed. Reload the page before continuing.', 409, changedContextCode);
     }
   }
@@ -165,11 +180,11 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
       return next;
     });
   }
-  function transaction(action) {
+  function transaction(action, { recovery = false } = {}) {
     database.exec('BEGIN IMMEDIATE');
     transactionOpen = true;
     try {
-      checkDeskContext();
+      if (!recovery) checkDeskContext();
       const result = action();
       database.exec('COMMIT');
       return result;
@@ -181,7 +196,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     }
   }
   const write = action => transactionOpen ? action() : transaction(action);
-  const readWithContext = read => requestContext.getStore() === undefined ? read() : transaction(read);
+  const readWithContext = read => practice || requestContext.getStore()?.expected !== undefined ? write(read) : read();
   function changeCase(id, action) {
     return transaction(() => {
       const record = find(id);
@@ -287,7 +302,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     deskContext,
     checkDeskContext,
     readWithContext,
-    withDeskContext: (expected, action) => requestContext.run(expected, action),
+    withDeskContext: (expected, action) => requestContext.run({ expected }, action),
     preview(input) {
       const note = requiredText(input, 'an errand', 4000);
       const day = today();
@@ -681,11 +696,24 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     resetRefund: (warm = false) => resetCases(() => resetRefundCase(warm)),
     resetHousehold: warm => resetCases(() => resetHouseholdCases(warm)),
     resetPractice(warm, resetProviders) {
-      resetCases(() => {
+      if (!practice) throw new DeskError('Only the practice desk can reset practice data.');
+      // Each provider commits independently. Keep recovery pending across process exits
+      // until both the provider resets and the desk reseed have finished.
+      const version = transaction(() => {
+        if (readIdentity.get().resetting === 'household' && !household) throw resetIncomplete();
+        startReset.run(role);
+        rotateContext.run();
+        return readIdentity.get().resetVersion;
+      }, { recovery: true });
+      return transaction(() => {
+        if (readIdentity.get().resetVersion !== version) {
+          throw new DeskError('A newer practice reset took over.', 409, changedContextCode);
+        }
         resetProviders();
         resetRefundCase(Boolean(household && warm));
         if (household) resetHouseholdCases(warm);
-      });
+        finishReset.run();
+      }, { recovery: true });
     },
     inspect() {
       const errands = list();
