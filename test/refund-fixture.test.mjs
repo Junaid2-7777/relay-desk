@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
+import { openDesk } from '../src/desk.mjs';
 import { mondayRefund, openRefundFixture } from '../src/refund-fixture.mjs';
 import { checkRefund, refundGrant } from '../src/refund.mjs';
 
@@ -93,4 +95,116 @@ test('the provider bounds credits by account and independently authorized refere
   assert.deepEqual(fixture.inspect().reads, []);
   assert.deepEqual(fixture.inspect().links, []);
   assert.equal(fixture.inspect().events[0].type, 'promise');
+});
+
+function interruptedRefund(t) {
+  const dataDir = mkdtempSync(join(tmpdir(), 'relay-interrupted-refund-'));
+  let time = new Date(checkedAt);
+  const clock = () => time;
+  const fixture = openRefundFixture({ dataDir, clock });
+  fixture.reset();
+  const household = { receipt: { fixture: { sources: () => [] } } };
+  const open = () => openDesk({ dataDir, clock, household, refundFixture: fixture });
+  let desk = open();
+  t.after(() => {
+    desk?.close();
+    fixture.close();
+    rmSync(dataDir, { force: true, recursive: true });
+  });
+  const record = desk.resetRefund(true);
+  const checkpoint = 'interrupted-refund-check';
+  return {
+    fixture, record,
+    get desk() { return desk; },
+    moveTime(value) { time = new Date(value); },
+    interruptAndReopen() {
+      const injector = new DatabaseSync(join(dataDir, 'desk.sqlite'));
+      try {
+        injector.exec(`CREATE TRIGGER interrupt_refund_check BEFORE UPDATE ON errands
+          BEGIN SELECT RAISE(ABORT, 'Simulated interruption after native refund read'); END`);
+        assert.throws(() => desk.checkRefund(record.id, checkpoint), /Simulated interruption/);
+        desk.close();
+        desk = null;
+        injector.exec('DROP TRIGGER interrupt_refund_check');
+        desk = open();
+      } finally {
+        injector.close();
+      }
+    },
+    replay: () => desk.checkRefund(record.id, checkpoint)
+  };
+}
+
+test('a named refund checkpoint shares one retry across both feeds even after an interrupted desk commit', t => {
+  const scenario = interruptedRefund(t);
+  const { fixture, record } = scenario;
+  fixture.setAvailable('merchant', false);
+  fixture.setAvailable('credits', false);
+  scenario.interruptAndReopen();
+  const failed = fixture.inspect().reads;
+  assert.deepEqual(failed.map(({ source, status }) => [source, status]), [
+    ['merchant', 'unavailable'], ['merchant', 'unavailable'], ['credits', 'unavailable']
+  ]);
+
+  fixture.setAvailable('merchant', true);
+  fixture.setAvailable('credits', true);
+  fixture.putCredit({ ...linkedCredit, returnReference: reference });
+  const replayed = scenario.replay();
+  assert.equal(replayed.status, 'open');
+  assert.deepEqual(replayed.evidence, []);
+  for (const source of ['merchant', 'credits']) {
+    assert.equal(replayed.checks[source].status, 'unavailable');
+    assert.equal(replayed.checks[source].checkedAt, null);
+  }
+  assert.deepEqual(fixture.inspect().reads, failed);
+  assert.equal(scenario.desk.checkRefund(record.id, 'new-refund-check').status, 'verified');
+  assert.equal(fixture.inspect().reads.length, failed.length + 2);
+});
+
+test('an interrupted refund check reuses exact linked settlement proof only with its original grants', async t => {
+  for (const change of ['same grants', 'merchant withdrawn', 'merchant renewed', 'merchant expired']) {
+    await t.test(change, t => {
+      const scenario = interruptedRefund(t);
+      const { fixture, record } = scenario;
+      fixture.putCredit(linkedCredit);
+      fixture.putLink(merchantLink);
+      if (change === 'merchant expired') {
+        scenario.moveTime('2026-11-24T03:30:00.000Z');
+        scenario.desk.refundAccess(record.id, { source: 'credits', choice: 'allowed', revision: record.revision });
+      }
+      scenario.interruptAndReopen();
+      const originalReads = fixture.inspect().reads;
+      const saved = scenario.desk.brief().errands[0];
+      if (change === 'merchant withdrawn' || change === 'merchant renewed') {
+        const withdrawn = scenario.desk.refundAccess(record.id, { source: 'merchant', choice: 'withdrawn', revision: saved.revision });
+        if (change === 'merchant renewed') {
+          scenario.desk.refundAccess(record.id, { source: 'merchant', choice: 'allowed', revision: withdrawn.revision });
+        }
+      } else if (change === 'merchant expired') {
+        scenario.moveTime(record.refundAccess.merchant.expiresAt);
+      } else {
+        scenario.moveTime('2026-11-24T03:30:00.000Z');
+        fixture.putCredit({ ...linkedCredit, status: 'pending', postedAt: null });
+      }
+
+      const replayed = scenario.replay();
+      assert.deepEqual(fixture.inspect().reads, originalReads);
+      if (change === 'same grants') {
+        assert.equal(replayed.status, 'verified');
+        assert.equal(replayed.evidence[0].reference, linkedCredit.id);
+        assert.equal(replayed.evidence[0].postedAt, linkedCredit.postedAt);
+        assert.equal(replayed.checks.merchant.checkedAt, originalReads[0].checkedAt);
+        assert.equal(replayed.checks.credits.checkedAt, originalReads[1].checkedAt);
+      } else {
+        assert.equal(replayed.status, 'open');
+        assert.deepEqual(replayed.evidence, []);
+        assert.deepEqual(replayed.checks, {});
+        if (change !== 'merchant renewed') {
+          const recovered = scenario.desk.checkRefund(record.id, 'ledger-only-new-check');
+          assert.equal(recovered.status, 'open');
+          assert.deepEqual(fixture.inspect().reads.at(-1).scope, { ...ledgerScope, linkedCreditIds: [] });
+        }
+      }
+    });
+  }
 });

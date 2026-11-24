@@ -65,6 +65,16 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
     CREATE TABLE IF NOT EXISTS refund_failed_reads (
       readId INTEGER PRIMARY KEY REFERENCES refund_reads(id)
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS refund_checkpoint_reads (
+      checkpoint TEXT NOT NULL,
+      source TEXT NOT NULL CHECK (source IN ('merchant', 'credits')),
+      attempt INTEGER NOT NULL CHECK (attempt IN (1, 2)),
+      binding TEXT NOT NULL,
+      input TEXT NOT NULL,
+      readId INTEGER NOT NULL UNIQUE REFERENCES refund_reads(id),
+      records TEXT,
+      PRIMARY KEY (checkpoint, source, attempt)
+    ) STRICT;
   `);
 
   const writeEvent = database.prepare(`
@@ -106,6 +116,13 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
   const disconnect = database.prepare('INSERT OR IGNORE INTO refund_unavailable_sources VALUES (?)');
   const reconnect = database.prepare('DELETE FROM refund_unavailable_sources WHERE source = ?');
   const writeFailedRead = database.prepare('INSERT INTO refund_failed_reads VALUES (?)');
+  const priorBinding = database.prepare('SELECT binding FROM refund_checkpoint_reads WHERE checkpoint = ? LIMIT 1');
+  const priorRead = database.prepare(`
+    SELECT saved.input, saved.records, native.checkedAt FROM refund_checkpoint_reads AS saved
+    JOIN refund_reads AS native ON native.id = saved.readId
+    WHERE saved.checkpoint = ? AND saved.source = ? AND saved.attempt = ?
+  `);
+  const saveCheckpointRead = database.prepare('INSERT INTO refund_checkpoint_reads VALUES (?, ?, ?, ?, ?, ?, ?)');
 
   let inTransaction = false;
   function transaction(action) {
@@ -139,21 +156,64 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
     writeLink.run(link.issuer, link.thread, link.returnReference, link.creditId);
   }
 
-  function logRead(source, scope, checkedAt) {
-    const read = writeRead.run(source, JSON.stringify(scope), checkedAt);
-    if (!unavailableSource.get(source)) return true;
-    writeFailedRead.run(read.lastInsertRowid);
-    return false;
+  function prepareRead(source, input) {
+    const { reference } = input;
+    if (source === 'merchant') {
+      const { issuer, thread } = input;
+      return {
+        scope: { issuer, thread, reference },
+        read: () => ({
+          events: plainRows(merchantEvents.all(issuer, thread, reference)),
+          links: plainRows(merchantLinks.all(issuer, thread, reference))
+        })
+      };
+    }
+    const { account, linkedCreditIds = [] } = input;
+    let confirmedIds = [];
+    if (linkedCreditIds.length && account === mondayRefund.account && reference === mondayRefund.reference) {
+      const requestedIds = new Set(linkedCreditIds);
+      confirmedIds = merchantLinks.all(mondayRefund.merchantIssuer, mondayRefund.thread, reference)
+        .map(link => link.creditId)
+        .filter(id => requestedIds.has(id));
+    }
+    return {
+      scope: { account, reference, linkedCreditIds: confirmedIds },
+      read: () => plainRows(scopedCredits.all(account, reference, JSON.stringify(confirmedIds)))
+    };
   }
 
-  function readOrUnavailable(source, authorize, read) {
-    const records = transaction(() => {
+  function readScoped(source, input, authorize, replay) {
+    return transaction(() => {
       const now = clock();
-      if (authorize && !authorize(now)) return undefined;
-      return read(now.toISOString());
+      if (authorize && !authorize(now)) return { status: 'denied' };
+      const serializedInput = replay ? JSON.stringify(input) : null;
+      if (replay) {
+        const prior = priorBinding.get(replay.key);
+        if (prior && prior.binding !== replay.binding) return { status: 'superseded' };
+        const saved = priorRead.get(replay.key, source, replay.attempt);
+        if (saved) {
+          if (saved.input !== serializedInput) return { status: 'superseded' };
+          return saved.records === null ? { status: 'unavailable' }
+            : { status: 'checked', records: JSON.parse(saved.records), checkedAt: saved.checkedAt };
+        }
+      }
+      const { scope, read } = prepareRead(source, input);
+      const checkedAt = now.toISOString();
+      const { lastInsertRowid: readId } = writeRead.run(source, JSON.stringify(scope), checkedAt);
+      const records = unavailableSource.get(source) ? null : read();
+      if (records === null) writeFailedRead.run(readId);
+      if (replay) {
+        saveCheckpointRead.run(replay.key, source, replay.attempt, replay.binding, serializedInput, readId,
+          records === null ? null : JSON.stringify(records));
+      }
+      return records === null ? { status: 'unavailable' } : { status: 'checked', records, checkedAt };
     });
-    if (records === null) throw new RefundFeedUnavailable(source);
-    return records;
+  }
+
+  function readOrUnavailable(source, scope, authorize) {
+    const result = readScoped(source, scope, authorize);
+    if (result.status === 'unavailable') throw new RefundFeedUnavailable(source);
+    return result.records;
   }
 
   return {
@@ -162,7 +222,8 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
     reset() {
       transaction(() => {
         database.exec(`
-          DELETE FROM refund_failed_reads; DELETE FROM refund_reads; DELETE FROM refund_unavailable_sources;
+          DELETE FROM refund_checkpoint_reads; DELETE FROM refund_failed_reads;
+          DELETE FROM refund_reads; DELETE FROM refund_unavailable_sources;
           DELETE FROM merchant_events; DELETE FROM return_links; DELETE FROM ledger_credits;
         `);
         putEvent({
@@ -192,27 +253,13 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
       if (available) reconnect.run(source);
       else disconnect.run(source);
     },
-    readMerchant({ issuer, thread, reference }, authorize) {
-      return readOrUnavailable('merchant', authorize, checkedAt => {
-        if (!logRead('merchant', { issuer, thread, reference }, checkedAt)) return null;
-        return {
-          events: plainRows(merchantEvents.all(issuer, thread, reference)),
-          links: plainRows(merchantLinks.all(issuer, thread, reference))
-        };
-      });
-    },
-    readCredits({ account, reference, linkedCreditIds = [] }, authorize) {
-      return readOrUnavailable('credits', authorize, checkedAt => {
-        let confirmedIds = [];
-        if (linkedCreditIds.length && account === mondayRefund.account && reference === mondayRefund.reference) {
-          const requestedIds = new Set(linkedCreditIds);
-          confirmedIds = merchantLinks.all(mondayRefund.merchantIssuer, mondayRefund.thread, reference)
-            .map(link => link.creditId)
-            .filter(id => requestedIds.has(id));
-        }
-        if (!logRead('credits', { account, reference, linkedCreditIds: confirmedIds }, checkedAt)) return null;
-        return plainRows(scopedCredits.all(account, reference, JSON.stringify(confirmedIds)));
-      });
+    readMerchant: (scope, authorize) => readOrUnavailable('merchant', scope, authorize),
+    readCredits: (scope, authorize) => readOrUnavailable('credits', scope, authorize),
+    readForCheck(source, scope, { authorize, replay }) {
+      if ((source !== 'merchant' && source !== 'credits') || typeof authorize !== 'function') {
+        throw new TypeError('Confirm the scope and current grant before checking this refund source.');
+      }
+      return readScoped(source, scope, authorize, replay);
     },
     inspect() {
       return {

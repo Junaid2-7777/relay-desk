@@ -1,5 +1,5 @@
+import { createHash } from 'node:crypto';
 import { evidenceInstant, latestEvidence } from '../shared/evidence-time.mjs';
-import { RefundFeedUnavailable } from './refund-fixture.mjs';
 
 function isPostedCredit(credit, refund) {
   return typeof credit.id === 'string' && credit.id.length > 0 &&
@@ -50,6 +50,8 @@ export function refundAccess(grant, now) {
   return grant?.status ?? 'unasked';
 }
 
+const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+
 export function checkRefund(record, fixture, now, checkpointId) {
   const subject = fixture.subject;
   const allowed = (source, at = now) => {
@@ -60,38 +62,32 @@ export function checkRefund(record, fixture, now, checkpointId) {
   const history = record.refundCheckpoints ?? [];
   if ((checkpointId !== undefined && history.includes(checkpointId)) || !refundSources.some(source => allowed(source))) return record;
 
+  const replay = checkpointId === undefined ? null : {
+    key: fingerprint([record.id, checkpointId]),
+    binding: fingerprint([record.revision, subject, refundSources.map(source => [allowed(source), record.refundAccess?.[source]])])
+  };
   const checks = { ...record.checks };
   let attempted = false;
-  let checkedAt = now.toISOString();
-  const authorizeRead = source => at => {
-    if (!allowed(source, at)) return false;
-    checkedAt = at.toISOString();
-    return true;
-  };
   let retryAvailable = true;
-  function readWithRetry(read) {
-    let failed = false;
-    while (true) {
-      try {
-        const result = read();
-        return failed && result === undefined ? null : result;
-      } catch (error) {
-        if (!(error instanceof RefundFeedUnavailable)) throw error;
-        if (!retryAvailable) return null;
-        retryAvailable = false;
-        failed = true;
-      }
-    }
+  function readWithRetry(source, scope) {
+    const authorize = at => allowed(source, at) && (!scope.linkedCreditIds?.length || allowed('merchant', at));
+    const read = attempt => fixture.readForCheck(source, scope, { authorize, ...(replay ? { replay: { ...replay, attempt } } : {}) });
+    const first = read(1);
+    if (first.status !== 'unavailable' || !retryAvailable) return first;
+    retryAvailable = false;
+    const retry = read(2);
+    return retry.status === 'denied' ? first : retry;
   }
 
-  function saveCheck(source, successful, lastEventAt) {
+  function saveCheck(source, read, lastEventAt) {
+    if (read.status === 'denied') return;
     attempted = true;
     const previous = checks[source];
     const previousEventAt = Number.isFinite(evidenceInstant(previous?.lastEventAt)) ? previous.lastEventAt : null;
     checks[source] = {
-      checkedAt: successful ? checkedAt : previous?.checkedAt ?? null,
+      checkedAt: read.checkedAt ?? previous?.checkedAt ?? null,
       lastEventAt: lastEventAt ?? previousEventAt,
-      status: successful ? 'checked' : 'unavailable',
+      status: read.status,
       ...(checkpointId !== undefined ? { checkpointId } : {})
     };
   }
@@ -100,19 +96,23 @@ export function checkRefund(record, fixture, now, checkpointId) {
   let links = [];
   let credit = null;
   if (allowed('merchant')) {
-    const merchant = readWithRetry(() => fixture.readMerchant(refundScope(subject, 'merchant'), authorizeRead('merchant')));
+    const read = readWithRetry('merchant', refundScope(subject, 'merchant'));
+    if (read.status === 'superseded') return record;
+    const merchant = read.records;
     links = merchant?.links ?? [];
     merchantEvent = latestEvidence(merchant?.events ?? [], 'occurredAt', merchantEvent);
-    if (merchant !== undefined) saveCheck('merchant', Boolean(merchant), merchantEvent?.occurredAt);
+    saveCheck('merchant', read, merchantEvent?.occurredAt);
   }
   if (allowed('credits')) {
-    const credits = readWithRetry(() => fixture.readCredits({
+    const read = readWithRetry('credits', {
       ...refundScope(subject, 'credits'),
       linkedCreditIds: links.map(link => link.creditId)
-    }, authorizeRead('credits')));
+    });
+    if (read.status === 'superseded') return record;
+    const credits = read.records;
     if (credits) credit = matchRefundCredit(subject, { credits, links });
     const lastEventAt = latestEvidence(credits ?? [], 'postedAt', { postedAt: checks.credits?.lastEventAt })?.postedAt;
-    if (credits !== undefined) saveCheck('credits', Boolean(credits), lastEventAt);
+    saveCheck('credits', read, lastEventAt);
   }
   if (!attempted) return record;
   return {
