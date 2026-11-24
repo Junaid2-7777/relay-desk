@@ -157,6 +157,7 @@ function renderErrand(record) {
   card.id = `errand-${id}`;
   card.dataset.revision = record.revision;
   card.dataset.day = deskDay;
+  card.dataset.pendingFollowup = Boolean(record.pendingFollowup);
   part('goal').textContent = goal;
   part('goal').tabIndex = -1;
   part('goal').id = `goal-${id}`;
@@ -175,6 +176,10 @@ function renderErrand(record) {
   const replaceCard = (result, showEvidence = false) => {
     openEdits.delete(`setup-${id}`);
     updateCheckpointButton();
+    const current = records.find(item => item.id === id);
+    if (current?.pendingFollowup && result.pendingFollowup === undefined && !result.queuedFollowup) {
+      result = { ...result, pendingFollowup: true };
+    }
     records = records.map(item => item.id === id ? result : item);
     showErrands(id);
     const updated = element(card.id);
@@ -189,6 +194,7 @@ function renderErrand(record) {
   if (record.refund) {
     fact(part('facts'), 'Return reference', record.refund.reference);
     if (record.queuedFollowup) fact(part('facts'), 'Follow-up', 'Queued in the practice outbox');
+    else if (record.pendingFollowup) fact(part('facts'), 'Follow-up', 'Queue confirmation pending');
     if (record.status !== 'stopped') renderRefund(part('evidence'), record, result => replaceCard(result, true), part('error'), busy => {
       part('edit').disabled = busy;
       part('draft').disabled = busy;
@@ -254,12 +260,99 @@ function renderErrand(record) {
       trackingButton.focus();
     }
   });
+
+  const draftButton = part('draft');
+  if (record.queuedFollowup) draftButton.textContent = 'Review queued follow-up';
+  else if (record.pendingFollowup) draftButton.textContent = 'Review pending follow-up';
+  const readDraft = () => request(`/api/errands/${id}/draft`, { method: 'POST' });
+  async function readCurrentErrand() {
+    return (await request('/api/desk')).errands.find(item => item.id === id);
+  }
+
   function restoreDraft() {
-    const draft = localDrafts.get(id);
-    if (!draft) return;
-    const queue = draft.querySelector('[data-queue]');
-    if (queue) queue.hidden = record.status !== 'open' || Boolean(record.queuedFollowup);
-    part('extra').append(draft);
+    const state = localDrafts.get(id);
+    if (!state) return;
+    const pending = Boolean(record.pendingFollowup);
+    const queued = Boolean(record.queuedFollowup);
+    const terms = queued ? record.queuedFollowup : pending ? state.pending : state.editable;
+    if (!terms) return;
+
+    const panel = document.createElement('div');
+    panel.className = 'draft';
+    if (terms.recipient) {
+      const envelope = document.createElement('dl');
+      envelope.className = 'facts';
+      fact(envelope, 'Recipient', terms.recipient);
+      fact(envelope, 'Subject', terms.subject);
+      panel.append(envelope);
+    }
+    const title = queued ? 'Queued follow-up' : pending ? 'Original pending follow-up' : 'Local follow-up draft';
+    const label = addText(panel, 'label', title);
+    const draft = document.createElement('textarea');
+    draft.id = `draft-${id}`;
+    draft.rows = 5;
+    draft.value = terms.text;
+    draft.readOnly = pending || queued;
+    label.htmlFor = draft.id;
+    if (!draft.readOnly) draft.addEventListener('input', () => { terms.text = draft.value; });
+    panel.append(draft);
+
+    if (pending) addText(panel, 'p', 'Check the practice outbox for these exact words.');
+    const message = addText(panel, 'p', state.message);
+    message.setAttribute('role', 'status');
+    if (pending || (terms.recipient && record.status === 'open' && !queued)) {
+      const submit = action(panel, pending ? 'Check practice outbox' : 'Queue this draft in practice outbox', async () => {
+        const controls = [submit, draftButton, part('edit'), trackingButton, part('evidence')]
+          .filter(control => !control.disabled);
+        controls.forEach(control => { control.disabled = true; });
+        draft.readOnly = true;
+        message.textContent = pending ? 'Checking the original draft…' : 'Checking before queuing…';
+        try {
+          const result = await request(`/api/errands/${id}/queue-followup`, {
+            method: 'POST', body: { revision: record.revision, recipient: terms.recipient, subject: terms.subject,
+              text: draft.value, ...(pending ? { reconcileOnly: true } : {}) }
+          });
+          if (result.queuedFollowup) {
+            state.pending = null;
+            state.message = 'Draft queued in the practice outbox.';
+          } else if (result.followupReconciliation === 'not-queued') {
+            state.editable ??= state.pending;
+            state.pending = null;
+            state.message = 'The practice outbox has no entry for this draft.';
+          } else {
+            state.message = result.status === 'verified'
+              ? 'Credit verified. You can keep this draft.' : 'Check refund sources before queuing again.';
+          }
+          replaceCard(result);
+        } catch (error) {
+          if (!pending) {
+            try {
+              const current = await readCurrentErrand();
+              if (current?.pendingFollowup) {
+                const original = await readDraft();
+                if (original.pendingFollowup) state.pending = original;
+              }
+              if (current?.queuedFollowup || (current?.pendingFollowup && state.pending)) {
+                state.message = '';
+                replaceCard(current);
+                return;
+              }
+            } catch {
+              // Keep the editable copy while the desk cannot read the journal.
+            }
+          }
+          state.message = error.message;
+          message.textContent = state.message;
+        } finally {
+          controls.forEach(control => { control.disabled = false; });
+          draft.readOnly = pending;
+          restoreFocus(submit);
+        }
+      });
+      submit.dataset.queue = '';
+    }
+    part('extra').replaceChildren(panel);
+    return draft;
   }
   restoreDraft();
   part('edit').addEventListener('click', () => {
@@ -314,63 +407,28 @@ function renderErrand(record) {
     part('extra').replaceChildren(form);
     editedGoal.focus();
   });
-  part('draft').addEventListener('click', async () => {
-    if (localDrafts.has(id)) {
-      localDrafts.get(id).querySelector('textarea').focus();
+  draftButton.addEventListener('click', async () => {
+    const shown = part('extra').querySelector('.draft textarea');
+    if (shown) {
+      shown.focus();
       return;
     }
     part('error').textContent = '';
-    const draftButton = part('draft');
     draftButton.disabled = true;
     part('edit').disabled = true;
     trackingButton.disabled = true;
     try {
-      const { text, recipient, subject } = await request(`/api/errands/${id}/draft`, { method: 'POST' });
-      const panel = document.createElement('div');
-      panel.className = 'draft';
-      const label = document.createElement('label');
-      const draft = document.createElement('textarea');
-      draft.id = `draft-${id}`;
-      draft.rows = 5;
-      draft.value = text;
-      label.htmlFor = draft.id;
-      label.textContent = 'Local follow-up draft';
-      if (recipient) {
-        const message = document.createElement('dl');
-        message.className = 'facts';
-        fact(message, 'Recipient', recipient);
-        fact(message, 'Subject', subject);
-        panel.append(message);
+      const terms = record.queuedFollowup ?? await readDraft();
+      const state = localDrafts.get(id) ?? { editable: null, pending: null, message: '' };
+      if (terms.pendingFollowup) state.pending = terms;
+      else if (!record.queuedFollowup) state.editable ??= terms;
+      localDrafts.set(id, state);
+      if (Boolean(terms.pendingFollowup) !== Boolean(record.pendingFollowup)) {
+        const current = await readCurrentErrand();
+        if (current) replaceCard({ ...current, pendingFollowup: Boolean(current.pendingFollowup) });
+      } else {
+        restoreDraft()?.focus();
       }
-      panel.append(label, draft);
-      if (recipient) {
-        const resultMessage = addText(panel, 'p', '');
-        resultMessage.setAttribute('role', 'status');
-        const queue = action(panel, 'Queue this draft in practice outbox', async () => {
-          const current = records.find(item => item.id === id);
-          queue.disabled = true;
-          resultMessage.textContent = '';
-          try {
-            const result = await request(`/api/errands/${id}/queue-followup`, {
-              method: 'POST', body: { revision: current.revision, recipient, subject, text: draft.value }
-            });
-            const pending = !result.queuedFollowup && result.status === 'open';
-            resultMessage.textContent = result.queuedFollowup
-              ? 'Draft queued locally.'
-              : pending ? 'Check refund sources before queuing again.' : 'Credit verified. The draft did not need to be queued.';
-            replaceCard(result);
-          } catch (error) {
-            resultMessage.textContent = error.message;
-            queue.focus();
-          } finally {
-            queue.disabled = false;
-          }
-        });
-        queue.dataset.queue = '';
-      }
-      localDrafts.set(id, panel);
-      part('extra').replaceChildren(panel);
-      draft.focus();
     } catch (error) {
       part('error').textContent = error.message;
     } finally {
@@ -389,7 +447,8 @@ function showErrands(changedId) {
     const ordered = orderChecks([...records], householdMode);
     const cards = ordered.map(record => {
       const existing = prior.get(`errand-${record.id}`);
-      const reuse = record.id !== changedId && existing?.dataset.revision === String(record.revision) && existing.dataset.day === deskDay;
+      const reuse = record.id !== changedId && existing?.dataset.revision === String(record.revision) &&
+        existing.dataset.day === deskDay && existing.dataset.pendingFollowup === String(Boolean(record.pendingFollowup));
       return [record, reuse ? existing : renderErrand(record)];
     });
     if (!householdMode) {

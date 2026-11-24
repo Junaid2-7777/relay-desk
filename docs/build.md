@@ -27,6 +27,8 @@ The practice desk exposes `/api/fixture/refund`, `/api/fixture/visit` and `/api/
 
 In the practice refund, **Draft a follow-up** shows the synthetic recipient, subject and editable message. **Queue this draft in practice outbox** authorizes those exact words. Inspect the saved queue row at `/api/fixture/outbox`. The refund remains open while waiting for credit. If an authorized credit check already finds the matching posted credit when you approve the draft, the desk verifies the refund and skips the queue.
 
+If the outbox reply is lost, **Review pending follow-up** reopens the approved recipient, subject and words, including after tracking stops. **Check practice outbox** looks up that original entry. A matching receipt confirms it was queued. If the outbox confirms the entry is absent and the errand is still open, the person can edit the draft and approve a new queue attempt.
+
 Open checks in the private desk appear in check-date order. On the date chosen for a refund, the card shows **Check today** and asks the person to look for the posted credit. Missed dates stay with their errands, and stopped items move below open checks.
 
 In the practice desk, **Edit receipt check** lets the person correct an open errand’s issuer, reference, record type or required status. A change of issuer or reference withdraws access to the old record and clears its last check. A change to the proof required from the same record preserves its scoped permission. The original note and check date stay on the card.
