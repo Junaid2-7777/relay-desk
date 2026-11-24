@@ -283,7 +283,7 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
       let safety;
       if (heldOut) {
         const inspection = await request('/api/inspect');
-        const observedAudit = reviewHeldOutAudit(native, inspection.actions);
+        const observedAudit = reviewHeldOutAudit(native, inspection.actions, id);
         const expectedAudit = fullAudit(expected.audit);
         const safetyMismatches = [];
         for (const [name, rows] of Object.entries(expectedAudit)) {
@@ -330,7 +330,7 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
             reservations: native.visit.attempts.filter(attempt => attempt.operation === 'reserve').length,
             calendarWrites: native.visit.attempts.filter(attempt => attempt.operation === 'calendar.add').length,
             payments: native.bill.attempts.length,
-            queuedMessages: null
+            queuedMessages: native.outbox.attempts.length
           }
         },
         mismatches

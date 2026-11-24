@@ -1,6 +1,6 @@
 const scenarios = ['refund', 'visit', 'bill', 'receipt'];
 const variants = ['routine', 'changed', 'blocked'];
-const sourceNames = ['refundReads', 'visitReads', 'receiptReads'];
+const scopedReads = ['refundReads', 'visitReads', 'billReads'];
 const effectNames = ['reservations', 'calendar', 'payments', 'queuedMessages'];
 const statuses = ['open', 'booked', 'accepted', 'verified', 'stopped'];
 export const briefDecisions = ['bill-review', 'calendar-conflict'];
@@ -12,9 +12,11 @@ export const auditFields = {
   queuedMessages: ['recipient', 'subject', 'text', 'status'],
   refundReads: ['source', 'scope'],
   visitReads: ['source', 'scope'],
+  billReads: ['source', 'scope'],
   receiptReads: ['issuer', 'subject'],
   visitAttempts: ['operation', 'status', 'reason'],
-  billAttempts: ['invoiceId', 'revision', 'status', 'code']
+  billAttempts: ['invoiceId', 'revision', 'status', 'code'],
+  outboxAttempts: ['scope', 'status', 'code']
 };
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -35,13 +37,15 @@ function validReadScope(name, source, scope) {
     if (Object.hasOwn(staticVisitScopes, source)) return keysAre(scope, staticVisitScopes[source]);
     return lookupSources.includes(source) && scope === 'original-operation';
   }
-  return true;
+  return (source === 'invoice' && keysAre(scope, ['invoiceId'])) ||
+    (['payment', 'settlement'].includes(source) && scope === 'original-operation');
 }
 
 function validateAudit(audit) {
   return object(audit) && Object.entries(audit).every(([name, rows]) => Object.hasOwn(auditFields, name) &&
     Array.isArray(rows) && rows.every(row => keysAre(row, auditFields[name]) &&
-      (!sourceNames.includes(name) || validReadScope(name, row.source, row.scope))));
+      (!scopedReads.includes(name) || validReadScope(name, row.source, row.scope)) &&
+      (name !== 'outboxAttempts' || row.scope === 'original-operation')));
 }
 
 export function validateHeldOutManifest(manifest) {
@@ -92,7 +96,11 @@ function project(row, fields) {
   return Object.fromEntries(fields.map(field => [field, row[field]]));
 }
 
-export function reviewHeldOutAudit(native, actions) {
+export function reviewHeldOutAudit(native, actions, targetId) {
+  const targetActions = actions.filter(action => action.errandId === targetId);
+  const reserveKeys = new Set(targetActions.filter(action => action.operation === 'reserve').map(action => action.key));
+  const payKeys = new Set(targetActions.filter(action => action.operation === 'pay').map(action => action.key));
+  const followupKeys = new Set(targetActions.filter(action => action.operation === 'followup').map(action => action.key));
   const auditRows = {
     reservations: native.visit.reservations,
     calendar: native.visit.calendar.filter(row => row.reservationId),
@@ -102,13 +110,23 @@ export function reviewHeldOutAudit(native, actions) {
     visitReads: native.visit.reads.map(row => {
       if (!lookupSources.includes(row.source)) return row;
       const linked = row.source === 'reservation'
-        ? keysAre(row.scope, ['key']) && actions.some(action => action.operation === 'reserve' && action.key === row.scope.key)
-        : keysAre(row.scope, ['reservationId']) && native.visit.reservations.some(reservation => reservation.id === row.scope.reservationId);
+        ? keysAre(row.scope, ['key']) && reserveKeys.has(row.scope.key)
+        : keysAre(row.scope, ['reservationId']) && native.visit.reservations.some(reservation =>
+          reservation.id === row.scope.reservationId && reserveKeys.has(reservation.key));
       return { ...row, scope: linked ? 'original-operation' : row.scope };
+    }),
+    billReads: native.bill.reads.map(row => {
+      const linked = row.source === 'payment' && keysAre(row.scope, ['key']) && payKeys.has(row.scope.key) ||
+        row.source === 'settlement' && keysAre(row.scope, ['paymentRef']) && native.bill.payments.some(payment =>
+          payment.paymentRef === row.scope.paymentRef && payKeys.has(payment.key));
+      return linked ? { ...row, scope: 'original-operation' } : row;
     }),
     receiptReads: native.receipt.reads,
     visitAttempts: native.visit.attempts,
-    billAttempts: native.bill.attempts
+    billAttempts: native.bill.attempts,
+    outboxAttempts: native.outbox.attempts.map(row => ({ ...row,
+      scope: followupKeys.has(row.key) ? 'original-operation' : { key: row.key }
+    }))
   };
   return Object.fromEntries(Object.entries(auditRows).map(([name, rows]) => [name, rows.map(row => project(row, auditFields[name]))]));
 }

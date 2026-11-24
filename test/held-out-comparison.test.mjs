@@ -26,9 +26,16 @@ function manifest() {
     id: marker, account: 'unrelated-mock-account', amountMinor: 124900, currency: 'INR', direction: 'incoming',
     status: 'posted', returnReference: 'unrelated-mock-return', postedAt: '2026-11-23T03:30:00.000Z'
   }] }];
-  refund.checkpoints[0].expected.audit.refundReads = [{ source: 'merchant', scope: {
+  const merchantRead = { source: 'merchant', scope: {
     issuer: 'merchant-demo-shop', thread: 'thread-demo-refund', reference: 'return-demo-1249'
-  } }];
+  } };
+  const followupText = 'Please share the practice refund reference.';
+  refund.checkpoints[0].followupText = followupText;
+  refund.checkpoints[0].expected.audit = {
+    refundReads: [merchantRead, merchantRead],
+    queuedMessages: [{ recipient: 'returns@practice-shop.example', subject: 'Check on return-demo-1249', text: followupText, status: 'queued' }],
+    outboxAttempts: [{ scope: 'original-operation', status: 'committed', code: null }]
+  };
 
   const booking = cases.find(item => item.id === 'visit-routine');
   booking.grants = ['slots', 'freeBusy', 'reserve', 'calendar'].map(operation => ({ operation, choice: 'allowed' }));
@@ -53,7 +60,26 @@ function manifest() {
 
   const invoice = cases.find(item => item.id === 'bill-changed');
   invoice.grants = ['invoice', 'payment'].map(operation => ({ operation, choice: 'allowed' }));
-  invoice.checkpoints[0].expected.decision = 'bill-review';
+  const invoiceId = 'electricity-2026-11';
+  const invoiceRead = { source: 'invoice', scope: { invoiceId } };
+  const payment = { invoiceId, revision: 2, payee: 'city-electric', amountMinor: 118000, currency: 'INR', status: 'accepted' };
+  const afterLostReply = {
+    payments: [payment],
+    billReads: [invoiceRead, invoiceRead, invoiceRead],
+    billAttempts: [{ invoiceId, revision: 2, status: 'reply-lost', code: null }]
+  };
+  invoice.checkpoints = [
+    { expected: { record: { owner: owners.bill, status: 'open' }, decision: 'bill-review', audit: { billReads: [invoiceRead] } } },
+    { billChoice: 'approve', events: [{ fixture: 'bill', method: 'failNextReply' }], expected: {
+      record: { owner: owners.bill, status: 'open', issue: 'payment-unknown' }, decision: null, audit: afterLostReply
+    } },
+    { expected: {
+      record: { owner: owners.bill, status: 'accepted', issue: 'payment-pending' }, decision: null,
+      audit: { ...afterLostReply, billReads: [...afterLostReply.billReads,
+        { source: 'payment', scope: 'original-operation' }, { source: 'settlement', scope: 'original-operation' }
+      ] }
+    } }
+  ];
 
   return { schemaVersion: 1, mode: 'held-out', frozenRevision: 'a'.repeat(40), providerVersion: 'synthetic-test-double', cases };
 }
@@ -80,6 +106,7 @@ test('held-out runs twelve fixed rules and thirty-six fresh candidate trials wit
   assert.equal(result.gate.fullPasses, 36);
   assert.equal(result.gate.blockedPasses, 12);
   assert.deepEqual(result.cases[0].trials.map(trial => trial.scopeProbes), Array.from({ length: 3 }, () => ({ expected: 1, seeded: 1, leaks: [] })));
+  assert.equal(result.cases[0].fixedRule.checkpoints[0].observed.nativeWriteAttempts.queuedMessages, 1);
   assert.ok(!JSON.stringify(result).includes(marker));
 });
 

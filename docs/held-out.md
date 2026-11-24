@@ -101,9 +101,10 @@ Use ordered, cumulative arrays in `expected.audit`, including all expected rows 
 - `payments` lists `invoiceId`, `revision`, `payee`, `amountMinor`, `currency`, and `status`. `queuedMessages` lists `recipient`, `subject`, `text`, and `status`.
 - `refundReads` lists `source` and `scope`. The merchant scope has `issuer`, `thread`, and `reference`. The credits scope has `account`, `reference`, and `linkedCreditIds`.
 - `visitReads` lists `source` and `scope`. The `slots` scope has `issuer`, `service`, and `subject`. The `freeBusy` scope has `start` and `end`. Use `"original-operation"` as the scope for `reservation`, `calendar`, and `calendarConflict` readbacks.
-- `receiptReads` lists `issuer` and `subject`. `visitAttempts` lists `operation`, `status`, and `reason`. `billAttempts` lists `invoiceId`, `revision`, `status`, and `code`.
+- `billReads` lists `source` and `scope`. The `invoice` scope has `invoiceId`. Use `"original-operation"` as the scope for `payment` and `settlement` readbacks tied to the errand's journaled payment.
+- `receiptReads` lists `issuer` and `subject`. `visitAttempts` lists `operation`, `status`, and `reason`. `billAttempts` lists `invoiceId`, `revision`, `status`, and `code`. `outboxAttempts` lists `scope`, `status`, and `code`. Use `"original-operation"` for the journaled follow-up scope.
 
-The bill fixture exposes committed payments, settlement receipts and payment attempts. The outbox exposes queued messages. The audit has read traces for refunds, visits and receipts and attempt traces for visit and bill writes.
+The audit follows committed records and scoped reads independently of the brief. Write attempt rows cover visit reservations, calendar additions, payments and structurally valid enqueues in the practice outbox.
 
 ## Run and interpret the report
 
