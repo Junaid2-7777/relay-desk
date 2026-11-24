@@ -6,165 +6,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { mondayBill, openBillFixture } from '../src/bill-fixture.mjs';
-import { activeGrant, makeGrant, scopes, seedHousehold } from '../src/household.mjs';
 import { mondayRefund, openRefundFixture } from '../src/refund-fixture.mjs';
-import { matchRefundCredit, refundAccess, refundGrant, refundScope, refundSources } from '../src/refund.mjs';
+import { refundScope } from '../src/refund.mjs';
 import { createDeskServer } from '../src/server.mjs';
 import { mondayVisit, openVisitFixture } from '../src/visit-fixture.mjs';
+import {
+  appointmentFields, coldChoices, cutoff, exactTimes, inspectFixtures, morning, morningClock as clock,
+  pick, presentBillDecision, refundCheck, reportActions, scriptedManualMorning, visitWindow
+} from './morning-manual.mjs';
 
-const morning = '2026-11-23T09:00:00+05:30';
 const visitStart = '2026-11-24T15:00:00+05:30';
 const visitEnd = '2026-11-24T16:00:00+05:30';
-const refundCheck = '2026-11-27';
 const capMinor = 90000;
-const cutoff = 'first-morning-checkpoint';
-const coldChoices = [
-  { errand: 'visit', scope: 'freeBusy', choice: 'allowed' },
-  { errand: 'refund', scope: 'credits', choice: 'declined' }
-];
-
-const clock = () => new Date(morning);
-const visitWindow = { start: mondayVisit.windowStart, end: mondayVisit.windowEnd };
 const withPrefix = (brief, kind) => brief.errands.find(record => record.id === `demo-${kind}`);
-const inspectFixtures = fixtures => Object.fromEntries(Object.entries(fixtures).map(([name, fixture]) => [name, fixture.inspect()]));
-const appointmentFields = ['issuer', 'service', 'subject', 'zone'];
-const exactTimes = ['start', 'end', 'zone'];
-const matching = (fields, actual, expected) => actual && expected && fields.every(field => actual[field] === expected[field]);
-const pick = (fields, record) => record ? Object.fromEntries(fields.map(field => [field, record[field]])) : null;
-
-function countActions(entries) {
-  const count = action => entries.filter(item => item.action === action).length;
-  const billsPresented = entries.filter(item => item.action === 'bill-decision-presented');
-  const invoiceRevisions = new Set(billsPresented.map(({ invoice }) => JSON.stringify(invoice)));
-  return {
-    consentChoices: count('consent'),
-    missingFieldClarifications: count('clarify'),
-    humanLookups: count('lookup'),
-    slotChoices: count('choose-slot'),
-    checkClicks: count('desk-check'),
-    bookingSubmissions: count('submit-booking'),
-    calendarSubmissions: count('submit-calendar'),
-    billDecisionsPresented: billsPresented.length,
-    distinctBillDecisions: invoiceRevisions.size,
-    billDecisionsTaken: count('bill-decision-taken'),
-    repeatPrompts: billsPresented.length - invoiceRevisions.size
-  };
-}
-
-function reportActions() {
-  const setup = [];
-  const ongoing = [];
-  return {
-    setup,
-    ongoing,
-    counts: () => ({
-      setup: countActions(setup),
-      ongoing: countActions(ongoing),
-      total: { ...countActions([...setup, ...ongoing]), attentionOccasions: Number(setup.length + ongoing.length > 0) }
-    })
-  };
-}
-
-function manualLookup(actions, source, read) {
-  actions.ongoing.push({ action: 'lookup', source });
-  return read();
-}
-
-function manualVisit(visit, fixture, actions) {
-  const permits = operation => {
-    const grant = visit.grants[operation];
-    return grant?.operation === operation && activeGrant(grant, clock()) && grant.revision > 0 &&
-      isDeepStrictEqual(grant.scope, visit.visit);
-  };
-  const busy = permits('freeBusy')
-    ? manualLookup(actions, 'calendar-free-busy', () => fixture.readFreeBusy(visitWindow))
-    : null;
-  const slots = permits('slots')
-    ? manualLookup(actions, 'visit-provider-slots', () => fixture.readSlots(visit.visit))
-    : null;
-  if (!busy || !slots || !permits('reserve')) return visit;
-
-  const eligible = slots.filter(slot => slot.active && slot.feeMinor === 0 && matching(appointmentFields, slot, visit.visit) &&
-    Date.parse(slot.start) > +clock() && Date.parse(slot.start) < Date.parse(slot.end) &&
-    Date.parse(slot.start) >= Date.parse(visitWindow.start) && Date.parse(slot.end) <= Date.parse(visitWindow.end) &&
-    busy.every(interval => Date.parse(interval.end) <= Date.parse(slot.start) || Date.parse(interval.start) >= Date.parse(slot.end)));
-  assert.equal(eligible.length, 1);
-  const [selected] = eligible;
-  actions.ongoing.push({ action: 'choose-slot', slotId: selected.id });
-  const key = 'manual-morning-reservation';
-  actions.ongoing.push({ action: 'submit-booking', slotId: selected.id });
-  const booked = fixture.reserve({ ...visit.visit, key, slotId: selected.id, revision: selected.revision },
-    fresh => permits('freeBusy') && permits('slots') && permits('reserve') &&
-      fresh.slotId === selected.id && matching(['start', 'end', 'currency'], fresh, selected) &&
-      fresh.feeMinor === 0 && Date.parse(fresh.start) > +clock());
-  assert.equal(booked.status, 'confirmed');
-  const reservation = manualLookup(actions, 'provider-reservation-readback', () => fixture.reservationByKey(key));
-  assert.deepEqual(reservation, booked.reservation);
-  if (!permits('freeBusy') || !permits('calendar')) return { ...visit, status: 'booked', reservation };
-
-  actions.ongoing.push({ action: 'submit-calendar', reservationId: reservation.id });
-  const added = fixture.addToCalendar({ key: 'manual-morning-calendar', reservationId: reservation.id },
-    fresh => permits('freeBusy') && permits('calendar') && fresh.reservationId === reservation.id && matching(exactTimes, fresh, reservation));
-  assert.equal(added.status, 'recorded');
-  const { calendarEvent, conflict } = manualLookup(actions, 'calendar-event-readback', () => ({
-    calendarEvent: fixture.calendarByReservation(reservation.id),
-    conflict: fixture.calendarConflictForReservation(reservation.id)
-  }));
-  assert.deepEqual(calendarEvent, added.event);
-  assert.equal(conflict, null);
-  return { ...visit, status: 'verified', reservation, calendarEvent };
-}
-
-function presentBillDecision(actions, bill) {
-  if (bill.issue !== 'bill-review') return;
-  const { invoiceId, revision, payee, currency, amountMinor } = bill.invoice;
-  actions.ongoing.push({ action: 'bill-decision-presented', invoice: { invoiceId, revision, payee, currency, amountMinor } });
-}
-
-function manualMorning(fixtures, warm, actions) {
-  const [visit, bill] = seedHousehold(clock(), warm);
-  const refundAccessGrants = warm
-    ? Object.fromEntries(refundSources.map(scope => [scope, refundGrant(mondayRefund, scope, 'allowed', null, clock())])) : {};
-  const refund = { status: 'open', owner: 'Demo shop', refund: mondayRefund, checkDate: refundCheck, evidence: [], refundAccess: refundAccessGrants };
-  const errands = { visit, bill, refund };
-  for (const request of warm ? [] : coldChoices) {
-    const { errand, scope, choice } = request;
-    if (errand === 'refund') refundAccessGrants[scope] = refundGrant(mondayRefund, scope, choice, refundAccessGrants[scope], clock());
-    else {
-      const owner = errands[errand];
-      owner.grants[scope] = makeGrant(scope, scopes(owner)[scope], choice, owner.grants[scope], clock());
-    }
-    actions.setup.push({ action: 'consent', ...request });
-  }
-
-  const invoiceGrant = bill.grants.invoice;
-  if (invoiceGrant?.operation === 'invoice' && activeGrant(invoiceGrant, clock()) && isDeepStrictEqual(invoiceGrant.scope, bill.bill)) {
-    const invoice = manualLookup(actions, 'electricity-invoice', () => fixtures.bill.readInvoice(bill.bill.invoiceId));
-    bill.invoice = invoice;
-    const paymentGrant = bill.grants.payment;
-    if (paymentGrant?.operation === 'payment' && activeGrant(paymentGrant, clock()) &&
-        matching(['invoiceId', 'payee', 'currency'], invoice, bill.bill) && matching(['payee', 'currency'], invoice, paymentGrant.scope) &&
-        invoice.amountMinor > paymentGrant.scope.capMinor) bill.issue = 'bill-review';
-  }
-  presentBillDecision(actions, bill);
-  const bookedVisit = manualVisit(visit, fixtures.visit, actions);
-  const canRead = scope => {
-    const grant = refundAccessGrants[scope];
-    return grant?.operation === 'read' && refundAccess(grant, clock()) === 'allowed' &&
-      isDeepStrictEqual(grant.scope, refundScope(mondayRefund, scope));
-  };
-  const merchant = canRead('merchant')
-    ? manualLookup(actions, 'merchant-refund-thread', () => fixtures.refund.readMerchant(refundAccessGrants.merchant.scope))
-    : { events: [], links: [] };
-  if (merchant.events.length) refund.merchantEvent = merchant.events.at(-1);
-  if (canRead('credits')) {
-    const credits = manualLookup(actions, 'ledger-incoming-credits', () => fixtures.refund.readCredits({
-      ...refundAccessGrants.credits.scope, linkedCreditIds: merchant.links.map(link => link.creditId)
-    }));
-    assert.equal(matchRefundCredit(mondayRefund, { credits, links: merchant.links }), null);
-  }
-  return { visit: bookedVisit, bill, refund };
-}
 
 async function deskMorning(url, warm, actions) {
   async function request(path, body) {
@@ -315,7 +169,7 @@ async function runArm(mode, warm) {
     const fixtureInputHash = createHash('sha256').update(JSON.stringify(initial)).digest('hex');
     const outcomes = mode === 'fixed-rule'
       ? await deskMorning(`http://127.0.0.1:${server.address().port}`, warm, actions)
-      : manualMorning(fixtures, warm, actions);
+      : scriptedManualMorning(fixtures, warm, actions);
     const observed = grade(fixtures, initial.visit.calendar, outcomes, warm, mode);
     return { passed: true, fixtureInputHash, observed, scriptedActions: { setup: actions.setup, ongoing: actions.ongoing }, counts: actions.counts() };
   } catch (error) {

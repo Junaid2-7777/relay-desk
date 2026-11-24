@@ -12,6 +12,7 @@
     "compare:held-out": "node scripts/compare-planners.mjs --held-out",
     "check:held-out": "node scripts/compare-planners.mjs --preflight",
     "compare:morning": "node scripts/compare-morning.mjs",
+    "manual:session": "node scripts/manual-session.mjs",
     "observe:session": "node scripts/observe-session.mjs",
     "check:n8n": "node scripts/check-n8n.mjs",
     "demo:evidence": "node scripts/demo-evidence.mjs",
