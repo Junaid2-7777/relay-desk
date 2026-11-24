@@ -5,12 +5,13 @@ import { PlannerProposalError, validatePlannerProposal } from './planner-proposa
 const maximumReviews = 128;
 const reviewLifetimeMs = 15 * 60 * 1000;
 const maximumActive = 4;
+const candidateModes = new Set(['recorded-response', 'n8n']);
 
 export function createIntakePlanner(candidate) {
   const timeoutMs = candidate?.timeoutMs ?? 12_000;
-  if (candidate && (candidate.mode !== 'recorded-response' || typeof candidate.propose !== 'function' ||
+  if (candidate && (!candidateModes.has(candidate.mode) || typeof candidate.propose !== 'function' ||
       !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000)) {
-    throw new TypeError('Supply a recorded-response planner with a bounded deadline.');
+    throw new TypeError('Supply a practice planner with a supported mode and a bounded deadline.');
   }
   const reviews = new Map();
   let active = 0;

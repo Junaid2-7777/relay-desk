@@ -24,7 +24,7 @@ A personal check date controls what appears when the person next opens the desk.
 
 ## Reviewing a planner suggestion
 
-In the practice household, the intake planner receives the person's note, the fixture's local date and the registered source names. A recorded response can suggest a goal, a check date and the fields for a receipt or visit. The desk validates the response, falls back to fixed rules on failure or timeout, and attaches the review to that exact note. Saving the approved fields reuses the reviewed suggestion. The ordinary private desk uses fixed rules locally.
+In the practice household, the intake planner receives the person's note, the fixture's local date and the receipt catalog. Authored responses and the optional n8n workflow can suggest a goal, a check date and the fields for a receipt or visit. The desk validates the response, falls back to fixed rules on failure or timeout, and attaches the review to that exact note. Saving the approved fields reuses the reviewed suggestion. The ordinary private desk uses fixed rules locally. [Connect the practice planner](n8n.md)
 
 The plan stays editable until the person confirms it. Provider access is granted separately through the ordinary permission controls. Only the controller checks authority, dispatches permitted operations and verifies outcomes with native readback. [Paired planner rehearsal](evaluation.md#paired-planner-rehearsal)
 

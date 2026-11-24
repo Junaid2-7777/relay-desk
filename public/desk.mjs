@@ -2,6 +2,7 @@ import { action, addText, fact, renderHousehold, renderPracticeSetup, reviewNeed
 
 const element = id => document.getElementById(id);
 const intake = element('intake');
+const intakeFields = element('intake-fields');
 const review = element('review');
 const noteInput = element('note');
 const goalInput = element('goal');
@@ -17,6 +18,10 @@ const format = new Intl.DateTimeFormat('en-IN', {
 const activityFormat = new Intl.DateTimeFormat('en-IN', {
   day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata'
 });
+const plannerLabels = new Map([
+  ['recorded-response', 'Recorded responses'],
+  ['n8n', 'n8n planner']
+]);
 let records = [];
 let reviewedNote;
 let saveRequestId;
@@ -392,7 +397,10 @@ function showBrief({ today, now, errands: items, fixture, household, plannerMode
   element('practice').hidden = !fixture;
   const plannerLabel = element('planner-mode');
   plannerLabel.hidden = !household;
-  plannerLabel.textContent = plannerMode === 'recorded-response' ? 'Recorded responses' : 'Fixed rules';
+  plannerLabel.textContent = plannerLabels.get(plannerMode) ?? 'Fixed rules';
+  element('note-hint').textContent = plannerMode === 'n8n'
+    ? 'Use a synthetic note. Reviewing it sends the note to the configured n8n workflow.'
+    : 'Use your own words. The note is saved on this computer.';
   checkpointButton.hidden = !household;
   householdMode = household;
   if (household) {
@@ -408,6 +416,7 @@ function showBrief({ today, now, errands: items, fixture, household, plannerMode
 async function load() {
   try {
     showBrief(await request('/api/desk'));
+    intakeFields.disabled = false;
   } catch {
     const message = document.createElement('p');
     message.textContent = 'Your saved errands could not load.';
@@ -442,12 +451,12 @@ checkpointButton.addEventListener('click', () => checkErrands());
 
 intake.addEventListener('submit', async event => {
   event.preventDefault();
+  if (intakeFields.disabled) return;
   errorMessage.textContent = '';
   statusMessage.textContent = '';
   if (!validate([[noteInput, 'Enter an errand.']], errorMessage)) return;
   const note = noteInput.value.trim();
-  const fields = element('intake-fields');
-  fields.disabled = true;
+  intakeFields.disabled = true;
   try {
     const { goal, checkDate, previewId, plannerStatus } = await request('/api/errands/preview', { method: 'POST', body: { note } });
     reviewedNote = note;
@@ -463,7 +472,7 @@ intake.addEventListener('submit', async event => {
   } catch (error) {
     errorMessage.textContent = error.message;
   } finally {
-    fields.disabled = false;
+    intakeFields.disabled = false;
   }
 });
 

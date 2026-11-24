@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { runBill } from './bill.mjs';
 import { openBillFixture } from './bill-fixture.mjs';
 import { DeskError, openDesk } from './desk.mjs';
+import { createN8nPlannerFromEnv } from './n8n-planner.mjs';
 import { openOutboxFixture } from './outbox-fixture.mjs';
 import { runReceipt, ReceiptPlanError } from './receipt.mjs';
 import { openReceiptFixture } from './receipt-fixture.mjs';
@@ -20,6 +21,10 @@ const assets = new Map([
   ['/household.mjs', ['../public/household.mjs', 'text/javascript']],
   ['/wordmark.svg', ['../docs/brand/wordmark.svg', 'image/svg+xml']],
   ['/mark.svg', ['../docs/brand/mark.svg', 'image/svg+xml']]
+]);
+const practiceDirectories = new Map([
+  ['recorded-response', '.relay/demo-recorded'],
+  ['n8n', '.relay/demo-n8n']
 ]);
 
 function send(response, status, content, type = 'application/json') {
@@ -60,7 +65,7 @@ export function createDeskServer({
 } = {}) {
   if (planner && !householdMode) throw new TypeError('Use planner proposals in the practice household.');
   if (householdMode) fixtureMode = true;
-  dataDir ??= resolve(fixtureMode ? '.relay/demo' : '.relay');
+  dataDir ??= resolve(fixtureMode ? (practiceDirectories.get(planner?.mode) ?? '.relay/demo') : '.relay');
   const refundFixture = fixtureMode ? openRefundFixture({ dataDir, clock }) : undefined;
   const household = householdMode ? {
     bill: { fixture: openBillFixture({ dataDir, clock }), run: runBill },
@@ -161,9 +166,10 @@ export function createDeskServer({
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   const fixtureMode = process.argv.includes('--fixture');
   const recorded = process.argv.includes('--recorded');
-  if (recorded && !fixtureMode) throw new Error('Use --recorded with the practice household.');
-  const practiceDir = recorded ? '.relay/demo-recorded' : '.relay/demo';
-  const dataDir = process.env.RELAY_DATA_DIR ?? resolve(fixtureMode ? practiceDir : '.relay');
+  const n8n = process.argv.includes('--n8n');
+  if ((recorded || n8n) && !fixtureMode) throw new Error('Use --recorded or --n8n with the practice household.');
+  if (recorded && n8n) throw new Error('Choose one practice planner mode.');
+  const dataDir = process.env.RELAY_DATA_DIR;
   const fixedTime = process.env.RELAY_CLOCK ?? (fixtureMode ? '2026-11-23T09:00:00+05:30' : undefined);
   const clock = fixedTime ? () => new Date(fixedTime) : undefined;
   if (clock && !Number.isFinite(+clock())) throw new Error('RELAY_CLOCK must be a date or an ISO timestamp.');
@@ -171,6 +177,8 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   if (recorded) {
     const { cases } = JSON.parse(await readFile(new URL('../fixtures/planner-rehearsal.json', import.meta.url), 'utf8'));
     planner = createRecordedPlanner(cases.map(({ note, recordedProposal }) => ({ note, recordedProposal })));
+  } else if (n8n) {
+    planner = createN8nPlannerFromEnv();
   }
   const port = Number(process.env.RELAY_PORT ?? 4173);
   const server = createDeskServer({
