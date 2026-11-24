@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { openDatabase } from './sqlite.mjs';
 import { evidenceInstant } from '../shared/evidence-time.mjs';
 import { refundLinkVisibleAt } from './refund.mjs';
 
@@ -25,10 +25,8 @@ export class RefundFeedUnavailable extends Error {
 
 export function openRefundFixture({ dataDir, clock = () => new Date() }) {
   mkdirSync(dataDir, { recursive: true });
-  const database = new DatabaseSync(join(dataDir, 'refund-fixture.sqlite'));
+  const database = openDatabase(join(dataDir, 'refund-fixture.sqlite'));
   database.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 3000;
     CREATE TABLE IF NOT EXISTS merchant_events (
       id TEXT PRIMARY KEY,
       issuer TEXT NOT NULL,

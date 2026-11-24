@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { openDatabase } from './sqlite.mjs';
 
 export const practiceReceiptSource = Object.freeze({ issuer: 'library-practice', label: 'Practice library' });
 export class ReceiptPlanError extends Error {}
@@ -26,10 +26,8 @@ function receiptRecord(row) {
 
 export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
   mkdirSync(dataDir, { recursive: true });
-  const database = new DatabaseSync(join(dataDir, 'providers.sqlite'));
+  const database = openDatabase(join(dataDir, 'providers.sqlite'));
   database.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 3000;
     PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS receipt_sources (
       issuer TEXT PRIMARY KEY,

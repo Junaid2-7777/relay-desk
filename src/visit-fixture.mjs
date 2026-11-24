@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { openDatabase } from './sqlite.mjs';
 import { zonedInstant } from '../shared/evidence-time.mjs';
 
 export const mondayVisit = Object.freeze({
@@ -35,10 +35,8 @@ function intervalBounds({ start, end }) {
 
 export function openVisitFixture({ dataDir, clock = () => new Date() }) {
   mkdirSync(dataDir, { recursive: true });
-  const database = new DatabaseSync(join(dataDir, 'providers.sqlite'));
+  const database = openDatabase(join(dataDir, 'providers.sqlite'));
   database.exec(`
-    PRAGMA busy_timeout = 3000;
-    PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS visit_slots (
       id TEXT PRIMARY KEY, issuer TEXT NOT NULL, service TEXT NOT NULL,
       subject TEXT NOT NULL, record TEXT NOT NULL

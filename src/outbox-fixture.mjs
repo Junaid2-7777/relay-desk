@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { openDatabase } from './sqlite.mjs';
 
 export class OutboxFixtureError extends Error {
   constructor(code, message) {
@@ -13,10 +13,8 @@ const textPresent = value => typeof value === 'string' && value.trim().length > 
 
 export function openOutboxFixture({ dataDir, clock = () => new Date() }) {
   mkdirSync(dataDir, { recursive: true });
-  const database = new DatabaseSync(join(dataDir, 'providers.sqlite'));
+  const database = openDatabase(join(dataDir, 'providers.sqlite'));
   database.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 3000;
     CREATE TABLE IF NOT EXISTS outbox_messages (
       key TEXT PRIMARY KEY,
       recipient TEXT NOT NULL,

@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { openDatabase } from './sqlite.mjs';
 import { kolkataDay as localDay, zonedInstant } from '../shared/evidence-time.mjs';
 import { billApprovalMs } from '../shared/grant-time.mjs';
 import { openActionJournal } from './action-journal.mjs';
@@ -80,10 +80,8 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
   const intakePlanner = household ? createIntakePlanner(candidate) : undefined;
   mkdirSync(dataDir, { recursive: true });
   const directory = realpathSync(dataDir);
-  const database = new DatabaseSync(join(directory, 'desk.sqlite'));
+  const database = openDatabase(join(directory, 'desk.sqlite'));
   database.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 3000;
     PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS errands (
       id TEXT PRIMARY KEY,

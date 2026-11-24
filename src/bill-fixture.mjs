@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { openDatabase } from './sqlite.mjs';
 
 export const mondayBill = Object.freeze({
   invoiceId: 'electricity-2026-11',
@@ -28,10 +28,8 @@ function sameTerms(record, intent) {
 
 export function openBillFixture({ dataDir, clock = () => new Date() }) {
   mkdirSync(dataDir, { recursive: true });
-  const database = new DatabaseSync(join(dataDir, 'providers.sqlite'));
+  const database = openDatabase(join(dataDir, 'providers.sqlite'));
   database.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 3000;
     CREATE TABLE IF NOT EXISTS bill_invoices (
       invoiceId TEXT NOT NULL,
       revision INTEGER NOT NULL CHECK (revision > 0),
