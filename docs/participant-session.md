@@ -61,3 +61,32 @@ Expected result the observer could not verify __
 ```
 
 Count each consent choice once. Three scopes reviewed on one screen can be three choices in one occasion. Count lookups the participant performs separately from the desk’s provider reads. Verify a visit against its reservation and calendar entry, a payment against its accepted payment and matching settlement, and a refund against its posted matching credit. Use the practice provider records and desk trace to confirm zero effects where the person withheld access. Record unresolved outcomes and refusals alongside successes. Report first-use and assisted results separately from scripted evaluation and independently verified outcomes. [Evidence checks](evaluation.md#one-household-three-independent-outcomes) · [Inspection commands](build.md#run-the-local-build)
+
+## Summarize the worksheets
+
+Tally the paper worksheets by hand or run `npm run --silent summarize:sessions -- INPUT.json` after collection. Keep the input local and the original worksheets with their build revision, task order and independently verified evidence. The command prints aggregate JSON. Use `observed-participant-sessions` for records from people who agreed to take part. This example uses invented measurements to illustrate the format.
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "synthetic-format-example",
+  "sessions": [{
+    "code": "s-001",
+    "runs": [{
+      "task": "blank-desk",
+      "arm": "fixed-rule",
+      "cutoff": { "point": "saved-check-after-restart", "clock": "2026-11-27T09:00:00+05:30" },
+      "outcome": "done",
+      "unassistedSeconds": 42,
+      "counts": { "ongoing": { "manualLookups": 0, "interruptions": 1 } }
+    }]
+  }]
+}
+```
+
+- Give each worksheet an anonymous `s-` code followed by three to eight digits, with one record per task and arm. Tasks are `blank-desk`, `cold-monday` and `warm-monday`. Arms are `manual`, `fixed-rule` and `model-backed`. Use `skipped` for a task the person skipped. Leave an arm without a record when it was never offered or observation is missing.
+- Record the first `outcome` as `done`, `stopped`, `asked-for-help`, `cutoff` or `skipped`. `unassistedSeconds` covers the first observation before any help. If the person continued with help, add `assisted` with its own `outcome` of `done`, `stopped` or `cutoff`, and `elapsedSeconds` for that assisted interval. Unknown times can be omitted or set to `null`.
+- Fill `counts.setup` and `counts.ongoing` with observed nonnegative counts for `consentChoices`, `clarifications`, `decisionsPresented`, `decisionsTaken`, `manualLookups`, `repeatPrompts` and `interruptions`. Use `0` when you observed zero. Omit unknown values or set them to `null`. A total requires both phases for that measure. A skipped record carries no timing or workload.
+- Record the known cutoff with its fixture `clock` and `point`. Use `saved-check-after-restart` for blank desk, `first-morning-checkpoint` for the first cold or warm check, and `after-bill-decision` for a warm observation that includes the choice. Omit the cutoff or set it to `null` when unknown. Use an explicit clock offset. Keep notes and other worksheet details on the worksheet.
+
+Read the task and arm results with their recorded, attempted and missing denominators. The summary separates outcomes before and after help. Every elapsed or workload median gives the number actually observed. A desk and manual outcome is paired only for the same worksheet, task, comparable cutoff point and fixture instant. Paired elapsed and workload figures also require both completions in the same help group and an observation on each side. The warm bill choice falls after the manual comparison cutoff. The reported differences are descriptive, with task completion and independently verified errand outcomes recorded separately.

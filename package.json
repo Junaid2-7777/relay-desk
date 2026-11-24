@@ -14,6 +14,7 @@
     "compare:morning": "node scripts/compare-morning.mjs",
     "manual:session": "node scripts/manual-session.mjs",
     "observe:session": "node scripts/observe-session.mjs",
+    "summarize:sessions": "node scripts/summarize-sessions.mjs",
     "check:n8n": "node scripts/check-n8n.mjs",
     "demo:evidence": "node scripts/demo-evidence.mjs",
     "demo": "node src/server.mjs --fixture",
