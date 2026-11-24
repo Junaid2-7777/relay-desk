@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { evidenceInstant, zonedInstant } from '../shared/evidence-time.mjs';
 import { mondayBill, openBillFixture } from '../src/bill-fixture.mjs';
 import { sameInvoice } from '../src/household.mjs';
+import { openOutboxFixture } from '../src/outbox-fixture.mjs';
 import { openReceiptFixture, practiceReceiptSource, receiptIdentifier } from '../src/receipt-fixture.mjs';
 import { mondayRefund, openRefundFixture } from '../src/refund-fixture.mjs';
 import { mondayVisit, openVisitFixture } from '../src/visit-fixture.mjs';
@@ -13,6 +14,8 @@ const actions = new Map([
   ['unrelated-credit', [() => postCredit(false)]],
   ['matching-credit', [() => postCredit(true)]],
   ['settle-bill', [settleBill]],
+  ['bill-revision', [reviseBill, 'REVISION', 'AMOUNT_MINOR', 'CURRENCY', 'PAYEE']],
+  ['lose-next-reply', [loseReply, 'payment|reservation|outbox']],
   ['visit-slot', [publishVisitSlot, 'SLOT_ID', 'ISSUER', 'SERVICE', 'SUBJECT', 'START', 'END', 'FEE_MINOR']],
   ['visit-slot-withdraw', [withdrawVisitSlot, 'SLOT_ID']],
   ['calendar-commitment', [publishCommitment, 'EVENT_ID', 'START', 'END', 'TITLE']],
@@ -46,6 +49,31 @@ function postCredit(matches) {
   return withFixture(openRefundFixture, 'refund-fixture.sqlite', fixture => {
     fixture.putCredit(credit);
     return credit;
+  });
+}
+
+function reviseBill(revisionText, amountText, currency, payee) {
+  const revision = Number(revisionText);
+  const amountMinor = Number(amountText);
+  if (![revisionText, amountText].every(value => /^[1-9]\d*$/u.test(value)) ||
+      ![revision, amountMinor].every(Number.isSafeInteger) || !/^[A-Z]{3}$/u.test(currency)) {
+    throw new Error('Use a positive integer revision and minor-unit amount, with a three-letter uppercase currency.');
+  }
+  const terms = { ...mondayBill, revision, amountMinor, currency, payee: receiptIdentifier(payee, 'a payee identifier') };
+  return withFixture(openBillFixture, 'providers.sqlite', fixture => fixture.publishRevision(terms));
+}
+
+function loseReply(operation) {
+  const faults = new Map([
+    ['payment', [openBillFixture, 'failNextReply']],
+    ['reservation', [openVisitFixture, 'failNextReservationReply']],
+    ['outbox', [openOutboxFixture, 'failNextReply']]
+  ]);
+  if (!faults.has(operation)) throw new Error('Choose payment, reservation, or outbox for the next lost reply.');
+  const [open, method] = faults.get(operation);
+  return withFixture(open, 'providers.sqlite', fixture => {
+    fixture[method]();
+    return { operation, nextReply: 'will-be-lost' };
   });
 }
 

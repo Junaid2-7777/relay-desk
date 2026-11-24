@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -67,6 +68,14 @@ async function startHousehold(t, warm = true) {
       await open(reset);
     },
     moveTime(next) { time = next; },
+    operator(args, status = 0) {
+      const run = spawnSync(process.execPath, ['scripts/demo-evidence.mjs', ...args], {
+        cwd: new URL('../', import.meta.url), encoding: 'utf8',
+        env: { ...process.env, RELAY_DATA_DIR: dataDir, RELAY_CLOCK: time }
+      });
+      assert.equal(run.status, status, run.stderr);
+      return status === 0 ? JSON.parse(run.stdout) : run.stderr;
+    },
     persistLegacyErrand(record) {
       const database = new DatabaseSync(join(dataDir, 'desk.sqlite'));
       try {
@@ -235,13 +244,54 @@ test('an old review with a grant for another invoice cannot read or grant a bill
   assert.equal(after.revision, bill.revision);
 });
 
+test('the operator can publish a new bill without carrying forward approval or changing a past revision', async t => {
+  const household = await startHousehold(t);
+  const original = errand(await household.checkpoint(), 'bill');
+  await household.billChoice(original, 'approve');
+  const revision = ['bill-revision', '3', '125000', 'INR', 'city-electric'];
+  const revised = household.operator(revision);
+  assert.deepEqual(revised, { ...mondayBill, revision: 3, amountMinor: 125000 });
+  assert.deepEqual(household.operator(revision), revised);
+  assert.match(household.operator(['bill-revision', '3', '125001', 'INR', 'city-electric'], 1), /above the latest/);
+  assert.match(household.operator(['bill-revision', '4', '12.50', 'INR', 'city-electric'], 1), /minor-unit/);
+  const updated = errand(await household.checkpoint(), 'bill');
+  assert.equal(updated.approval, null);
+  assert.equal(updated.issue, 'bill-review');
+  assert.deepEqual(updated.invoice, revised);
+  assert.equal(updated.grants.payment.scope.capMinor, billCap);
+  await household.billChoice(updated, 'approve');
+  household.operator(['bill-revision', '4', '125000', 'INR', 'another-practice-payee']);
+  const changed = errand(await household.checkpoint(), 'bill');
+  assert.equal(changed.invoice.payeeLabel, original.invoice.payeeLabel);
+  assert.equal(changed.issue, 'bill-permission');
+  const native = await household.native('bill');
+  assert.equal(native.invoices.length, 4);
+  assert.deepEqual(native.payments, []);
+  assert.deepEqual(native.attempts, []);
+});
+
+test('a lost booking reply set by the operator recovers one native reservation and calendar entry', async t => {
+  const household = await startHousehold(t);
+  assert.deepEqual(household.operator(['lose-next-reply', 'reservation']), { operation: 'reservation', nextReply: 'will-be-lost' });
+  const unknown = errand(await household.checkpoint(), 'visit');
+  assert.equal(unknown.issue, 'reservation-unknown');
+  assert.equal(unknown.reservation, null);
+  await household.restart();
+  const recovered = errand(await household.checkpoint(), 'visit');
+  assert.equal(recovered.status, 'verified');
+  const native = await household.native('visit');
+  assert.deepEqual(native.reservations, [recovered.reservation]);
+  assert.equal(native.attempts.filter(row => row.operation === 'reserve').length, 1);
+  assert.equal(native.calendar.filter(row => row.reservationId === recovered.reservation.id).length, 1);
+});
+
 test('a lost payment reply reconciles one exact committed payment across restart and waits for settlement', async t => {
   const household = await startHousehold(t);
   const provider = household.provider(openBillFixture);
   const bill = errand(await household.checkpoint(), 'bill');
   const approved = await household.billChoice(bill, 'approve');
   await household.billChoice(bill, 'approve', 409);
-  provider.failNextReply();
+  household.operator(['lose-next-reply', 'payment']);
   const unknown = errand(await household.checkpoint(), 'bill');
   assert.equal(unknown.issue, 'payment-unknown');
   const first = await household.native('bill');
@@ -526,7 +576,7 @@ test('an ambiguous outbox reply remains unknown across restart until the exact o
   const fixture = household.provider(openOutboxFixture);
   const refund = errand(await household.desk(), 'refund');
   const draft = { ...await household.draft(refund), text: 'May I have the transfer reference, please?' };
-  fixture.failNextReply();
+  household.operator(['lose-next-reply', 'outbox']);
   fixture.failNextReadback();
 
   const uncertain = await household.queue(refund, draft, 409);

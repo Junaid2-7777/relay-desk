@@ -81,7 +81,19 @@ To reproduce a calendar conflict through the brief, use a fresh practice directo
 3. Choose to handle rescheduling yourself or to keep checking for a free interval. Inspect `/api/fixture/visit` after the choice. Both the confirmed reservation and the household commitment retain their times.
 4. To simulate the calendar owner independently moving their commitment, run `npm run demo:evidence -- visit-conflict-moved` and check again. With the watch choice and active permissions, Relay can add and verify the original visit. With personal follow-up selected, the person keeps responsibility for arranging a change.
 
-Use a clean fixture for each challenge. A lost 3 pm slot should prompt a fresh availability check within the existing grant. If only a paid visit or a busy time remains, show the alternatives and leave the protected event alone. Changing the bill again after a one-time approval should retire the stale decision before any new payment. Dropping a provider response after an accepted write should trigger readback before a retry. Compare the provider records before and after the challenge. Preserve failed runs separately from the uninterrupted video. [Evaluation plan](evaluation.md)
+### Change the bill while its decision is open
+
+Start a fresh warm practice household, check the errands and leave the ₹1,180 decision open. From the operator terminal in the same practice directory, run `npm run demo:evidence -- bill-revision 3 125000 INR city-electric`. The biller now records ₹1,250 for the same payee. Try the old ₹1,180 button. Relay asks for a fresh check. The next check shows the revised terms and the ₹900 standing limit. Inspect `/api/fixture/bill` for zero payment attempts.
+
+To try a substituted payee, publish `npm run demo:evidence -- bill-revision 4 125000 INR another-practice-payee` and check again. The biller retains the display name City Electric. The changed payee identifier falls outside the payment grant. Supply positive integer revisions and amounts in minor units. Repeating the latest terms returns the same revision. Changing those terms needs a higher revision.
+
+### Recover a lost reply
+
+Use a fresh warm household and run `npm run demo:evidence -- lose-next-reply payment` before choosing **Pay ₹1,180 once**. The biller accepts the payment but withholds the reply. Check the errands again, or reopen the same directory with `npm run demo` first. Relay finds the original payment, shows settlement as pending, and leaves one payment and one attempt at `/api/fixture/bill`. Run `npm run demo:evidence -- settle-bill` and check again to verify settlement.
+
+For the booking version, run `npm run demo:evidence -- lose-next-reply reservation` before the first warm check. For the message version, use `npm run demo:evidence -- lose-next-reply outbox` before approving the exact follow-up. Inspect the original reservation or queued message after recovery. The operator command arms a single lost reply. The household still needs its ordinary permission or approval to make the write.
+
+Use fresh fixtures for separate challenges. If the 3 pm offer disappears or only a paid or busy time remains, check again and inspect the protected event. Preserve failed runs separately from the uninterrupted video. [Evaluation plan](evaluation.md)
 
 For the unfamiliar task, let the judge choose the subject and issuer. If the available tools cannot read the specified proof, accept a tracking-only task or ask for clarification and disclose the limitation. Record this audience-chosen trial separately from frozen evaluation cases. For viewers who know the original project, the scholarship specialist offers a further example. A school’s receipt of a correction leaves verification outstanding through the separate institute and district stages. [Scholarship sources](scholarship-sources.md)
 

@@ -135,6 +135,17 @@ export function openBillFixture({ dataDir, clock = () => new Date() }) {
     writeInvoice.run(invoiceId, revision, payee, payeeLabel, amountMinor, currency);
   }
 
+  function publishRevision(invoice) {
+    return transaction(() => {
+      const current = latestInvoice.get(invoice.invoiceId);
+      if (!current) throw new Error('Start the practice household before revising its bill.');
+      if (sameTerms(current, invoice) && current.payeeLabel === invoice.payeeLabel) return plain(current);
+      if (invoice.revision <= current.revision) throw new Error('Give changed bill terms a revision above the latest one.');
+      putInvoice(invoice);
+      return plain(latestInvoice.get(invoice.invoiceId));
+    });
+  }
+
   function putSettlement({ paymentRef, invoiceId, revision, payee, amountMinor, currency, status, settledAt }) {
     writeSettlement.run(paymentRef, invoiceId, revision, payee, amountMinor, currency, status, settledAt);
   }
@@ -202,6 +213,7 @@ export function openBillFixture({ dataDir, clock = () => new Date() }) {
       });
     },
     putInvoice,
+    publishRevision,
     readInvoice: (invoiceId, authorize) => read('invoice', { invoiceId }, authorize, () => latestInvoice.get(invoiceId)),
     pay,
     paymentByKey: (key, authorize) => read('payment', { key }, authorize, () => findPayment.get(key)),
