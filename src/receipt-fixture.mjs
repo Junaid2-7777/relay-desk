@@ -118,7 +118,8 @@ export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
     const issuer = receiptIdentifier(scope.issuer, 'an issuer identifier');
     const subject = receiptIdentifier(scope.subject, 'a subject reference');
     return transaction(() => {
-      if (authorize && authorize() !== true) return { status: 'denied' };
+      const now = clock();
+      if (authorize && authorize(now) !== true) return { status: 'denied' };
       if (!issuerExists.get(issuer)) throw new ReceiptPlanError('This issuer has no registered receipt source.');
       if (replay) {
         const prior = priorCheck.get(replay.key, replay.attempt);
@@ -130,7 +131,7 @@ export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
             : { status: 'checked', receipts: JSON.parse(prior.receipts), checkedAt: prior.checkedAt };
         }
       }
-      const checkedAt = clock().toISOString();
+      const checkedAt = now.toISOString();
       const { lastInsertRowid: readId } = insertRead.run(issuer, subject, checkedAt);
       const receipts = offline.get(issuer) ? null : scopedReceipts.all(issuer, subject).map(row => ({ ...row }));
       if (receipts === null) failRead.run(readId);

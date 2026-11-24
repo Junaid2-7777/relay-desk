@@ -54,7 +54,7 @@ export function checkReceipt(record, fixture, readClock, checkpointId) {
   };
   for (let attempt = 1; attempt <= 2; attempt++) {
     const read = fixture.readForCheck({ issuer: plan.issuer, subject: plan.subject }, {
-      authorize: () => Boolean(readGrant(record, plan, readClock())),
+      authorize: at => activeGrant(grant, at) && activeGrant(grant, readClock()),
       ...(replay ? { replay: { ...replay, attempt } } : {})
     });
     if (read.status === 'unavailable') continue;

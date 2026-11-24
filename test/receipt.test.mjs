@@ -13,9 +13,9 @@ const now = new Date('2026-11-23T06:00:00Z');
 const practicePlan = { issuer: practiceReceiptSource.issuer, subject: 'membership-207', type: 'membership', status: 'closed' };
 const closure = { ...practicePlan, id: 'closure-1', occurredAt };
 
-function setup(t) {
+function setup(t, clock = () => now) {
   const dataDir = mkdtempSync(join(tmpdir(), 'relay-receipt-'));
-  const fixture = openReceiptFixture({ dataDir, clock: () => now });
+  const fixture = openReceiptFixture({ dataDir, clock });
   t.after(() => {
     fixture.close();
     rmSync(dataDir, { force: true, recursive: true });
@@ -127,6 +127,21 @@ test('a receipt grant expiring as the provider starts the read prevents even the
   const checked = checkReceipt(record, delayed, () => time);
   assert.equal(checked.issue, 'receipt-permission');
   assert.equal(checked.receiptProof, null);
+  assert.deepEqual(fixture.inspect().reads, []);
+});
+
+test('the provider checks permission at the timestamp it would record for the issuer lookup', t => {
+  const expiresAt = new Date(+now + 1);
+  const fixture = setup(t, () => expiresAt);
+  fixture.putReceipt(closure);
+  const plan = normalizeReceiptPlan(practicePlan, fixture.sources());
+  const record = { status: 'open', receiptPlan: plan, grants: { receipt: {
+    operation: 'receipt', status: 'allowed', revision: 1, expiresAt: expiresAt.toISOString(),
+    scope: { issuer: plan.issuer, subject: plan.subject }
+  } } };
+  const result = checkReceipt(record, fixture, () => now);
+  assert.equal(result.issue, 'receipt-permission');
+  assert.equal(result.receiptProof, null);
   assert.deepEqual(fixture.inspect().reads, []);
 });
 
