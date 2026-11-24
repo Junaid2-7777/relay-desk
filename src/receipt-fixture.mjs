@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { evidenceInstant } from '../shared/evidence-time.mjs';
 import { openDatabase } from './sqlite.mjs';
 
 export const practiceReceiptSource = Object.freeze({ issuer: 'library-practice', label: 'Practice library' });
@@ -122,7 +123,8 @@ export function openReceiptFixture({ dataDir, clock = () => new Date() }) {
       if (replay) {
         const prior = priorCheck.get(replay.key, replay.attempt);
         if (prior) {
-          if (prior.issuer !== issuer || prior.subject !== subject || prior.binding !== replay.binding) {
+          if (prior.issuer !== issuer || prior.subject !== subject || prior.binding !== replay.binding ||
+              !(evidenceInstant(prior.checkedAt) <= +now)) {
             return { status: 'superseded' };
           }
           return prior.receipts === null ? { status: 'unavailable' }

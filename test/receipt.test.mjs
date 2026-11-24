@@ -201,6 +201,27 @@ test('an interrupted named checkpoint preserves its native attempt budget across
   assert.equal(fixture.inspect().reads.length, 3);
 });
 
+test('a named checkpoint cannot replay an issuer read from after the rewound clock', t => {
+  const scenario = interruptedDesk(t);
+  const { fixture, record } = scenario;
+  const receipt = { ...closure, occurredAt: '2026-11-23T07:00:00Z' };
+  const later = new Date('2026-11-23T08:00:00Z');
+  scenario.moveTime(later);
+  fixture.putReceipt(receipt);
+  scenario.interruptAndReopen();
+  const reads = fixture.inspect().reads;
+  assert.equal(reads[0].checkedAt, later.toISOString());
+
+  scenario.moveTime(new Date('2026-11-23T06:30:00Z'));
+  assert.deepEqual(scenario.replay(), record);
+  assert.deepEqual(fixture.inspect().reads, reads);
+
+  scenario.moveTime(later);
+  const fresh = scenario.desk.checkpoint('receipt-recheck-after-rewind').errands[0];
+  assert.equal(fresh.status, 'verified');
+  assert.deepEqual(fresh.receiptProof, receipt);
+});
+
 test('a saved native result is replayed only for the same active grant and agreed proof', async t => {
   for (const change of ['same terms', 'proof edited', 'grant withdrawn', 'grant renewed', 'grant expired']) {
     await t.test(change, t => {
