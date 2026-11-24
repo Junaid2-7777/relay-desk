@@ -51,7 +51,8 @@ function manifest() {
         { source: 'slots', scope: subject },
         { source: 'reservation', scope: 'original-operation' },
         { source: 'calendar', scope: 'original-operation' },
-        { source: 'calendar', scope: 'original-operation' }
+        { source: 'calendar', scope: 'original-operation' },
+        { source: 'calendarConflict', scope: 'original-operation' }
       ],
       visitAttempts: [{ operation: 'reserve', status: 'confirmed', reason: null },
         { operation: 'calendar.add', status: 'recorded', reason: null }]

@@ -395,7 +395,7 @@ test('visit conflict choices require current native evidence and never alter the
   assert.deepEqual(final.attempts.slice(before.attempts.length).map(({ operation, status }) => ({ operation, status })), [
     { operation: 'calendar.add', status: 'recorded' }
   ]);
-  assert.equal(final.reads.at(-1).source, 'calendar');
+  assert.deepEqual(final.reads.slice(-2).map(read => read.source), ['calendar', 'calendarConflict']);
 });
 
 test('stopping an open errand withdraws its permissions and leaves its evidence unresolved', async t => {

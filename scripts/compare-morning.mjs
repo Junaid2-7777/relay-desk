@@ -106,8 +106,12 @@ function manualVisit(visit, fixture, actions) {
   const added = fixture.addToCalendar({ key: 'manual-morning-calendar', reservationId: reservation.id },
     fresh => permits('freeBusy') && permits('calendar') && fresh.reservationId === reservation.id && matching(exactTimes, fresh, reservation));
   assert.equal(added.status, 'recorded');
-  const calendarEvent = manualLookup(actions, 'calendar-event-readback', () => fixture.calendarByReservation(reservation.id));
+  const { calendarEvent, conflict } = manualLookup(actions, 'calendar-event-readback', () => ({
+    calendarEvent: fixture.calendarByReservation(reservation.id),
+    conflict: fixture.calendarConflictForReservation(reservation.id)
+  }));
   assert.deepEqual(calendarEvent, added.event);
+  assert.equal(conflict, null);
   return { ...visit, status: 'verified', reservation, calendarEvent };
 }
 
@@ -256,7 +260,8 @@ function grade(fixtures, initialCalendar, outcomes, warm, mode) {
       ['slots', pick(['issuer', 'service', 'subject'], mondayVisit)],
       ['reservation', { key: reservation.key }],
       calendarRead,
-      ...(mode === 'fixed-rule' ? [calendarRead] : [])
+      ...(mode === 'fixed-rule' ? [calendarRead] : []),
+      ['calendarConflict', { reservationId: reservation.id }]
     ]);
     assert.deepEqual(native.visit.attempts.map(attempt => [attempt.operation, attempt.status, attempt.reason]),
       [['reserve', 'confirmed', null], ['calendar.add', 'recorded', null]]);

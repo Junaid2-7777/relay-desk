@@ -264,3 +264,45 @@ test('visit discovery and readback stop if the provider waits past the read gran
     });
   }
 });
+
+test('calendar readback reports a protected overlap added just after the calendar commit', t => {
+  const clock = () => new Date('2026-11-23T09:00:00+05:30');
+  const dataDir = mkdtempSync(join(tmpdir(), 'relay-post-sync-conflict-'));
+  const fixture = openVisitFixture({ dataDir, clock });
+  let visit = seedHousehold(clock(), true).find(item => item.kind === 'visit');
+  const connection = openVisitJournal(dataDir, () => visit, clock);
+  t.after(() => {
+    connection.close();
+    fixture.close();
+    rmSync(dataDir, { force: true, recursive: true });
+  });
+  fixture.reset();
+  const existingCalendar = fixture.inspect().calendar;
+  const protectedTitle = 'Synthetic private post-sync appointment';
+  let overlap;
+  const concurrent = {
+    ...fixture,
+    addToCalendar(...args) {
+      const result = fixture.addToCalendar(...args);
+      assert.equal(result.status, 'recorded');
+      overlap = fixture.putCalendarEvent({
+        id: 'private-post-sync-overlap', start: result.event.start, end: result.event.end, title: protectedTitle
+      });
+      return result;
+    }
+  };
+
+  visit = runVisit(visit, concurrent, connection.journal, clock());
+  const native = fixture.inspect();
+  assert.equal(visit.status, 'booked');
+  assert.equal(visit.issue, 'calendar-conflict');
+  assert.equal(visit.conflictChoice, null);
+  assert.deepEqual(visit.conflict, { start: overlap.start, end: overlap.end });
+  assert.equal(visit.calendarEvent.reservationId, visit.reservation.id);
+  assert.deepEqual(native.calendar.filter(event => !event.reservationId), [...existingCalendar, overlap]);
+  assert.equal(native.reads.at(-1).source, 'calendarConflict');
+  assert.ok(!JSON.stringify({ visit, reads: native.reads }).includes(protectedTitle));
+
+  assert.deepEqual(runVisit(visit, fixture, connection.journal, clock()), visit);
+  assert.deepEqual(fixture.inspect().attempts, native.attempts);
+});

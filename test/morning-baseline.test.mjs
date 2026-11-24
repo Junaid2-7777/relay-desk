@@ -32,6 +32,6 @@ test('the morning baseline pairs fixture inputs, permission scopes and outcomes 
       if (warm) assert.equal(arm.scriptedActions.ongoing[1].action, 'bill-decision-presented');
     }
   }
-  assert.deepEqual(report.scenarios.warm.manual.observed.nativeReadCounts, { bill: 1, refund: 2, visit: 4 });
-  assert.deepEqual(report.scenarios.warm['fixed-rule'].observed.nativeReadCounts, { bill: 1, refund: 2, visit: 5 });
+  assert.deepEqual(report.scenarios.warm.manual.observed.nativeReadCounts, { bill: 1, refund: 2, visit: 5 });
+  assert.deepEqual(report.scenarios.warm['fixed-rule'].observed.nativeReadCounts, { bill: 1, refund: 2, visit: 6 });
 });

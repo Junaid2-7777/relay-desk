@@ -142,10 +142,15 @@ function runCalendar(record, reservation, fixture, journal, instant) {
   const booked = withState(record, 'booked', 'calendar-pending', { reservation, calendarEvent: null, conflictChoice });
   const readConflict = () => readUnderGrant(record, 'freeBusy', journal, instant, authorize =>
     fixture.calendarConflictForReservation(reservation.id, authorize));
-  function conflicting(conflict, calendarEvent = null) {
-    const choice = sameFields(intervalFields, conflict, previousConflict) &&
+  function conflicting(conflict, calendarEvent = null, lastConflict = previousConflict) {
+    const choice = sameFields(intervalFields, conflict, lastConflict) &&
       sameFields(intervalFields, conflictChoice, conflict) ? conflictChoice : null;
     return withState(booked, 'booked', 'calendar-conflict', { calendarEvent, conflict, conflictChoice: choice });
+  }
+  function presentCalendar(event, lastConflict) {
+    const observed = readConflict();
+    const conflict = observed === undefined ? lastConflict : observed;
+    return conflict ? conflicting(conflict, event, lastConflict) : withState(booked, 'verified', null, { calendarEvent: event });
   }
   if (!grantFor(record, 'calendar', instant)) {
     const previousProof = calendarProof(record.calendarEvent, reservation);
@@ -168,11 +173,7 @@ function runCalendar(record, reservation, fixture, journal, instant) {
   if (native && !existing) return booked;
   if (existing) {
     if (previous?.status !== 'recorded' && previous) journal.mark(previous.key, 'recorded');
-    const currentConflict = readConflict();
-    const conflict = currentConflict === undefined ? previousConflict : currentConflict;
-    return conflict
-      ? conflicting(conflict, existing)
-      : withState(booked, 'verified', null, { calendarEvent: existing });
+    return presentCalendar(existing, previousConflict);
   }
 
   if (previousConflict || conflictChoice) {
@@ -195,7 +196,7 @@ function runCalendar(record, reservation, fixture, journal, instant) {
   });
   if (result?.status === 'conflict') {
     journal.mark(key, 'conflict');
-    return conflicting(result.interval);
+    return conflicting(result.interval, null, null);
   }
   if (result?.status !== 'recorded') {
     journal.mark(key, result?.status === 'blocked' ? 'blocked' : 'failed');
@@ -204,7 +205,7 @@ function runCalendar(record, reservation, fixture, journal, instant) {
   const event = calendarProof(readUnderGrant(record, 'calendar', journal, instant, authorize =>
     fixture.calendarByReservation(reservation.id, authorize)), reservation);
   journal.mark(key, event ? 'recorded' : 'failed');
-  return event ? withState(booked, 'verified', null, { calendarEvent: event }) : booked;
+  return event ? presentCalendar(event, null) : booked;
 }
 
 export function runVisit(record, fixture, journal, now) {
