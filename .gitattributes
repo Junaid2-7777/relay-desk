@@ -1,0 +1,5 @@
+# Make the runtime, test, rubric and fixture bytes reproducible in clean checkouts.
+*.mjs text eol=lf
+docs/evaluation.md text eol=lf
+fixtures/**/*.json text eol=lf
+n8n/*.json text eol=lf
