@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { evidenceInstant } from '../shared/evidence-time.mjs';
+import { grantStateAt } from '../shared/grant-time.mjs';
 import { activeGrant, sameInvoice } from './household.mjs';
 
 function sameSubject(left, right) {
@@ -18,15 +19,15 @@ function paymentGrant(record, terms, now) {
     scope?.payee === terms.payee && scope?.currency === terms.currency ? grant : null;
 }
 
-function hasExactApproval(record, terms, grant, now) {
+function exactApprovalState(record, terms, grant, now) {
   const approval = record.approval;
-  return activeGrant(approval, now) && approval.grantRevision === grant.revision && sameInvoice(approval, terms);
+  return approval?.grantRevision === grant.revision && sameInvoice(approval, terms) ? grantStateAt(approval, now) : null;
 }
 
 function allowsAmount(record, terms, grant, now) {
   const { capMinor } = grant.scope;
   return Number.isSafeInteger(capMinor) && capMinor >= 0 &&
-    (terms.amountMinor <= capMinor || hasExactApproval(record, terms, grant, now));
+    (terms.amountMinor <= capMinor || exactApprovalState(record, terms, grant, now) === 'allowed');
 }
 
 function allowsSpend({ amountMinor }, { maxCount, budgetMinor }, { spentMinor, count }) {
@@ -115,7 +116,7 @@ export function runBill(record, fixture, journal, clockNow) {
     ...record,
     invoice,
     previousInvoice: record.invoice && !sameInvoice(record.invoice, invoice) ? record.invoice : record.previousInvoice,
-    approval: spendGrant && hasExactApproval(record, invoice, spendGrant, now) ? record.approval : null,
+    approval: spendGrant && ['allowed', 'not-yet-active'].includes(exactApprovalState(record, invoice, spendGrant, now)) ? record.approval : null,
     deferred: sameInvoice(record.deferred, invoice) ? record.deferred : null
   };
   if (updated.deferred) return openWith(updated, 'bill-deferred');

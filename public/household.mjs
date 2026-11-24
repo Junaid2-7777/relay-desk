@@ -1,4 +1,4 @@
-import { billDecision, grantActiveAt, reviewNeeded, visitConflictDecision } from '../shared/brief-order.mjs';
+import { billDecision, grantStateAt, reviewNeeded, visitConflictDecision } from '../shared/brief-order.mjs';
 import { zonedInstant } from '../shared/evidence-time.mjs';
 
 const activity = new Intl.DateTimeFormat('en-IN', {
@@ -116,13 +116,15 @@ function renderAccess(panel, record, run, deskTime) {
   addText(details, 'summary', 'Permissions');
   for (const [operation, label, description] of entries) {
     const grant = record.grants?.[operation];
-    const active = grantActiveAt(grant, deskTime);
+    const state = grantStateAt(grant, deskTime);
+    const active = state === 'allowed';
     const section = document.createElement('section');
     section.className = 'permission';
     addText(section, 'h4', label);
     addText(section, 'p', description);
     const access = {
-      allowed: active ? `Allowed until ${when(grant?.expiresAt)} IST` : 'Access expired',
+      allowed: active ? `Allowed until ${when(grant?.expiresAt)} IST` :
+        state === 'not-yet-active' ? 'Access starts later' : 'Access expired',
       withdrawn: 'Access withdrawn',
       declined: 'Access declined'
     };

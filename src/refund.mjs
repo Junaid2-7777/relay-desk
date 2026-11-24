@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 import { evidenceInstant, latestEvidence } from '../shared/evidence-time.mjs';
+import { grantStateAt as refundAccess, standingGrantMs } from '../shared/grant-time.mjs';
+
+export { refundAccess };
 
 function isPostedCredit(credit, refund, asOf) {
   return typeof credit.id === 'string' && credit.id.length > 0 &&
@@ -25,7 +28,6 @@ export function matchRefundCredit(refund, {credits = [], links = []} = {}, asOf 
   return matches.length === 1 ? matches[0] : null;
 }
 
-const grantLifetime = 7 * 24 * 60 * 60 * 1000;
 export const refundSources = ['merchant', 'credits'];
 
 export function refundScope(subject, source) {
@@ -41,13 +43,8 @@ export function refundGrant(subject, source, choice, previous, now) {
     status: choice,
     revision: (previous?.revision ?? 0) + 1,
     scope: refundScope(subject, source),
-    expiresAt: choice === 'allowed' ? new Date(+now + grantLifetime).toISOString() : null
+    expiresAt: choice === 'allowed' ? new Date(+now + standingGrantMs).toISOString() : null
   };
-}
-
-export function refundAccess(grant, now) {
-  if (grant?.status === 'allowed' && !(Date.parse(grant.expiresAt) > +now)) return 'expired';
-  return grant?.status ?? 'unasked';
 }
 
 const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');

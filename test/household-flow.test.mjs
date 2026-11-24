@@ -122,6 +122,29 @@ function errand(brief, kind) {
   return record;
 }
 
+test('a reopened desk cannot use future standing grants or spend an exact approval before it was given', async t => {
+  const household = await startHousehold(t);
+  const before = '2026-11-23T03:29:59.999Z';
+  await household.restart(before);
+  const early = await household.checkpoint();
+  assert.equal(errand(early, 'visit').issue, 'visit-permission');
+  assert.equal(errand(early, 'bill').issue, 'bill-permission');
+  for (const provider of ['refund', 'visit', 'bill']) assert.equal((await household.native(provider)).reads.length, 0);
+  assert.equal((await household.native('visit')).reservations.length, 0);
+
+  await household.restart(monday);
+  const bill = errand(await household.checkpoint(), 'bill');
+  const approvalTime = '2026-11-23T03:35:00.000Z';
+  household.moveTime(approvalTime);
+  await household.billChoice(bill, 'approve');
+  await household.restart('2026-11-23T03:34:59.999Z');
+  await household.checkpoint();
+  assert.equal((await household.native('bill')).attempts.length, 0);
+  await household.restart(approvalTime);
+  assert.equal(errand(await household.checkpoint(), 'bill').status, 'accepted');
+  assert.equal((await household.native('bill')).payments.length, 1);
+});
+
 test('posted credits, issuer receipts and settlements verify only once their event time arrives', async t => {
   const household = await startHousehold(t);
   const request = { note: 'Look for confirmation from the practice library.' };

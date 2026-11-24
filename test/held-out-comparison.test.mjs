@@ -403,12 +403,32 @@ test('a mandatory bill decision needs typed access, an over-cap invoice and real
   const approval = { ...invoice, status: 'allowed', expiresAt, grantRevision: grants.payment.revision };
   assert.equal(presentedDecision({ ...decision, approval }, checkedAt), null);
   assert.equal(supportedDecision({ ...decision, approval }, native, checkedAt), false);
-  for (const changes of [{ amountMinor: capMinor }, { currency: 'USD' }, { revision: 1 }, { grantRevision: 3 }, { expiresAt: checkedAt }]) {
+  for (const changes of [{ amountMinor: capMinor }, { currency: 'USD' }, { revision: 1 }, { grantRevision: 3 },
+    { expiresAt: checkedAt }, { expiresAt: '2026-11-23T03:46:00Z' }]) {
     const invalidApproval = { ...decision, approval: { ...approval, ...changes } };
     assert.equal(presentedDecision(invalidApproval, checkedAt), 'bill-review');
     assert.equal(supportedDecision(invalidApproval, native, checkedAt), true);
   }
   assert.equal(presentedDecision(decision, '2026-11-23T03:30:00'), null);
+});
+
+test('Tuesday authorizations do not support a Monday bill lookup even if native rows match', () => {
+  const monday = '2026-11-23T03:30:00Z';
+  const tuesday = '2026-11-24T03:30:00Z';
+  const expiresAt = '2026-12-01T09:00:00+05:30';
+  const bill = { invoiceId: 'electricity-2026-11', payee: 'city-electric', currency: 'INR' };
+  const capMinor = 90000;
+  const invoice = { ...bill, revision: 2, amountMinor: 118000, payeeLabel: 'City Electric' };
+  const grant = { revision: 1, status: 'allowed', expiresAt };
+  const decision = { status: 'open', issue: 'bill-review', bill, invoice, capMinor, grants: {
+    invoice: { ...grant, operation: 'invoice', scope: bill },
+    payment: { ...grant, operation: 'payment', scope: { payee: bill.payee, currency: bill.currency, capMinor, maxCount: 1 } }
+  } };
+  const native = checkedAt => ({ bill: { invoices: [invoice], payments: [],
+    reads: [{ source: 'invoice', scope: { invoiceId: bill.invoiceId }, checkedAt }] } });
+  assert.equal(supportedDecision(decision, native(monday), monday), false);
+  assert.equal(supportedDecision(decision, native(tuesday), tuesday), true);
+  assert.equal(supportedDecision(decision, native(expiresAt), expiresAt), false);
 });
 
 test('a calendar decision needs exact native booking evidence and the current scoped overlap', () => {

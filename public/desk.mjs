@@ -1,4 +1,4 @@
-import { grantActiveAt, orderChecks, reviewNeeded } from '../shared/brief-order.mjs';
+import { grantActiveAt, grantStateAt, orderChecks, reviewNeeded } from '../shared/brief-order.mjs';
 import { evidenceInstant } from '../shared/evidence-time.mjs';
 import { action, addText, fact, renderHousehold, renderPracticeSetup, statusLabel } from './household.mjs';
 
@@ -391,8 +391,9 @@ function renderRefund(panel, record, update, errorMessage, setBusy) {
     section.className = 'permission';
     addText(section, 'h4', label);
     addText(section, 'p', scope);
+    const inactive = grantStateAt(grant, deskTime) === 'not-yet-active' ? 'Access starts later' : 'Access expired';
     const availability = {
-      allowed: active(grant) ? `Allowed until ${activityFormat.format(new Date(grant.expiresAt))} IST` : 'Access expired',
+      allowed: active(grant) ? `Allowed until ${activityFormat.format(new Date(grant.expiresAt))} IST` : inactive,
       declined: 'Access declined',
       withdrawn: 'Access withdrawn'
     };
@@ -742,8 +743,8 @@ function showErrands(changedId) {
     const cards = ordered.map(record => {
       const existing = prior.get(`errand-${record.id}`);
       const grants = Object.entries(record.refundAccess ?? record.grants ?? {});
-      const accessState = [...grants, ['approval', record.approval]].filter(([, grant]) => grantActiveAt(grant, deskTime))
-        .map(([operation]) => operation).sort().join(' ');
+      const accessState = [...grants, ['approval', record.approval]]
+        .map(([operation, grant]) => `${operation}:${grantStateAt(grant, deskTime)}`).sort().join(' ');
       const reuse = record.id !== changedId && existing?.dataset.revision === String(record.revision) &&
         existing.dataset.day === deskDay && existing.dataset.pendingFollowup === String(Boolean(record.pendingFollowup)) &&
         existing.dataset.visitPlanEditable === String(Boolean(record.visitPlanEditable)) && existing.dataset.accessState === accessState;

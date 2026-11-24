@@ -21,6 +21,7 @@ const assets = new Map([
   ['/desk.mjs', ['../public/desk.mjs', 'text/javascript']],
   ['/shared/brief-order.mjs', ['../shared/brief-order.mjs', 'text/javascript']],
   ['/shared/evidence-time.mjs', ['../shared/evidence-time.mjs', 'text/javascript']],
+  ['/shared/grant-time.mjs', ['../shared/grant-time.mjs', 'text/javascript']],
   ['/household.mjs', ['../public/household.mjs', 'text/javascript']],
   ['/wordmark.svg', ['../docs/brand/wordmark.svg', 'image/svg+xml']],
   ['/mark.svg', ['../docs/brand/mark.svg', 'image/svg+xml']]

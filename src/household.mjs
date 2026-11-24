@@ -1,11 +1,8 @@
 import { mondayBill } from './bill-fixture.mjs';
 import { mondayVisit } from './visit-fixture.mjs';
+import { standingGrantMs } from '../shared/grant-time.mjs';
 
-const day = 86400000;
-
-export function activeGrant(grant, now) {
-  return grant?.status === 'allowed' && Date.parse(grant.expiresAt) > +now;
-}
+export { grantActiveAt as activeGrant } from '../shared/grant-time.mjs';
 
 export function makeGrant(operation, scope, choice, previous, now) {
   return {
@@ -13,7 +10,7 @@ export function makeGrant(operation, scope, choice, previous, now) {
     status: choice,
     revision: (previous?.revision ?? 0) + 1,
     scope,
-    expiresAt: choice === 'allowed' ? new Date(+now + 7 * day).toISOString() : null
+    expiresAt: choice === 'allowed' ? new Date(+now + standingGrantMs).toISOString() : null
   };
 }
 

@@ -39,7 +39,7 @@ function setup(t, { seedInvoices = true } = {}) {
 }
 
 function approve(record) {
-  return { ...record.invoice, status: 'allowed', expiresAt: later, grantRevision: record.grants.payment.revision };
+  return { ...record.invoice, status: 'allowed', expiresAt: '2026-11-23T05:45:00.000Z', grantRevision: record.grants.payment.revision };
 }
 
 function expireAtLookup(desk, method) {

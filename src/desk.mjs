@@ -4,6 +4,7 @@ import { mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { kolkataDay as localDay, zonedInstant } from '../shared/evidence-time.mjs';
+import { billApprovalMs } from '../shared/grant-time.mjs';
 import { openActionJournal } from './action-journal.mjs';
 import { invoiceGrant } from './bill.mjs';
 import { orderChecks } from '../shared/brief-order.mjs';
@@ -682,7 +683,7 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
             amountMinor,
             currency,
             status: 'allowed',
-            expiresAt: new Date(+approvalTime + 15 * 60 * 1000).toISOString(),
+            expiresAt: new Date(+approvalTime + billApprovalMs).toISOString(),
             grantRevision: record.grants.payment.revision
           },
           deferred: null

@@ -1,14 +1,12 @@
 import { zonedInstant } from './evidence-time.mjs';
+import { grantActiveAt } from './grant-time.mjs';
+
+export { grantActiveAt, grantStateAt } from './grant-time.mjs';
 
 const invoiceScopeFields = ['invoiceId', 'payee', 'currency'];
 const invoiceTerms = [...invoiceScopeFields, 'revision', 'amountMinor'];
 const visitScopeFields = ['issuer', 'service', 'subject', 'zone', 'windowStart', 'windowEnd'];
 const sameFields = (left, right, fields) => fields.every(field => left?.[field] != null && left[field] === right?.[field]);
-
-export function grantActiveAt(grant, now) {
-  const instant = typeof now === 'string' ? zonedInstant(now) : now == null ? NaN : +now;
-  return grant?.status === 'allowed' && Number.isFinite(instant) && zonedInstant(grant.expiresAt) > instant;
-}
 
 function activeOperation(grant, operation, now) {
   return grant?.operation === operation && Number.isSafeInteger(grant.revision) && grant.revision > 0 && grantActiveAt(grant, now);

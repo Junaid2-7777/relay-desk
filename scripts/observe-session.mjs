@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import { reviewNeeded } from '../shared/brief-order.mjs';
-import { activeGrant } from '../src/household.mjs';
+import { grantStateAt } from '../shared/grant-time.mjs';
 import { matchedReadbacks, nativeEffects, supportedDecision } from './compare-planners.mjs';
 
 const providers = ['refund', 'visit', 'bill', 'receipt', 'outbox'];
@@ -36,8 +36,7 @@ function participantSnapshot(brief, native) {
       const permissions = {};
       for (const operation of operations) {
         const grant = (record.refundAccess ?? record.grants)?.[operation];
-        if (grant) permissions[operation] = grant.status === 'allowed' && !activeGrant(grant, new Date(brief.now))
-          ? 'expired' : grant.status;
+        if (grant) permissions[operation] = grantStateAt(grant, brief.now);
       }
       return {
         kind: record.kind, status: record.status, checkDate: record.checkDate, permissions,

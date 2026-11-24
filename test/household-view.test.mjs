@@ -41,6 +41,9 @@ test('the bill card identifies last seen amounts and the invoice selected for re
     ]);
     assert.equal(view(review).label, 'Needs your review');
     assert.ok(view(review).panel.includes('Pay ₹1,180 once'));
+    const beforeGrant = view(review, new Date(+now - 1));
+    assert.equal(beforeGrant.label, 'Invoice check paused');
+    assert.equal(beforeGrant.panel.filter(text => text === 'Access starts later').length, 2);
 
     const withWithdrawal = operation => view({ ...review, grants: {
       ...review.grants, [operation]: { ...review.grants[operation], status: 'withdrawn' }

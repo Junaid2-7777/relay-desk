@@ -46,13 +46,20 @@ const bookingFields = ['issuer', 'service', 'subject', 'zone'];
 const bookingGrantFields = [...bookingFields, 'windowStart', 'windowEnd'];
 const calendarFields = ['id', 'reservationId', 'start', 'end', 'zone'];
 const paymentGrantFields = ['payee', 'currency'];
+const standingGrantDuration = 7 * 24 * 60 * 60 * 1000;
+const billApprovalDuration = 15 * 60 * 1000;
 
 const sameFields = (left, right, fields) => Boolean(left && right && fields.every(field =>
   Object.hasOwn(left, field) && Object.hasOwn(right, field) && left[field] === right[field]));
 const pickFields = (record, fields) => Object.fromEntries(fields.map(field => [field, record[field]]));
 const hasRead = (provider, source, scope) => provider.reads.some(read =>
   read.source === source && !read.unavailable && isDeepStrictEqual(read.scope, scope));
-const active = (grant, now) => grant?.status === 'allowed' && Date.parse(grant.expiresAt) > Date.parse(now);
+function active(grant, now, lifetime = standingGrantDuration) {
+  if (grant?.status !== 'allowed' || !isZonedTimestamp(grant.expiresAt) || !isZonedTimestamp(now)) return false;
+  const instant = Date.parse(now);
+  const expiry = Date.parse(grant.expiresAt);
+  return instant >= expiry - lifetime && instant < expiry;
+}
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const duration = start => Math.round(performance.now() - start);
@@ -246,7 +253,7 @@ function matchesVisitChoice(record, choice = record.conflictChoice?.choice) {
 
 function currentDecisionGrant(record, operation, checkedAt) {
   const grant = record.grants?.[operation];
-  return grant?.operation === operation && active(grant, checkedAt) && isZonedTimestamp(grant.expiresAt) &&
+  return grant?.operation === operation && active(grant, checkedAt) &&
     Number.isSafeInteger(grant.revision) && grant.revision > 0 ? grant : null;
 }
 
@@ -271,7 +278,7 @@ function billDecisionScope(record, checkedAt) {
   if (!read || !spend || !sameFields(read.scope, invoice, billSubjectFields) ||
       !sameFields(spend.scope, invoice, paymentGrantFields) || spend.scope.capMinor !== capMinor ||
       !Number.isSafeInteger(spend.scope.maxCount) || spend.scope.maxCount < 1) return null;
-  const approved = active(approval, checkedAt) && isZonedTimestamp(approval.expiresAt) &&
+  const approved = active(approval, checkedAt, billApprovalDuration) &&
     approval.grantRevision === spend.revision && sameFields(approval, invoice, paymentFields);
   return approved ? null : spend.scope;
 }
