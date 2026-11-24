@@ -75,6 +75,10 @@ function validate(fields, message) {
   return true;
 }
 
+function restoreFocus(control) {
+  if (document.activeElement === document.body) control?.focus();
+}
+
 function renderRefund(panel, record, update, errorMessage, setBusy) {
   const details = document.createElement('details');
   details.className = 'source evidence';
@@ -373,6 +377,7 @@ function renderErrand(record) {
       draftButton.disabled = false;
       part('edit').disabled = false;
       trackingButton.disabled = false;
+      restoreFocus(draftButton);
     }
   });
   return card;
@@ -446,18 +451,25 @@ function showBrief({ today, now, errands: items, fixture, household, plannerMode
   showErrands();
 }
 
-async function load() {
+async function load(retry) {
+  if (retry) retry.disabled = true;
   try {
     showBrief(await request('/api/desk'));
     intakeFields.disabled = false;
+    if (retry) restoreFocus(noteInput);
   } catch {
+    if (retry) {
+      retry.disabled = false;
+      restoreFocus(retry);
+      return;
+    }
     const message = document.createElement('p');
     message.textContent = 'Your saved errands could not load.';
-    const retry = document.createElement('button');
-    retry.type = 'button';
-    retry.textContent = 'Try again';
-    retry.addEventListener('click', load);
-    errands.replaceChildren(message, retry);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = 'Try again';
+    button.addEventListener('click', () => load(button));
+    errands.replaceChildren(message, button);
   }
 }
 
@@ -495,6 +507,12 @@ async function checkErrands(focusId) {
 
 checkpointButton.addEventListener('click', () => checkErrands());
 
+function showReview() {
+  intake.hidden = true;
+  review.hidden = false;
+  goalInput.focus();
+}
+
 intake.addEventListener('submit', async event => {
   event.preventDefault();
   if (intakeFields.disabled) return;
@@ -502,6 +520,11 @@ intake.addEventListener('submit', async event => {
   statusMessage.textContent = '';
   if (!validate([[noteInput, 'Enter an errand.']], errorMessage)) return;
   const note = noteInput.value.trim();
+  // Reopening the same private review keeps its fields and original save reference.
+  if (!householdMode && note === reviewedNote) {
+    showReview();
+    return;
+  }
   intakeFields.disabled = true;
   try {
     const { goal, checkDate, previewId, plannerStatus } = await request('/api/errands/preview', {
@@ -514,13 +537,12 @@ intake.addEventListener('submit', async event => {
     element('review-note').textContent = note;
     goalInput.value = goal;
     checkInput.value = checkDate ?? '';
-    intake.hidden = true;
-    review.hidden = false;
-    goalInput.focus();
+    showReview();
   } catch (error) {
     errorMessage.textContent = error.message;
   } finally {
     intakeFields.disabled = false;
+    restoreFocus(event.submitter);
   }
 });
 
@@ -546,6 +568,7 @@ review.addEventListener('submit', async event => {
     showErrands();
     review.hidden = true;
     intake.reset();
+    reviewedNote = undefined;
     intake.hidden = false;
     statusMessage.textContent = 'Errand saved.';
     element(`errand-${record.id}`).querySelector('h3').focus();
@@ -553,6 +576,7 @@ review.addEventListener('submit', async event => {
     errorMessage.textContent = error.message;
   } finally {
     fields.disabled = false;
+    restoreFocus(event.submitter);
   }
 });
 
