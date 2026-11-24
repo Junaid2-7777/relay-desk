@@ -1,5 +1,16 @@
 # One refund, then a busier morning
 
+## Recorded walkthrough
+
+[Watch the Relay Desk practice recording](media/relay-desk-practice.mp4). The silent video includes on-screen captions and uses separate local directories for the private desk and the synthetic fixed-rule practice household.
+
+- **0:00–0:26.** Enter the refund note, review the Friday 27 November check and save. Reopen the desk and find the original note and open errand. The inspection trace shows zero account permissions and provider reads.
+- **0:26–0:46.** Check the returning household. The revised ₹1,180 bill needs a decision under the ₹900 standing limit. Provider and calendar records agree on the free 3 pm visit. The original 11 am calendar commitment stays in place.
+- **0:46–1:04.** The shop promise and a same-value credit for another return leave the refund open. The fixture operator publishes the ₹1,249 credit for `return-demo-1249`.
+- **1:04–1:13.** The next check verifies the refund. Open **Refund evidence and access** to read **Posted credit demo-posted-refund** alongside the verified status. The bill still awaits a decision.
+
+## Live walkthrough plan
+
 **Demonstration plan · 2 minutes 20 seconds.** Open with one person typing one errand into an empty desk. Then switch to the practice household and show what the desk can do with scoped permission. Keep the simulated clock and planner mode visible in the recording. Every message, account, amount and appointment in the practice household is synthetic. [Run the local build](build.md#run-the-local-build)
 
 Start with “The shop said it would refund me. Can you help me check on Friday?” The person can type that sentence or paste the relevant line of an edited sample message. Save the open errand and its next check. Pause on what the desk can honestly say at this point. The person has a promise and a day to check. Relay has never read their account.

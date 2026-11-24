@@ -13,7 +13,7 @@
 
 That’s enough to start. Relay keeps the note and the day you want to check. When you come back on Friday, you can see what the shop promised and whether the refund is still open. You can prepare a draft message to the shop locally. Saving the note requires only the words you want to keep.
 
-**Current stage · Local desk and synthetic household.** [Current milestone](roadmap.md#current-stage) · [Five-slide pitch](docs/relay-desk-pitch.pptx)
+**Current stage · Local desk and synthetic household.** [Watch the working demo](docs/demo.md#recorded-walkthrough) · [Current milestone](roadmap.md#current-stage) · [Five-slide pitch](docs/relay-desk-pitch.pptx)
 
 Run the local desk with Node.js 24 or newer. The app uses Node’s built-in HTTP and SQLite modules.
 

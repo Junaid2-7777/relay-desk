@@ -19,6 +19,7 @@ These are the edition’s five published criteria. The evidence in the table is 
 Homingo’s published entry deadline is **6 December 2026 at 23:59 IST**. [Edition FAQ](https://hackathon.homingo.co.in/hackathons/edition-01#faq)
 
 - [ ] Publish the actual build in a public repository. Test the README setup from a fresh clone and disclose dependencies, data, models and AI tools used.
-- [ ] Record a short working demo and verify signed-out access to both the recording and the repository. Use synthetic accounts, bills, messages, appointments and receipts. Label historical public scholarship evidence when showing the specialist.
+- [x] Record a short working demo using synthetic errands, accounts and provider receipts. [Captioned recording and transcript](demo.md#recorded-walkthrough)
+- [ ] Verify signed-out access to both the recording and the repository before submission.
 - [ ] Report measured results with failures and denominators. Label any prerecorded planner trace at the point of playback. Keep proposed behaviour distinct from observed effects.
 - [ ] Submit the repository and video from the participant dashboard and reopen the saved entry. A deployed link and pitch deck are optional. [Edition rules and submission requirements](https://hackathon.homingo.co.in/hackathons/edition-01#rules) · [Participant dashboard](https://hackathon.homingo.co.in/me)
