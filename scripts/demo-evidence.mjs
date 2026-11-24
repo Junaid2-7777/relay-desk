@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { evidenceInstant } from '../shared/evidence-time.mjs';
+import { evidenceInstant, zonedInstant } from '../shared/evidence-time.mjs';
 import { mondayBill, openBillFixture } from '../src/bill-fixture.mjs';
 import { sameInvoice } from '../src/household.mjs';
 import { openReceiptFixture, practiceReceiptSource, receiptIdentifier } from '../src/receipt-fixture.mjs';
@@ -8,7 +8,7 @@ import { mondayRefund, openRefundFixture } from '../src/refund-fixture.mjs';
 import { mondayVisit, openVisitFixture } from '../src/visit-fixture.mjs';
 
 const dataDir = resolve(process.env.RELAY_DATA_DIR ?? '.relay/demo');
-const clock = new Date(process.env.RELAY_CLOCK ?? '2026-11-23T09:00:00+05:30');
+const clock = new Date(zonedInstant(process.env.RELAY_CLOCK ?? '2026-11-23T09:00:00+05:30'));
 const actions = new Map([
   ['unrelated-credit', [() => postCredit(false)]],
   ['matching-credit', [() => postCredit(true)]],
@@ -123,8 +123,8 @@ function publishVisitConflict(moved) {
     if (!moved && calendar.some(event => event.reservationId === booking.id)) {
       throw new Error('Use a cold practice desk and withhold calendar entry access until the overlap has been published.');
     }
-    const end = evidenceInstant(booking.end);
-    const duration = end - evidenceInstant(booking.start);
+    const end = zonedInstant(booking.end);
+    const duration = end - zonedInstant(booking.start);
     return fixture.putCalendarEvent({
       id, title: 'Practice calendar owner commitment',
       start: moved ? booking.end : booking.start,
@@ -157,7 +157,7 @@ try {
   if (!actions.has(choice)) throw new Error(`Choose one practice event (${[...actions.keys()].join(', ')}).`);
   const [publish, ...parameters] = actions.get(choice);
   if (extra.length !== parameters.length) throw new Error(`Use: npm run demo:evidence -- ${[choice, ...parameters].join(' ')}`);
-  if (!Number.isFinite(+clock)) throw new Error('Set RELAY_CLOCK to the ISO timestamp used by the practice desk.');
+  if (!Number.isFinite(+clock)) throw new Error('Set RELAY_CLOCK to a valid ISO timestamp with an explicit offset.');
   console.log(JSON.stringify(publish(...extra), null, 2));
 } catch (error) {
   console.error(error.message);

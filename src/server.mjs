@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { zonedInstant } from '../shared/evidence-time.mjs';
 import { runBill } from './bill.mjs';
 import { openBillFixture } from './bill-fixture.mjs';
 import { DeskError, openDesk } from './desk.mjs';
@@ -200,8 +201,12 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   if (recorded && n8n) throw new Error('Choose one practice planner mode.');
   const dataDir = process.env.RELAY_DATA_DIR;
   const fixedTime = process.env.RELAY_CLOCK ?? (fixtureMode ? '2026-11-23T09:00:00+05:30' : undefined);
-  const clock = fixedTime ? () => new Date(fixedTime) : undefined;
-  if (clock && !Number.isFinite(+clock())) throw new Error('RELAY_CLOCK must be a date or an ISO timestamp.');
+  let clock;
+  if (fixedTime !== undefined) {
+    const instant = zonedInstant(fixedTime);
+    if (!Number.isFinite(instant)) throw new Error('Set RELAY_CLOCK to a valid ISO timestamp with an explicit offset.');
+    clock = () => new Date(instant);
+  }
   let planner;
   if (recorded) {
     const { cases } = JSON.parse(await readFile(new URL('../fixtures/planner-rehearsal.json', import.meta.url), 'utf8'));
