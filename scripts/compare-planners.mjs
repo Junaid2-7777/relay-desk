@@ -328,7 +328,13 @@ export function supportedDecision(record, native, checkedAt) {
       Date.parse(attempt.attemptedAt) >= confirmed && Date.parse(attempt.attemptedAt) <= checkTime));
 }
 
-async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
+function suitePrivacyMarkers(document) {
+  return [...new Set(document.cases.flatMap(testCase => testCase.restrictedMarkers ?? []))]
+    .sort((left, right) => right.length - left.length);
+}
+
+async function runArm(testCase, mode, { candidate, suiteMarkers } = {}) {
+  const heldOut = suiteMarkers !== undefined;
   const started = performance.now();
   const dataDir = await mkdtemp(join(tmpdir(), 'relay-planner-rehearsal-'));
   const providers = {};
@@ -341,13 +347,17 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
   let server;
   let origin;
   const clock = () => now;
-  const markers = heldOut ? testCase.restrictedMarkers ?? [] : [];
+  const markersToSeed = heldOut ? testCase.restrictedMarkers ?? [] : [];
   const markersSeeded = new Set();
   const leaks = new Set();
   const verifiedEvidence = new Map();
 
   function inspectForLeaks(stage, value) {
-    if (markers.length && markers.some(marker => JSON.stringify(value).includes(marker))) leaks.add(stage);
+    if (!suiteMarkers?.length) return false;
+    const encoded = JSON.stringify(value) ?? '';
+    if (!suiteMarkers.some(marker => encoded.includes(marker))) return false;
+    leaks.add(stage);
+    return true;
   }
 
   function inspectOutcome(record, native) {
@@ -379,12 +389,14 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
   try {
     const { note, recordedProposal } = testCase;
     let planner = candidate;
-    if (candidate && markers.length) {
+    if (candidate && heldOut) {
       planner = {
         ...candidate,
-        propose(input) {
-          inspectForLeaks('planner input', input);
-          return candidate.propose(input);
+        async propose(input) {
+          if (inspectForLeaks('planner input', input)) throw new Error('The planner input contains a restricted fixture marker.');
+          const proposal = await candidate.propose(input);
+          inspectForLeaks('planner output', proposal);
+          return proposal;
         }
       };
     } else if (mode === 'recorded-response') {
@@ -508,9 +520,9 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
           difference(support, true, 'unexpectedOutcome', safetyMismatches);
         }
         for (const [proof, matched] of Object.entries(readbacks)) difference(matched, true, `readback.${proof}`, safetyMismatches);
-        if (markers.length) {
+        if (markersToSeed.length) {
           const raw = JSON.stringify(native);
-          for (const marker of markers) if (raw.includes(marker)) markersSeeded.add(marker);
+          for (const marker of markersToSeed) if (raw.includes(marker)) markersSeeded.add(marker);
         }
         safety = { passed: !safetyMismatches.length, mismatches: safetyMismatches, observedAudit };
       }
@@ -555,12 +567,12 @@ async function runArm(testCase, mode, { candidate, heldOut = false } = {}) {
   result.outcomePassed = !result.error && result.checkpoints.length === testCase.checkpoints.length &&
     result.checkpoints.every(checkpoint => checkpoint.passed);
   if (heldOut) {
-    result.scopeProbes = { expected: markers.length, seeded: markersSeeded.size, leaks: [...leaks] };
+    result.scopeProbes = { expected: markersToSeed.length, seeded: markersSeeded.size, leaks: [...leaks] };
     result.safetyPassed = !result.error && result.checkpoints.length === testCase.checkpoints.length &&
-      result.checkpoints.every(checkpoint => checkpoint.safety.passed) && markersSeeded.size === markers.length && !leaks.size;
+      result.checkpoints.every(checkpoint => checkpoint.safety.passed) && markersSeeded.size === markersToSeed.length && !leaks.size;
   }
   result.passed = result.outcomePassed && result.interpretation.passed && (!heldOut || result.safetyPassed);
-  return heldOut ? redactHeldOut(result, markers) : result;
+  return result;
 }
 
 export async function comparePlanners(document) {
@@ -590,23 +602,25 @@ export async function comparePlanners(document) {
 export async function compareHeldOut(document, { planner } = {}) {
   validateHeldOutManifest(document);
   if (planner?.mode !== 'n8n' || typeof planner.propose !== 'function') throw new Error('Supply an n8n planner for the held-out comparison.');
+  const suiteMarkers = suitePrivacyMarkers(document);
   const cases = [];
   for (const testCase of document.cases) {
-    const fixedRule = await runArm(testCase, 'fixed-rule', { heldOut: true });
+    const fixedRule = await runArm(testCase, 'fixed-rule', { suiteMarkers });
     const trials = [];
     for (let trial = 1; trial <= trialCount; trial++) {
-      trials.push({ trial, ...await runArm(testCase, planner.mode, { candidate: planner, heldOut: true }) });
+      trials.push({ trial, ...await runArm(testCase, planner.mode, { candidate: planner, suiteMarkers }) });
     }
     cases.push({ id: testCase.id, scenario: testCase.scenario, variant: testCase.variant, fixedRule, trials });
   }
-  return { cases, ...summarizeHeldOut(cases) };
+  return redactHeldOut({ cases, ...summarizeHeldOut(cases) }, suiteMarkers);
 }
 
 export async function preflightHeldOut(document) {
   validateHeldOutManifest(document);
+  const suiteMarkers = suitePrivacyMarkers(document);
   const cases = [];
   for (const [index, testCase] of document.cases.entries()) {
-    const fixed = await runArm(testCase, 'fixed-rule', { heldOut: true });
+    const fixed = await runArm(testCase, 'fixed-rule', { suiteMarkers });
     const completed = !fixed.error && fixed.checkpoints.length === testCase.checkpoints.length;
     const failedChecks = fixed.checkpoints.flatMap((checkpoint, position) => {
       if (checkpoint.passed && checkpoint.safety.passed) return [];
@@ -669,7 +683,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const recordedInterpretationPassed = recorded.interpretationPasses === recorded.cases;
     report = { gate: { passed: outcomesPassed && recordedInterpretationPassed, outcomesPassed, recordedInterpretationPassed }, ...comparison };
   }
-  console.log(JSON.stringify({
+  const output = {
     evaluation: preflight ? 'offline-evaluator-preflight' : heldOut ? 'held-out-planner-comparison' : 'authored-offline-planner-rehearsal',
     nodeVersion: process.version,
     gitRevision,
@@ -680,6 +694,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     rubricHash: sha256(rubric),
     durationMs: duration(started),
     ...report
-  }, null, 2));
+  };
+  console.log(JSON.stringify(heldOut ? redactHeldOut(output, suitePrivacyMarkers(document)) : output, null, 2));
   if (!(preflight ? report.ready : report.gate.passed)) process.exitCode = 1;
 }

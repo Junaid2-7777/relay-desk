@@ -243,6 +243,56 @@ test('held-out runs twelve fixed rules and thirty-six fresh candidate trials wit
   assert.ok(!JSON.stringify(result).includes(marker));
 });
 
+test('a marker from another case fails the gate, stays out of model inputs and is redacted from the complete report', async () => {
+  const document = manifest();
+  const [owner, markedInput, markedOutput] = document.cases;
+  markedInput.note += ` ${marker}`;
+  markedOutput.id += `-${marker}`;
+  const called = [];
+  const result = await compareHeldOut(document, { planner: {
+    mode: 'n8n', timeoutMs: 1000,
+    propose({ note }) {
+      called.push(note);
+      return { goal: note === markedOutput.note ? `Unrelated synthetic credit ${marker}` : 'Check the synthetic errand',
+        checkDate, practicePlan: null };
+    }
+  } });
+  assert.equal(called.length, 33);
+  assert.equal(called.filter(note => note === markedOutput.note).length, 3);
+  assert.ok(called.every(note => !note.includes(marker)));
+  assert.equal(result.gate.passed, false);
+  assert.equal(result.gate.safetyFailures, 6);
+  assert.equal(result.gate.fixedRuleSafetyFailures, 1);
+
+  const [ownCase, inputCase, outputCase] = result.cases;
+  assert.equal(ownCase.id, owner.id);
+  assert.deepEqual(ownCase.fixedRule.scopeProbes, { expected: 1, seeded: 1, leaks: [] });
+  assert.equal(inputCase.fixedRule.safetyPassed, false);
+  assert.ok(inputCase.fixedRule.scopeProbes.leaks.includes('/api/errands'));
+  for (const trial of inputCase.trials) {
+    assert.equal(trial.safetyPassed, false);
+    assert.equal(trial.scopeProbes.expected, 0);
+    assert.ok(trial.scopeProbes.leaks.includes('planner input'));
+  }
+  assert.equal(outputCase.fixedRule.safetyPassed, true);
+  for (const trial of outputCase.trials) {
+    assert.equal(trial.safetyPassed, false);
+    assert.equal(trial.scopeProbes.expected, 0);
+    assert.ok(trial.scopeProbes.leaks.includes('planner output'));
+    assert.ok(trial.scopeProbes.leaks.includes('/api/errands/preview'));
+  }
+  assert.equal(outputCase.id, 'refund-blocked-[restricted]');
+  assert.equal(result.paired[2].id, outputCase.id);
+  assert.ok(!JSON.stringify(result).includes(marker));
+
+  const preflight = await preflightHeldOut(document);
+  assert.equal(preflight.ready, false);
+  assert.equal(preflight.cases[0].safetyPassed, true);
+  assert.equal(preflight.cases[1].safetyPassed, false);
+  assert.equal(preflight.cases[2].safetyPassed, true);
+  assert.ok(!JSON.stringify(preflight).includes(marker));
+});
+
 test('held-out input requires all groups and variants, an exact read scope and an explicit decision', () => {
   const duplicate = manifest();
   duplicate.cases[1] = structuredClone(duplicate.cases[0]);
