@@ -12,7 +12,7 @@ import { seedHousehold } from '../src/household.mjs';
 const now = new Date('2026-11-23T05:30:00Z');
 const later = '2026-11-24T05:30:00.000Z';
 
-function setup(t) {
+function setup(t, { seedInvoices = true } = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), 'relay-bill-flow-'));
   const fixture = openBillFixture({ dataDir, clock: () => now });
   const db = new DatabaseSync(':memory:');
@@ -21,7 +21,7 @@ function setup(t) {
     db.close();
     rmSync(dataDir, { force: true, recursive: true });
   });
-  fixture.reset();
+  if (seedInvoices) fixture.reset();
   let record = seedHousehold(now, true).find(item => item.kind === 'bill');
   const journal = openActionJournal(db, () => record, action => action(), () => now);
   return {
@@ -39,6 +39,20 @@ function setup(t) {
 function approve(record) {
   return { ...record.invoice, status: 'allowed', expiresAt: later, grantRevision: record.grants.payment.revision };
 }
+
+test('the original eligible invoice is paid under the standing permission', t => {
+  const desk = setup(t, { seedInvoices: false });
+  desk.fixture.putInvoice({ ...mondayBill, revision: 1, amountMinor: 85000 });
+
+  const accepted = desk.check();
+  assert.equal(accepted.status, 'accepted');
+  assert.equal(accepted.issue, 'payment-pending');
+  assert.equal(accepted.approval, null);
+  assert.equal(accepted.grants.payment.scope.capMinor, 90000);
+  assert.equal(accepted.payment.amountMinor, 85000);
+  assert.deepEqual(desk.fixture.inspect().payments, [accepted.payment]);
+  assert.deepEqual(desk.fixture.inspect().settlements, []);
+});
 
 test('the revised bill requires an exact exception and only matching settlement closes it', t => {
   const desk = setup(t);

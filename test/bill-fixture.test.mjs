@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { Worker } from 'node:worker_threads';
 import { mondayBill, openBillFixture } from '../src/bill-fixture.mjs';
 
 const acceptedAt = '2026-11-23T03:30:00.000Z';
@@ -104,22 +106,47 @@ test('recovers one accepted payment across a lost response and restart, then rea
   }
 });
 
-test('the authorization callback receives the existing spend at the payment boundary', t => {
+test('competing payments share the budget at the provider commit boundary', async t => {
   const dataDir = fixtureDirectory(t);
-  const first = openBillFixture({ dataDir, clock: () => new Date(acceptedAt) });
-  const second = openBillFixture({ dataDir, clock: () => new Date(acceptedAt) });
+  const fixture = openBillFixture({ dataDir, clock: () => new Date(acceptedAt) });
+  const firstInvoice = { ...mondayBill, invoiceId: 'first-eligible-invoice', revision: 1, amountMinor: 50000 };
+  const secondInvoice = { ...firstInvoice, invoiceId: 'second-eligible-invoice' };
+  const workerSource = `
+    import { parentPort, workerData } from 'node:worker_threads';
+    const { openBillFixture } = await import(workerData.fixtureModule);
+    const provider = openBillFixture({ dataDir: workerData.dataDir, clock: () => new Date(workerData.acceptedAt) });
+    parentPort.once('message', intent => {
+      try {
+        provider.pay(intent, ({ amountMinor }, { spentMinor }) => spentMinor + amountMinor <= 90000);
+        parentPort.postMessage('committed');
+      } catch (error) {
+        parentPort.postMessage(error.code ?? error.message);
+      } finally {
+        provider.close();
+      }
+    });
+    parentPort.postMessage('ready');
+  `;
+  const workerUrl = new URL(`data:text/javascript,${encodeURIComponent(workerSource)}`);
+  const workerData = { dataDir, acceptedAt, fixtureModule: import.meta.resolve('../src/bill-fixture.mjs') };
+  const workers = [];
   try {
-    first.reset();
-    const firstInvoice = { ...mondayBill, invoiceId: 'first-eligible-invoice', revision: 1, amountMinor: 50000 };
-    const secondInvoice = { ...firstInvoice, invoiceId: 'second-eligible-invoice' };
-    first.putInvoice(firstInvoice);
-    second.putInvoice(secondInvoice);
-    const withinBudget = ({ amountMinor }, { spentMinor }) => spentMinor + amountMinor <= 90000;
-    first.pay(request(firstInvoice, 'first'), withinBudget);
-    assert.throws(() => second.pay(request(secondInvoice, 'second'), withinBudget), { code: 'not-authorized' });
-    assert.equal(first.inspect().payments.length, 1);
+    fixture.putInvoice(firstInvoice);
+    fixture.putInvoice(secondInvoice);
+    workers.push(new Worker(workerUrl, { workerData }), new Worker(workerUrl, { workerData }));
+    const ready = await Promise.all(workers.map(worker => once(worker, 'message')));
+    assert.deepEqual(ready.flat(), ['ready', 'ready']);
+    const results = workers.map(worker => once(worker, 'message'));
+    workers[0].postMessage(request(firstInvoice, 'first'));
+    workers[1].postMessage(request(secondInvoice, 'second'));
+    assert.deepEqual((await Promise.all(results)).flat().sort(), ['committed', 'not-authorized']);
+    const { payments, attempts } = fixture.inspect();
+    assert.deepEqual(payments.map(({ amountMinor }) => amountMinor), [50000]);
+    assert.deepEqual(attempts.map(({ status, code }) => ({ status, code })), [
+      { status: 'committed', code: null }, { status: 'blocked', code: 'not-authorized' }
+    ]);
   } finally {
-    second.close();
-    first.close();
+    await Promise.all(workers.map(worker => worker.terminate()));
+    fixture.close();
   }
 });
