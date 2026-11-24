@@ -75,7 +75,7 @@ test('the provider bounds credits by account and independently authorized refere
 
   fixture.putLink(merchantLink);
   assert.deepEqual(fixture.readMerchant({ ...merchantScope, reference: 'return-demo-other' }), { events: [], links: [] });
-  assert.deepEqual(fixture.readMerchant(merchantScope).links, [merchantLink]);
+  assert.deepEqual(fixture.readMerchant(merchantScope).links, [{ ...merchantLink, issuedAt: checkedAt }]);
   assert.deepEqual(fixture.readCredits({ ...ledgerScope, account: 'ledger-demo-other', linkedCreditIds: [linkedCredit.id] }), []);
   assert.deepEqual(fixture.readCredits({ ...ledgerScope, linkedCreditIds: [linkedCredit.id] }), [linkedCredit]);
 
@@ -95,6 +95,35 @@ test('the provider bounds credits by account and independently authorized refere
   assert.deepEqual(fixture.inspect().reads, []);
   assert.deepEqual(fixture.inspect().links, []);
   assert.equal(fixture.inspect().events[0].type, 'promise');
+});
+
+test('legacy merchant links remain usable and new contradictory links apply from their issue date', t => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'relay-refund-link-migration-'));
+  const legacy = new DatabaseSync(join(dataDir, 'refund-fixture.sqlite'));
+  legacy.exec(`CREATE TABLE return_links (
+    issuer TEXT NOT NULL, thread TEXT NOT NULL, returnReference TEXT NOT NULL, creditId TEXT NOT NULL,
+    PRIMARY KEY (issuer, thread, returnReference, creditId)
+  ) STRICT`);
+  legacy.prepare('INSERT INTO return_links VALUES (?, ?, ?, ?)').run(issuer, thread, reference, linkedCredit.id);
+  legacy.close();
+  let time = new Date(checkedAt);
+  const fixture = openRefundFixture({ dataDir, clock: () => time });
+  t.after(() => {
+    fixture.close();
+    rmSync(dataDir, { force: true, recursive: true });
+  });
+  fixture.putCredit(linkedCredit);
+  const later = '2026-11-24T09:00:00+05:30';
+  const contradictory = { ...merchantLink, returnReference: 'another-practice-return', issuedAt: later };
+  fixture.putLink(contradictory);
+  assert.throws(() => fixture.putLink({ ...contradictory, issuedAt: '2026-02-30T09:00:00Z' }), /valid issue time/);
+  assert.deepEqual(fixture.readMerchant(merchantScope).links, [{ ...merchantLink, issuedAt: null }]);
+  const ledger = { ...ledgerScope, linkedCreditIds: [linkedCredit.id] };
+  assert.deepEqual(fixture.readCredits(ledger), [linkedCredit]);
+  time = new Date(later);
+  assert.deepEqual(fixture.readMerchant(merchantScope).links, []);
+  assert.deepEqual(fixture.readCredits(ledger), []);
+  assert.deepEqual(fixture.inspect().reads.at(-1).scope, { ...ledgerScope, linkedCreditIds: [] });
 });
 
 function interruptedRefund(t) {
@@ -159,6 +188,25 @@ test('a named refund checkpoint shares one retry across both feeds even after an
   assert.deepEqual(fixture.inspect().reads, failed);
   assert.equal(scenario.desk.checkRefund(record.id, 'new-refund-check').status, 'verified');
   assert.equal(fixture.inspect().reads.length, failed.length + 2);
+});
+
+test('rewinding before an interrupted checkpoint cannot replay a future link snapshot', t => {
+  const scenario = interruptedRefund(t);
+  const { fixture, record } = scenario;
+  const tuesday = '2026-11-24T03:30:00.000Z';
+  fixture.putCredit(linkedCredit);
+  scenario.moveTime(tuesday);
+  fixture.putLink(merchantLink);
+  scenario.interruptAndReopen();
+  const originalReads = fixture.inspect().reads;
+  assert.deepEqual(originalReads.at(-1).scope, { ...ledgerScope, linkedCreditIds: [linkedCredit.id] });
+
+  scenario.moveTime(checkedAt);
+  assert.deepEqual(scenario.replay(), record);
+  assert.deepEqual(fixture.inspect().reads, originalReads);
+  scenario.moveTime(tuesday);
+  assert.equal(scenario.replay().status, 'verified');
+  assert.deepEqual(fixture.inspect().reads, originalReads);
 });
 
 test('an interrupted refund check reuses exact linked settlement proof only with its original grants', async t => {

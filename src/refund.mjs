@@ -11,10 +11,15 @@ function isPostedCredit(credit, refund, asOf) {
     credit.status === 'posted' && evidenceInstant(credit.postedAt) <= asOf;
 }
 
-function isLinked(credit, refund, links) {
+export function refundLinkVisibleAt(link, asOf) {
+  return link.issuedAt == null || evidenceInstant(link.issuedAt) <= asOf;
+}
+
+function isLinked(credit, refund, links, asOf) {
   if (credit.returnReference !== null || !refund.merchantIssuer || !refund.thread) return false;
   const references = new Set(links
-    .filter(link => link.issuer === refund.merchantIssuer && link.thread === refund.thread && link.creditId === credit.id)
+    .filter(link => link.issuer === refund.merchantIssuer && link.thread === refund.thread && link.creditId === credit.id &&
+      refundLinkVisibleAt(link, asOf))
     .map(link => link.returnReference));
   return references.size === 1 && references.has(refund.reference);
 }
@@ -24,7 +29,7 @@ export function matchRefundCredit(refund, {credits = [], links = []} = {}, asOf 
       !Number.isSafeInteger(refund.amountMinor) || refund.amountMinor <= 0) return null;
 
   const matches = credits.filter(credit => isPostedCredit(credit, refund, asOf) &&
-    (credit.returnReference === refund.reference || isLinked(credit, refund, links)));
+    (credit.returnReference === refund.reference || isLinked(credit, refund, links, asOf)));
   return matches.length === 1 ? matches[0] : null;
 }
 
@@ -97,8 +102,9 @@ export function checkRefund(record, fixture, now, checkpointId) {
     const read = readWithRetry('merchant', refundScope(subject, 'merchant'));
     if (read.status === 'superseded') return record;
     const merchant = read.records;
-    links = merchant?.links ?? [];
-    merchantEvent = latestEvidence(merchant?.events ?? [], 'occurredAt', merchantEvent, read.checkedAt ? Date.parse(read.checkedAt) : +now);
+    const asOf = read.checkedAt ? Date.parse(read.checkedAt) : +now;
+    links = (merchant?.links ?? []).filter(link => refundLinkVisibleAt(link, asOf));
+    merchantEvent = latestEvidence(merchant?.events ?? [], 'occurredAt', merchantEvent, asOf);
     saveCheck('merchant', read, merchantEvent?.occurredAt);
   }
   if (allowed('credits')) {

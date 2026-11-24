@@ -35,6 +35,8 @@ Use a fresh practice household with both **Shop thread** and **Incoming credits*
 4. Run `npm run demo:evidence -- refund-online merchant`, then `npm run demo:evidence -- refund-offline credits`. Check again. The ledger read fails and the refund stays open even though the shop can identify `credit-a`.
 5. Run `npm run demo:evidence -- refund-online credits` and check again. The brief verifies `demo-unlinked-refund-credit-a`. Compare the exact posted credit, the shop's link, and the ledger read restricted to that linked credit ID in `/api/fixture/refund`.
 
+`refund-link-credit` records the operator’s `RELAY_CLOCK` as `issuedAt` and keeps the first issue time on repeat runs. An earlier desk check cannot use that link to look up a credit. A later contradictory link makes the association ambiguous for subsequent checks. Links saved by older builds have `issuedAt: null` and retain their earlier behavior because their original publication time is unknown.
+
 ## Try an issuer of your own
 
 Use a running practice desk and a second terminal pointed at its practice directory. The operator can choose any synthetic issuer, subject, record type and required status. This rehearsal uses a community centre and a returned key.

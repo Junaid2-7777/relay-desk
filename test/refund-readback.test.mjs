@@ -36,14 +36,24 @@ test('a failed or stale ledger lookup cannot support a verified refund in the ev
 test('a credit without a return reference needs both the merchant lookup and its ID in the ledger read', () => {
   const link = { issuer: shopScope.issuer, thread: shopScope.thread, returnReference: reference, creditId: credit.id };
   const linked = { ...ledger, scope: { ...ledgerScope, linkedCreditIds: [credit.id] } };
-  const proof = (reads, errand = record) => matchedReadbacks(errand, { refund: {
-    credits: [{ ...credit, returnReference: null }], links: [link], reads
+  const proof = (reads, errand = record, links = [link]) => matchedReadbacks(errand, { refund: {
+    credits: [{ ...credit, returnReference: null }], links, reads
   } }).credit;
   assert.equal(proof([merchant, linked]), true);
   assert.equal(proof([merchant, ledger]), false);
   assert.equal(proof([linked]), false);
   assert.equal(proof([{ ...merchant, status: 'unavailable' }, linked]), false);
   assert.equal(proof([{ ...merchant, scope: { ...shopScope, thread: 'another-thread' } }, linked]), false);
+  const issued = { ...link, issuedAt: checkedAt };
+  const later = '2026-11-24T03:30:00.000Z';
+  const contradictory = { ...link, returnReference: 'another-return' };
+  assert.equal(proof([merchant, linked], record, [{ ...issued, issuedAt: later }]), false);
+  assert.equal(proof([merchant, linked], record, [issued, { ...contradictory, issuedAt: later }]), true);
+  assert.equal(proof([merchant, linked], record, [issued, { ...contradictory, issuedAt: checkedAt }]), false);
+  const tomorrowLedger = { ...linked, checkedAt: later };
+  const laterCheck = { ...record, checks: { ...record.checks, credits: { status: 'checked', checkedAt: later } } };
+  assert.equal(proof([merchant, tomorrowLedger], laterCheck, [{ ...issued, issuedAt: later }]), false);
+  assert.equal(proof([merchant, tomorrowLedger], laterCheck, [issued, { ...contradictory, issuedAt: later }]), false);
   const revoked = { ...record, refundAccess: { ...record.refundAccess,
     merchant: { ...record.refundAccess.merchant, status: 'withdrawn' } } };
   assert.equal(proof([merchant, linked], revoked), true);

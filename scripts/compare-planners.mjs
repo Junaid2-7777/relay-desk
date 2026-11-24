@@ -143,19 +143,22 @@ function creditMatches(record, native) {
   const ledger = successfulRefundRead(record, native, 'credits', ['account', 'reference']);
   if (!ledger || ledger.reference !== reference || !ledger.account || !Array.isArray(ledger.linkedCreditIds)) return [];
   const merchant = successfulRefundRead(record, native, 'merchant', ['issuer', 'thread', 'reference']);
+  const ledgerAt = Date.parse(record.checks.credits.checkedAt);
+  const merchantAt = merchant ? Date.parse(record.checks.merchant.checkedAt) : NaN;
+  const issuedBy = (link, at) => link.issuedAt == null || (evidenceTimestamp(link.issuedAt) && Date.parse(link.issuedAt) <= at);
   return native.credits.filter(credit => {
     if (credit.status !== 'posted' || credit.direction !== 'incoming' || credit.account !== ledger.account ||
         credit.amountMinor !== amountMinor || credit.currency !== currency || !evidenceTimestamp(credit.postedAt) ||
-        Date.parse(credit.postedAt) > Date.parse(record.checks.credits.checkedAt)) {
+        Date.parse(credit.postedAt) > ledgerAt) {
       return false;
     }
     if (credit.returnReference === reference) return true;
     if (credit.returnReference !== null || !ledger.linkedCreditIds.includes(credit.id) ||
-        merchant?.reference !== reference || !merchant.issuer || !merchant.thread) return false;
-    const references = new Set(native.links
-      .filter(link => link.creditId === credit.id && link.issuer === merchant.issuer && link.thread === merchant.thread)
-      .map(link => link.returnReference));
-    return references.size === 1 && references.has(reference);
+        merchant?.reference !== reference || !merchant.issuer || !merchant.thread || !(merchantAt <= ledgerAt)) return false;
+    const links = native.links.filter(link => link.creditId === credit.id && link.issuer === merchant.issuer &&
+      link.thread === merchant.thread && issuedBy(link, ledgerAt));
+    const references = new Set(links.map(link => link.returnReference));
+    return references.size === 1 && links.some(link => link.returnReference === reference && issuedBy(link, merchantAt));
   });
 }
 

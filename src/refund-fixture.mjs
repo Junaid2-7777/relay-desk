@@ -1,6 +1,8 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { evidenceInstant } from '../shared/evidence-time.mjs';
+import { refundLinkVisibleAt } from './refund.mjs';
 
 export const mondayRefund = Object.freeze({
   reference: 'return-demo-1249',
@@ -40,6 +42,7 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
       thread TEXT NOT NULL,
       returnReference TEXT NOT NULL,
       creditId TEXT NOT NULL,
+      issuedAt TEXT,
       PRIMARY KEY (issuer, thread, returnReference, creditId)
     ) STRICT;
     CREATE TABLE IF NOT EXISTS ledger_credits (
@@ -77,6 +80,29 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
     ) STRICT;
   `);
 
+  let inTransaction = false;
+  function transaction(action) {
+    if (inTransaction) return action();
+    database.exec('BEGIN IMMEDIATE');
+    inTransaction = true;
+    try {
+      const result = action();
+      database.exec('COMMIT');
+      return result;
+    } catch (error) {
+      database.exec('ROLLBACK');
+      throw error;
+    } finally {
+      inTransaction = false;
+    }
+  }
+
+  const hasLinkTime = () => database.prepare('PRAGMA table_info(return_links)').all().some(column => column.name === 'issuedAt');
+  if (!hasLinkTime()) transaction(() => {
+    if (!hasLinkTime()) database.exec('ALTER TABLE return_links ADD COLUMN issuedAt TEXT');
+  });
+  database.function('refund_link_visible', { deterministic: true }, (issuedAt, at) => Number(refundLinkVisibleAt({ issuedAt }, at)));
+
   const writeEvent = database.prepare(`
     INSERT INTO merchant_events VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET issuer = excluded.issuer, thread = excluded.thread,
@@ -88,19 +114,22 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
       currency = excluded.currency, direction = excluded.direction, status = excluded.status,
       returnReference = excluded.returnReference, postedAt = excluded.postedAt
   `);
-  const writeLink = database.prepare('INSERT OR IGNORE INTO return_links VALUES (?, ?, ?, ?)');
+  const writeLink = database.prepare('INSERT OR IGNORE INTO return_links (issuer, thread, returnReference, creditId, issuedAt) VALUES (?, ?, ?, ?, ?)');
+  const findLink = database.prepare('SELECT * FROM return_links WHERE issuer = ? AND thread = ? AND returnReference = ? AND creditId = ?');
   const merchantEvents = database.prepare(`
     SELECT id, issuer, thread, returnReference, occurredAt, type FROM merchant_events
     WHERE issuer = ? AND thread = ? AND returnReference = ?
     ORDER BY occurredAt, id
   `);
   const merchantLinks = database.prepare(`
-    SELECT link.issuer, link.thread, link.returnReference, link.creditId
+    SELECT link.issuer, link.thread, link.returnReference, link.creditId, link.issuedAt
     FROM return_links AS link
     WHERE link.issuer = ? AND link.thread = ? AND link.returnReference = ?
+      AND refund_link_visible(link.issuedAt, ?)
       AND NOT EXISTS (
         SELECT 1 FROM return_links AS other WHERE other.issuer = link.issuer AND other.thread = link.thread
           AND other.creditId = link.creditId AND other.returnReference <> link.returnReference
+          AND refund_link_visible(other.issuedAt, ?)
       )
     ORDER BY link.creditId
   `);
@@ -124,23 +153,6 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
   `);
   const saveCheckpointRead = database.prepare('INSERT INTO refund_checkpoint_reads VALUES (?, ?, ?, ?, ?, ?, ?)');
 
-  let inTransaction = false;
-  function transaction(action) {
-    if (inTransaction) return action();
-    database.exec('BEGIN IMMEDIATE');
-    inTransaction = true;
-    try {
-      const result = action();
-      database.exec('COMMIT');
-      return result;
-    } catch (error) {
-      database.exec('ROLLBACK');
-      throw error;
-    } finally {
-      inTransaction = false;
-    }
-  }
-
   function putEvent(event) {
     writeEvent.run(event.id, event.issuer, event.thread, event.returnReference, event.occurredAt, event.type);
   }
@@ -152,11 +164,15 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
     );
   }
 
-  function putLink(link) {
-    writeLink.run(link.issuer, link.thread, link.returnReference, link.creditId);
+  function putLink({ issuer, thread, returnReference, creditId, issuedAt = clock().toISOString() }) {
+    if (!Number.isFinite(evidenceInstant(issuedAt))) throw new TypeError('Give the refund link a valid issue time with an explicit offset.');
+    return transaction(() => {
+      writeLink.run(issuer, thread, returnReference, creditId, issuedAt);
+      return { ...findLink.get(issuer, thread, returnReference, creditId) };
+    });
   }
 
-  function prepareRead(source, input) {
+  function prepareRead(source, input, at) {
     const { reference } = input;
     if (source === 'merchant') {
       const { issuer, thread } = input;
@@ -164,7 +180,7 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
         scope: { issuer, thread, reference },
         read: () => ({
           events: plainRows(merchantEvents.all(issuer, thread, reference)),
-          links: plainRows(merchantLinks.all(issuer, thread, reference))
+          links: plainRows(merchantLinks.all(issuer, thread, reference, at, at))
         })
       };
     }
@@ -172,7 +188,7 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
     let confirmedIds = [];
     if (linkedCreditIds.length && account === mondayRefund.account && reference === mondayRefund.reference) {
       const requestedIds = new Set(linkedCreditIds);
-      confirmedIds = merchantLinks.all(mondayRefund.merchantIssuer, mondayRefund.thread, reference)
+      confirmedIds = merchantLinks.all(mondayRefund.merchantIssuer, mondayRefund.thread, reference, at, at)
         .map(link => link.creditId)
         .filter(id => requestedIds.has(id));
     }
@@ -192,12 +208,12 @@ export function openRefundFixture({ dataDir, clock = () => new Date() }) {
         if (prior && prior.binding !== replay.binding) return { status: 'superseded' };
         const saved = priorRead.get(replay.key, source, replay.attempt);
         if (saved) {
-          if (saved.input !== serializedInput) return { status: 'superseded' };
+          if (saved.input !== serializedInput || !(evidenceInstant(saved.checkedAt) <= +now)) return { status: 'superseded' };
           return saved.records === null ? { status: 'unavailable' }
             : { status: 'checked', records: JSON.parse(saved.records), checkedAt: saved.checkedAt };
         }
       }
-      const { scope, read } = prepareRead(source, input);
+      const { scope, read } = prepareRead(source, input, +now);
       const checkedAt = now.toISOString();
       const { lastInsertRowid: readId } = writeRead.run(source, JSON.stringify(scope), checkedAt);
       const records = unavailableSource.get(source) ? null : read();

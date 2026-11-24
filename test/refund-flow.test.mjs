@@ -204,10 +204,11 @@ test('operator credits and issuer links require a fresh allowed check on both re
     issuer: merchantScope.issuer,
     thread: merchantScope.thread,
     returnReference: merchantScope.reference,
-    creditId: posted.id
+    creditId: posted.id,
+    issuedAt: tuesday
   };
   const wrongLink = await desk.operator('refund-link-credit', 'credit-a', 'unrelated');
-  assert.deepEqual(wrongLink, { ...exactLink, issuer: 'merchant-demo-unrelated' });
+  assert.deepEqual(wrongLink, { ...exactLink, issuer: 'merchant-demo-unrelated', issuedAt: monday });
   const wrong = await desk.check('wrong-issuer');
   assert.equal(wrong.status, 'open');
   const preOutage = await desk.inspect();
@@ -272,6 +273,33 @@ test('operator credits and issuer links require a fresh allowed check on both re
   ]);
   assert.deepEqual(proof.credits.filter(credit => credit.returnReference === null), [posted, twin]);
   assert.deepEqual((await desk.request('/api/inspect')).effects, proof.reads);
+});
+
+test('the desk only asks for an unlinked credit after the operator link is issued', async t => {
+  const desk = await startDesk(t);
+  const merchant = await desk.access(await desk.record(), 'merchant', 'allowed');
+  await desk.access(merchant, 'credits', 'allowed');
+  const credit = await desk.operator('refund-unlinked-credit', 'dated-link');
+  desk.moveTime(tuesday);
+  const link = await desk.operator('refund-link-credit', 'dated-link', 'merchant');
+
+  desk.moveTime(monday);
+  await desk.open();
+  const early = await desk.check('before-published-link');
+  assert.equal(early.status, 'open');
+  assert.deepEqual(early.evidence, []);
+  assert.deepEqual((await desk.inspect()).reads.at(-1).scope, { ...creditScope, linkedCreditIds: [] });
+
+  desk.moveTime(tuesday);
+  assert.equal(link.issuedAt, tuesday);
+  desk.moveTime(wednesday);
+  assert.deepEqual(await desk.operator('refund-link-credit', 'dated-link', 'merchant'), link);
+  desk.fixture.putLink({ ...link, returnReference: 'another-practice-return', issuedAt: wednesday });
+  desk.moveTime(tuesday);
+  const verified = await desk.check('at-published-link');
+  assert.equal(verified.status, 'verified');
+  assert.equal(verified.evidence[0].reference, credit.id);
+  assert.deepEqual((await desk.inspect()).reads.at(-1).scope, { ...creditScope, linkedCreditIds: [credit.id] });
 });
 
 test('refund activity follows issuer instants and ignores malformed evidence', async t => {

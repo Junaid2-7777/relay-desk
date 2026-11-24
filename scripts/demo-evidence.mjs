@@ -85,12 +85,10 @@ function linkRefundCredit(label, kind) {
   return withRefundCredit(label, (fixture, credit) => {
     if (!credit) throw new Error('Publish the unlinked practice credit first.');
     const { merchantIssuer, thread, reference } = mondayRefund;
-    const link = {
+    return fixture.putLink({
       issuer: kind === 'merchant' ? merchantIssuer : 'merchant-demo-unrelated',
-      thread, returnReference: reference, creditId: credit.id
-    };
-    fixture.putLink(link);
-    return link;
+      thread, returnReference: reference, creditId: credit.id, issuedAt: clock.toISOString()
+    });
   });
 }
 
