@@ -160,9 +160,16 @@ button:disabled { cursor: default; opacity: .65; }
 }
 dt { font-size: .875rem; overflow-wrap: anywhere; }
 dd { margin: 0; overflow-wrap: anywhere; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bill-amounts { margin-block-end: .65rem; }
+.invoice-terms { margin-block-start: 0; }
 @container errand (max-width: 11rem) {
   .facts { grid-template-columns: minmax(0, 1fr); row-gap: .2rem; }
   .facts dt:not(:first-of-type) { margin-block-start: .45rem; }
+  .bill-amounts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .4rem; }
+  .bill-amounts dt:not(:first-of-type) { margin-block-start: 0; }
+}
+@container errand (11rem < width < 18rem) {
+  .bill-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .source { background: var(--carbon); padding: 0 .75rem; }
 .source summary { min-height: 2.75rem; padding-block: .6rem; cursor: pointer; font-weight: 700; }

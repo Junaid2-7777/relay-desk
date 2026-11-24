@@ -139,16 +139,23 @@ function renderAccess(panel, record, run, deskTime) {
 
 function renderBill(panel, list, record, run, deskTime) {
   const { invoice, previousInvoice, capMinor, bill, payment, settlement, approval, grants } = record;
+  const reviewing = reviewNeeded(record) && invoice;
+  const terms = reviewing ? document.createElement('dl') : list;
+  if (reviewing) {
+    list.classList.add('bill-amounts');
+    terms.className = 'facts invoice-terms';
+    panel.append(terms);
+  }
   if (previousInvoice && previousInvoice.revision !== invoice?.revision) {
     fact(list, invoice ? 'Previous invoice' : 'Last seen invoice', money(previousInvoice.amountMinor, previousInvoice.currency));
   }
-  if (invoice) {
-    fact(list, 'Current invoice', money(invoice.amountMinor, invoice.currency));
-    fact(list, 'Invoice', `${invoice.invoiceId} · revision ${invoice.revision}`);
-    fact(list, 'Payee', `${invoice.payeeLabel} · ${invoice.payee}`);
-  }
+  if (invoice) fact(list, 'Current invoice', money(invoice.amountMinor, invoice.currency));
   fact(list, 'Standing limit', money(capMinor, bill.currency));
-  if (reviewNeeded(record) && invoice) {
+  if (invoice) {
+    fact(terms, 'Invoice', `${invoice.invoiceId} · revision ${invoice.revision}`);
+    fact(terms, 'Payee', `${invoice.payeeLabel} · ${invoice.payee}`);
+  }
+  if (reviewing) {
     const canReview = activeAt(grants.invoice, deskTime);
     const canPay = canReview && activeAt(grants.payment, deskTime) &&
       invoice.payee === bill.payee && invoice.currency === bill.currency;
@@ -160,9 +167,9 @@ function renderBill(panel, list, record, run, deskTime) {
       addText(panel, 'p', 'Allow invoice and receipt access in Permissions to review this bill.');
     } else {
       const choices = document.createElement('div');
-      choices.className = 'actions';
+      choices.className = 'actions bill-actions';
       if (canPay) {
-        addText(panel, 'p', `A one-time payment applies to this invoice revision. Your standing limit stays at ${money(capMinor, bill.currency)}.`);
+        addText(panel, 'p', `Pay once for this revision. Future bills keep the ${money(capMinor, bill.currency)} limit.`);
         action(choices, `Pay ${money(invoice.amountMinor, invoice.currency)} once`, event =>
           run('bill-choice', { choice: 'approve', revision: record.revision }, event.currentTarget, true)).className = 'primary';
       } else {
@@ -203,7 +210,8 @@ function renderVisitConflict(panel, record, run, deskTime) {
 }
 
 export function renderHousehold(panel, list, record, run, deskTime) {
-  if (record.owner) fact(list, 'Responsible for this errand', record.owner);
+  const showOwner = record.owner && !(record.bill && reviewNeeded(record) && record.invoice?.payeeLabel === record.owner);
+  if (showOwner) fact(list, 'Responsible for this errand', record.owner);
   if (record.reservation) {
     fact(list, 'Booked for', `${when(record.reservation.start)} IST`);
     fact(list, 'Provider confirmation', record.reservation.id);

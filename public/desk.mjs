@@ -191,7 +191,10 @@ function renderErrand(record) {
   if (record.status === 'verified') card.querySelector('.ring').classList.add('verified');
   const due = !householdMode && record.status === 'open' && checkDate && checkDate <= deskDay;
   const dateTitle = due ? (checkDate === deskDay ? 'Check today' : 'Check overdue') : 'Your check date';
-  fact(part('facts'), dateTitle, checkDate ? dateLabel(checkDate) : 'Choose when to check');
+  const billReview = record.bill && record.invoice && reviewNeeded(record);
+  const dates = billReview ? document.createElement('dl') : part('facts');
+  if (billReview) dates.className = 'facts';
+  fact(dates, dateTitle, checkDate ? dateLabel(checkDate) : 'Choose when to check');
   if (due && kind === 'refund') fact(part('facts'), 'What to check', 'Look for the posted credit for this return.');
   if (kind === 'refund') {
     fact(part('facts'), 'Merchant deadline', merchantDeadline ? dateLabel(merchantDeadline) : 'Unknown');
@@ -231,6 +234,7 @@ function renderErrand(record) {
     if (record.visit || record.bill) {
       source.open = false;
       panel.after(source);
+      if (billReview) panel.after(dates);
     }
     const run = async (endpoint, body, current, advance = false) => {
       part('error').textContent = '';
