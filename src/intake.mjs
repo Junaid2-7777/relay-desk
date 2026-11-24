@@ -1,9 +1,30 @@
 const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const dateReference = /\b(?:(this|next|last)\s+)?(today|tomorrow|sunday|monday|tuesday|wednesday|thursday|friday|saturday|\d{4}-\d{2}-\d{2})\b/giu;
-const quotedText = /"[^"]*"|“[^”]*”|‘[^’]*’|(?<![\p{L}\p{N}])'[^']*'(?![\p{L}\p{N}])/gu;
+const quotedText = /"[^"]*"|“[^”]*”|‘[^’]*’|(?<![\p{L}\p{N}])'(?:[^']|(?<=\p{L})'(?=\p{L}))*'(?![\p{L}\p{N}])/gu;
 const requestIntro = /^\s*(?:(?:please|help\s+me|(?:can|could|would|will)\s+you|(?:i|we)\s+(?:want|need|would\s+like)\s+(?:you\s+)?to)\s+)*/iu;
 const checkRequest = /^(?:check|follow[\s-]+up|look\s+again|revisit)(?:\s+(?:again|back|in|it|this))*(?:\s+on|\s+(?:(?:on|for)\s+)?(?:the|my|our)\s+(?:[\p{L}\p{N}'-]+\s+){1,4}on)?\s+$/iu;
+const bookingRequest = /^(?:book|reserve|schedule)\s+(?:(?:me|us)\s+(?:for\s+)?)?(?:a|an|one|the|my|our)\s+/iu;
+const bookingDetails = /[,:]|\s+(?:about|and|or|for|from|of|at|on|with|to|between|before|after|(?:this|next)\s+(?:morning|afternoon|evening|week|month))\b/iu;
+const nonSlotObject = /\b(?:alarm|alert|book|cop(?:y|ie)|e-?mail|follow[\s-]+up|message|notification|payment|reminder|text|transfer)s?$/iu;
+const bookingRefusal = /\b(?:do\s+not|don['’]t|never|not\s+to)\s+(?:actually\s+)?(?:book|reserve|schedule)\b/iu;
 const referenceLabel = /\b(?:reference(?:[ \t]+(?:number|id))?|ref|id)\b\.?[ \t]*(?:[:#][ \t]*)?(?!(?:id|number|not|missing|unknown)\b)([a-z0-9][a-z0-9._:-]*)/giu;
+
+function noteSentences(note) {
+  return note.replace(quotedText, quote => /[.!?].$/u.test(quote) ? '. ' : ' ')
+    .replace(/:[ \t]*[\r\n]+\s*/gu, ': ').split(/[.!?;\r\n]+/u);
+}
+
+function requestsBooking(note) {
+  const sentences = noteSentences(note);
+  if (sentences.some(sentence => bookingRefusal.test(sentence))) return false;
+  return sentences.some(sentence => {
+    const request = sentence.replace(requestIntro, '');
+    if (!bookingRequest.test(request)) return false;
+    const [object] = request.replace(bookingRequest, '').split(bookingDetails, 1);
+    const item = object.replace(dateReference, '').trim();
+    return /\p{L}/u.test(item) && !nonSlotObject.test(item);
+  });
+}
 
 function calendarDay(day) {
   const date = new Date(`${day}T00:00:00.000Z`);
@@ -15,7 +36,7 @@ function requestedCheckDate(note, today) {
   if (!start) return null;
 
   const dates = new Set();
-  for (const sentence of note.replace(quotedText, quote => /[.!?].$/u.test(quote) ? '. ' : ' ').split(/[.!?;\r\n]+/u)) {
+  for (const sentence of noteSentences(note)) {
     let requested = false;
     for (const reference of sentence.matchAll(dateReference)) {
       requested ||= checkRequest.test(sentence.slice(0, reference.index).replace(requestIntro, ''));
@@ -59,7 +80,7 @@ export function suggestPracticePlan(note, sources) {
   const subjects = new Set(Array.from(note.matchAll(referenceLabel), match => match[1].replace(/[.:]+$/u, '')));
   const [reference] = subjects;
   const subject = subjects.size === 1 && reference.length <= 100 ? reference : '';
-  if (/\b(?:book|reserve|schedule)\b/u.test(lower)) return { capability: 'visit', subject };
+  if (requestsBooking(note)) return { capability: 'visit', subject };
 
   const issuers = sources.filter(source => lower.includes(source.label.toLowerCase()));
   const expected = /\b(?:until|once|proof\s+that|confirmation\s+that)\b[^.!?]{0,70}\b(closed|approved|confirmed|issued|rejected|completed)\b/u.exec(lower);

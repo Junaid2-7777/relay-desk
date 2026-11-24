@@ -47,3 +47,32 @@ test('suggests a practice reference only after a complete reference label', () =
   assert.equal(suggestPracticePlan('Watch for the receipt for reference member-17 or reference member-21.', []).subject, '');
   assert.equal(suggestPracticePlan('I need the receipt. Reference number not provided.', []).subject, '');
 });
+
+test('suggests a visit when the household directly asks for a booking', () => {
+  assert.deepEqual(suggestPracticePlan('Could you book a free bicycle fitting for reference frame-32?', []), {
+    capability: 'visit', subject: 'frame-32',
+  });
+  assert.equal(suggestPracticePlan('Please reserve a table for three.', []).capability, 'visit');
+  assert.equal(suggestPracticePlan('My day has opened up. Help me schedule a consultation with the vet.', []).capability, 'visit');
+  assert.equal(suggestPracticePlan('Please book a free equipment induction on Tuesday for reference course-8.', []).capability, 'visit');
+  assert.equal(suggestPracticePlan('Book me a bike repair tomorrow.', []).capability, 'visit');
+  assert.equal(suggestPracticePlan('Reserve the ceramics kiln.', []).capability, 'visit');
+});
+
+test('does not suggest booking from nouns, reported instructions or an explicit refusal', () => {
+  for (const note of [
+    'The library book is due next week.',
+    'My reserve is low and the schedule changed.',
+    'The clinic note reads “Book an exam tomorrow.”',
+    "The clinic wrote 'I can't reserve it. Book a slot.'",
+    'The clinic gave these instructions:\nBook a visit online.',
+    'The clinic told me to book a visit.',
+    'Do not book a fitting. Watch for my receipt.',
+    'Book a fitting. Actually, don’t book yet.',
+    'Reserve a copy of the tour guide for me.',
+    'Schedule a reminder for my appointment.',
+    'Schedule a bill payment for Thursday.',
+    'Please reserve a library book Friday.',
+    'Please see whether I can book a fitting.',
+  ]) assert.equal(suggestPracticePlan(note, []).capability, 'receipt', note);
+});
