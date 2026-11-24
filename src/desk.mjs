@@ -10,6 +10,7 @@ import { createIntakePlanner } from './intake-planner.mjs';
 import { normalizeReceiptPlan, sameReceiptProof, sameReceiptScope } from './receipt.mjs';
 import { receiptIdentifier } from './receipt-fixture.mjs';
 import { checkRefund, refundGrant, refundSources } from './refund.mjs';
+import { confirmVisitConflict } from './visit.mjs';
 
 export class DeskError extends Error {
   constructor(message, status = 400) {
@@ -400,6 +401,19 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
           },
           deferred: null
         };
+      });
+    },
+    visitChoice(id, { choice, revision }) {
+      if (!household || !['handle', 'watch'].includes(choice)) throw new DeskError('Choose how to handle the calendar conflict.');
+      return changeCase(id, record => {
+        requireRevision(record, revision);
+        const conflict = confirmVisitConflict(record, household.visit.fixture, journal, clock);
+        if (!conflict) throw new DeskError('The calendar conflict could not be confirmed. Check your errands and permissions.', 409);
+        const conflictChoice = { choice, ...conflict };
+        const previous = record.conflictChoice;
+        if (previous?.choice === choice && previous.reservationId === conflict.reservationId &&
+            previous.start === conflict.start && previous.end === conflict.end) return record;
+        return { ...record, conflictChoice };
       });
     },
     checkpoint(reference) {

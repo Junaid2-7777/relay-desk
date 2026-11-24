@@ -132,11 +132,12 @@ export function createDeskServer({
         const body = await jsonBody(request);
         return send(response, 200, action === 'refund-access' ? desk.refundAccess(id, body) : desk.checkRefund(id, body.checkpointId));
       }
-      const decision = /^\/api\/errands\/([\w-]+)\/(household-access|bill-choice|setup)$/.exec(pathname);
+      const decision = /^\/api\/errands\/([\w-]+)\/(household-access|bill-choice|visit-choice|setup)$/.exec(pathname);
       if (household && decision && method === 'POST') {
         const [, id, action] = decision;
         const body = await jsonBody(request);
         if (action === 'setup') return send(response, 200, desk.setup(id, body));
+        if (action === 'visit-choice') return send(response, 200, desk.visitChoice(id, body));
         return send(response, 200, action === 'bill-choice' ? desk.billChoice(id, body) : desk.householdAccess(id, body));
       }
       throw new DeskError('This page could not be found.', 404);

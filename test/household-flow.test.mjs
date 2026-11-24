@@ -95,6 +95,9 @@ async function startHousehold(t, warm = true) {
     queue: (errand, terms) => request(`/api/errands/${errand.id}/queue-followup`, { revision: errand.revision, ...terms }),
     billChoice: (errand, choice, status) => request('/api/errands/demo-bill/bill-choice', {
       choice, revision: errand.revision
+    }, status),
+    visitChoice: (errand, choice, status) => request(`/api/errands/${errand.id}/visit-choice`, {
+      choice, revision: errand.revision
     }, status)
   };
 }
@@ -300,6 +303,81 @@ test('a protected event arriving after booking preserves the original reservatio
   assert.equal(native.attempts.filter(item => item.operation === 'reserve').length, 1);
   assert.equal(native.attempts.filter(item => item.operation === 'calendar.add').length, 2);
   assert.ok(!JSON.stringify({ brief, inspection: await household.inspect() }).includes(inserted.title));
+});
+
+test('visit conflict choices require current native evidence and never alter the booking or protected event', async t => {
+  const household = await startHousehold(t);
+  const provider = household.provider(openVisitFixture);
+  provider.failNextCalendarWrite();
+  const booked = errand(await household.checkpoint(), 'visit');
+  const overlap = {
+    id: 'calendar-demo-user-conflict', start: visitStart, end: visitEnd,
+    title: 'Synthetic protected appointment'
+  };
+  provider.putCalendarEvent(overlap);
+  const review = errand(await household.checkpoint(), 'visit');
+  const before = await household.native('visit');
+  const chosen = await household.visitChoice(review, 'handle');
+  const binding = { reservationId: booked.reservation.id, start: visitStart, end: visitEnd };
+  assert.equal(chosen.issue, 'calendar-conflict');
+  assert.equal(chosen.status, 'booked');
+  assert.deepEqual(chosen.conflictChoice, { choice: 'handle', ...binding });
+  const after = await household.native('visit');
+  assert.deepEqual(after.reads.slice(before.reads.length).map(({ source, scope }) => ({ source, scope })), [
+    { source: 'reservation', scope: { key: booked.reservation.key } },
+    { source: 'calendarConflict', scope: { reservationId: booked.reservation.id } }
+  ]);
+  assert.deepEqual(after.attempts, before.attempts);
+  assert.deepEqual(after.calendar, before.calendar);
+  await household.visitChoice(review, 'watch', 409);
+  assert.deepEqual(await household.native('visit'), after);
+
+  await household.restart(tuesday);
+  assert.deepEqual(errand(await household.checkpoint(), 'visit'), chosen);
+  provider.putCalendarEvent({ ...overlap, start: visitEnd, end: mondayVisit.windowEnd });
+  const handled = errand(await household.checkpoint(), 'visit');
+  assert.equal(handled.status, 'booked');
+  assert.equal(handled.issue, 'calendar-pending');
+  assert.deepEqual(handled.conflictChoice, chosen.conflictChoice);
+  assert.deepEqual((await household.native('visit')).attempts, before.attempts);
+
+  provider.putCalendarEvent(overlap);
+  const reopened = errand(await household.checkpoint(), 'visit');
+  assert.equal(reopened.issue, 'calendar-conflict');
+  assert.equal(reopened.conflictChoice, null);
+  const narrowed = provider.putCalendarEvent({
+    ...overlap, start: '2026-11-24T15:15:00+05:30', end: '2026-11-24T15:45:00+05:30'
+  });
+  await household.visitChoice(reopened, 'watch', 409);
+  const changed = errand(await household.checkpoint(), 'visit');
+  assert.deepEqual(changed.conflict, { start: narrowed.start, end: narrowed.end });
+  assert.equal(changed.conflictChoice, null);
+
+  const denied = await household.access(changed, 'freeBusy', 'withdrawn');
+  const beforeDenial = await household.native('visit');
+  await household.visitChoice(denied, 'watch', 409);
+  assert.deepEqual(await household.native('visit'), beforeDenial);
+  const allowed = await household.access(denied, 'freeBusy', 'allowed');
+  const watched = await household.visitChoice(allowed, 'watch');
+  assert.equal(watched.status, 'booked');
+  assert.deepEqual(watched.conflictChoice, {
+    choice: 'watch', reservationId: binding.reservationId, start: narrowed.start, end: narrowed.end
+  });
+  assert.deepEqual((await household.native('visit')).attempts, before.attempts);
+
+  const clear = provider.putCalendarEvent({ ...overlap, start: visitEnd, end: mondayVisit.windowEnd });
+  const verified = errand(await household.checkpoint(), 'visit');
+  assert.equal(verified.status, 'verified');
+  assert.equal(verified.conflictChoice, null);
+  assert.deepEqual(verified.reservation, booked.reservation);
+  assert.equal(verified.calendarEvent.reservationId, booked.reservation.id);
+  const final = await household.native('visit');
+  assert.deepEqual(final.reservations, before.reservations);
+  assert.deepEqual(final.calendar.find(event => event.id === overlap.id), clear);
+  assert.deepEqual(final.attempts.slice(before.attempts.length).map(({ operation, status }) => ({ operation, status })), [
+    { operation: 'calendar.add', status: 'recorded' }
+  ]);
+  assert.equal(final.reads.at(-1).source, 'calendar');
 });
 
 test('stopping an open errand withdraws its permissions and leaves its evidence unresolved', async t => {
