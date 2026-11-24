@@ -37,6 +37,8 @@ If the outbox reply is lost, **Review pending follow-up** reopens the approved r
 
 Open checks in the private desk appear in check-date order. On the date chosen for a refund, the card shows **Check today** and asks the person to look for the posted credit. Missed dates stay with their errands, and stopped items move below open checks.
 
+In the private desk, **Draft a follow-up** opens an editable message that you can copy. Choose **Save draft** to keep the exact wording on this computer, then open **Draft a follow-up** again after a restart. If another tab saved a newer draft, compare both versions. **Use saved draft** loads the other version. **Keep my edits** keeps your own wording available for a separate **Save draft** action.
+
 A browser tab remembers which desk it opened. If you switch to a different data directory or planner, or reset the practice household on the same port, the old tab asks you to reload. If you have an unsaved private review, restart the original private desk at that address and select **Save errand** again to keep the draft there.
 
 In the practice desk, **Edit receipt check** lets the person correct an open errand’s issuer, reference, record type or required status. A change of issuer or reference withdraws access to the old record and clears its last check. A change to the proof required from the same record preserves its scoped permission. The original note and check date stay on the card.

@@ -64,7 +64,7 @@ async function request(path, { method = 'GET', body } = {}) {
     throw new Error('The desk could not be reached. Check that Relay Desk is running and try again.');
   }
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error);
+  if (!response.ok) throw Object.assign(new Error(result.error), { code: result.code });
   if (path === '/api/desk' || path === '/api/checkpoint') {
     if (typeof result.deskContext !== 'string' || !result.deskContext ||
         (deskContext !== undefined && result.deskContext !== deskContext)) {
@@ -99,6 +99,97 @@ function validate(fields, message) {
 
 function restoreFocus(control) {
   if (document.activeElement === document.body) control?.focus();
+}
+
+function renderPrivateDraftSave(panel, draft, state, read, write, cardControls) {
+  const terms = state.editable;
+  const hint = addText(panel, 'p', 'Choose Save draft to keep these words on this computer. You can copy the text at any time.');
+  hint.id = `${draft.id}-hint`;
+  hint.className = 'hint';
+  draft.setAttribute('aria-describedby', hint.id);
+  draft.maxLength = 8000;
+  const message = addText(panel, 'p', '');
+  message.setAttribute('role', 'status');
+  const comparison = document.createElement('div');
+  panel.append(comparison);
+
+  function useVersion(saved, text = saved.text) {
+    state.savedText = saved.text;
+    terms.draftRevision = saved.draftRevision;
+    terms.text = draft.value = text;
+    state.draftConflict = null;
+    state.message = '';
+    comparison.replaceChildren();
+  }
+
+  function showConflict() {
+    const saved = state.draftConflict;
+    if (!saved) return null;
+    const details = document.createElement('details');
+    details.className = 'source evidence';
+    details.open = true;
+    addText(details, 'summary', 'Compare drafts');
+    const latest = document.createElement('textarea');
+    latest.id = `${draft.id}-latest`;
+    latest.rows = 4;
+    latest.readOnly = true;
+    latest.value = saved.text;
+    addText(details, 'label', 'Draft saved in another tab').htmlFor = latest.id;
+    details.append(latest);
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const choose = (label, text) => action(actions, label, () => {
+      useVersion(saved, text());
+      update();
+      draft.focus();
+    });
+    choose('Use saved draft', () => saved.text);
+    choose('Keep my edits', () => draft.value);
+    details.append(actions);
+    comparison.replaceChildren(details);
+    return latest;
+  }
+
+  const save = action(panel, 'Save draft', async () => {
+    const locked = cardControls.filter(control => !control.disabled);
+    locked.forEach(control => { control.disabled = true; });
+    save.disabled = true;
+    draft.readOnly = true;
+    message.textContent = 'Saving draft…';
+    let conflictFocus;
+    try {
+      useVersion(await write({ text: draft.value, draftRevision: terms.draftRevision }));
+    } catch (error) {
+      state.message = error.message;
+      if (error.code === 'local-draft-conflict') {
+        try {
+          state.draftConflict = await read();
+          state.message = 'Another tab saved a newer draft. Compare it with your edits.';
+          conflictFocus = showConflict();
+        } catch {
+          state.message = 'Another tab saved a newer draft. Try Save draft again to compare it.';
+        }
+      }
+    } finally {
+      locked.forEach(control => { control.disabled = false; });
+      draft.readOnly = false;
+      update();
+      restoreFocus(conflictFocus ?? (save.disabled ? draft : save));
+    }
+  });
+
+  function update() {
+    const dirty = draft.value !== state.savedText;
+    save.disabled = Boolean(state.draftConflict) || !draft.value.trim() || (!dirty && terms.draftRevision > 0);
+    message.textContent = state.message || (dirty ? 'Unsaved draft changes.' :
+      terms.draftRevision > 0 ? 'Draft saved on this computer.' : 'Draft ready to edit or copy.');
+  }
+  draft.addEventListener('input', () => {
+    if (!state.draftConflict) state.message = '';
+    update();
+  });
+  showConflict();
+  update();
 }
 
 function renderRefund(panel, record, update, errorMessage, setBusy) {
@@ -325,6 +416,13 @@ function renderErrand(record) {
     label.htmlFor = draft.id;
     if (!draft.readOnly) draft.addEventListener('input', () => { terms.text = draft.value; });
     panel.append(draft);
+    part('extra').replaceChildren(panel);
+
+    if (Number.isSafeInteger(terms.draftRevision) && !pending && !queued) {
+      renderPrivateDraftSave(panel, draft, state, readDraft, body =>
+        request(`/api/errands/${id}/local-draft`, { method: 'PUT', body }), [draftButton, part('edit'), trackingButton]);
+      return draft;
+    }
 
     if (pending) addText(panel, 'p', 'Check the practice outbox for these exact words.');
     const message = addText(panel, 'p', state.message);
@@ -380,7 +478,6 @@ function renderErrand(record) {
       });
       submit.dataset.queue = '';
     }
-    part('extra').replaceChildren(panel);
     return draft;
   }
   restoreDraft();
@@ -450,7 +547,10 @@ function renderErrand(record) {
       const terms = record.queuedFollowup ?? await readDraft();
       const state = localDrafts.get(id) ?? { editable: null, pending: null, message: '' };
       if (terms.pendingFollowup) state.pending = terms;
-      else if (!record.queuedFollowup) state.editable ??= terms;
+      else if (!record.queuedFollowup && !state.editable) {
+        state.editable = terms;
+        state.savedText = terms.text;
+      }
       localDrafts.set(id, state);
       if (Boolean(terms.pendingFollowup) !== Boolean(record.pendingFollowup)) {
         const current = await readCurrentErrand();

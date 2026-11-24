@@ -135,6 +135,9 @@ test('private and practice errands stay with their own desk when both share a da
   const privateId = '52cea560-9241-47b5-99c5-ce556ce23cba';
   const privateBody = { requestId: privateId, note: 'The fictional shop gave me a private reference. Check on Friday.' };
   const privateErrand = await personal.request('/api/errands', { method: 'POST', body: privateBody, status: 201 });
+  const localPath = `/api/errands/${privateId}/local-draft`;
+  const draftBody = { text: 'A private household draft.', draftRevision: 0 };
+  const localDraft = await personal.request(localPath, { method: 'PUT', context: deskContext, body: draftBody });
   const practice = await host.open({ dataDir, householdMode: true, reset: true });
   const exercise = await practice.request('/api/errands', {
     method: 'POST', body: { note: 'Practice library reference mock-member. Check tomorrow.' }, status: 201
@@ -146,6 +149,12 @@ test('private and practice errands stay with their own desk when both share a da
   const before = await practice.request('/api/fixture/refund');
   await practice.request('/api/errands', { method: 'POST', body: privateBody, status: 409 });
   await practice.request(`/api/errands/${privateId}/draft`, { method: 'POST', status: 404 });
+  await practice.request(localPath, { method: 'PUT', body: draftBody, status: 404 });
+  const practiceDraft = await practice.request('/api/errands/demo-refund/draft', { method: 'POST' });
+  await practice.request('/api/errands/demo-refund/local-draft', { method: 'PUT', body: draftBody, status: 404 });
+  assert.equal(practiceDraft.draftRevision, undefined);
+  assert.deepEqual(await practice.request('/api/errands/demo-refund/draft', { method: 'POST' }), practiceDraft);
+  assert.deepEqual(await practice.request('/api/fixture/outbox'), { messages: [], attempts: [] });
   await practice.request(`/api/errands/${privateId}/tracking`, { method: 'POST', body: { choice: 'stop', revision: 1 }, status: 404 });
   await personal.request(`/api/errands/${exercise.id}/draft`, { method: 'POST', status: 404 });
   assert.deepEqual(await practice.request('/api/fixture/refund'), before);
@@ -156,6 +165,7 @@ test('private and practice errands stay with their own desk when both share a da
   const reset = await host.open({ dataDir, householdMode: true, reset: true });
   assert.deepEqual((await reset.request('/api/desk')).errands.map(row => row.id).sort(), ['demo-bill', 'demo-refund', 'demo-visit']);
   assert.deepEqual((await personal.request('/api/desk', { context: deskContext })).errands, [privateErrand]);
+  assert.deepEqual(await personal.request(`/api/errands/${privateId}/draft`, { method: 'POST', context: deskContext }), localDraft);
   assert.deepEqual(await personal.request('/api/errands', { method: 'POST', body: privateBody, status: 201 }), privateErrand);
 });
 

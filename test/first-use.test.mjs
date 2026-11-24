@@ -137,6 +137,53 @@ test('editing a saved errand preserves the original note and rejects a stale edi
   assert.deepEqual(inspection.effects, []);
 });
 
+test('private follow-up drafts preserve exact words across restart and stop without changing the errand', async t => {
+  const { desk, open } = await startFreshDesk(t);
+  const errand = await desk.request('/api/errands', { method: 'POST', body: { note } });
+  const path = `/api/errands/${errand.id}`;
+  const read = client => client.request(`${path}/draft`, { method: 'POST' });
+  const save = (client, body, status) => client.request(`${path}/local-draft`, { method: 'PUT', body, status });
+  const generated = await read(desk);
+  assert.equal(generated.draftRevision, 0);
+  assert.match(generated.text, /check the status of the refund/);
+  assert.deepEqual(await read(desk), generated);
+
+  const body = { text: ' Hello,\n\nCould you share the refund reference?\n ', draftRevision: 0 };
+  const saved = { ...body, draftRevision: 1 };
+  assert.deepEqual(await save(desk, body), saved);
+  assert.deepEqual(await save(desk, body), saved);
+  assert.deepEqual(await save(desk, saved), saved);
+  assert.deepEqual((await desk.request('/api/desk')).errands, [errand]);
+
+  const rival = await open();
+  const conflict = await save(rival, { ...body, text: 'An older copy from another tab' }, 409);
+  assert.equal(conflict.code, 'local-draft-conflict');
+  assert.deepEqual(await read(rival), saved);
+  await save(rival, { ...saved, text: '   \n' }, 400);
+  await save(rival, { ...saved, text: 'a'.repeat(8001) }, 400);
+  await save(rival, { text: saved.text, draftRevision: 1.5 }, 400);
+  assert.deepEqual(await read(rival), saved);
+
+  const update = await save(rival, { text: 'Please check again on Thursday.', draftRevision: 1 });
+  const restored = await save(desk, { text: saved.text, draftRevision: 2 });
+  assert.equal(update.draftRevision, 2);
+  assert.deepEqual(restored, { text: saved.text, draftRevision: 3 });
+  await save(rival, body, 409);
+  await desk.close();
+  await rival.close();
+
+  const reopened = await open(friday);
+  assert.deepEqual(await read(reopened), restored);
+  assert.deepEqual((await reopened.request('/api/desk')).errands, [errand]);
+  const stopped = await reopened.request(`${path}/tracking`, { method: 'POST', body: { choice: 'stop', revision: errand.revision } });
+  assert.equal(stopped.status, 'stopped');
+  assert.equal(stopped.note, note);
+  assert.deepEqual(await read(reopened), restored);
+  const inspection = await reopened.request('/api/inspect');
+  assert.deepEqual(inspection, { errands: [stopped], grants: [], effects: [] });
+  await reopened.request(`${path}/queue-followup`, { method: 'POST', body: restored, status: 404 });
+});
+
 test('the private brief brings the earliest open check back to the top after an edit or stop', async t => {
   const { desk } = await startFreshDesk(t);
   const save = (note, checkDate) => desk.request('/api/errands', { method: 'POST', body: { note, checkDate } });

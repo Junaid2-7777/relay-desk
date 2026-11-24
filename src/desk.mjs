@@ -64,6 +64,7 @@ function sameVisitScope(left, right) {
 
 const readErrand = row => row && JSON.parse(row.record);
 const changedContextCode = 'desk-context-changed';
+const maximumLocalDraftLength = 8000;
 const followupTerms = Object.freeze({
   recipient: 'returns@practice-shop.example',
   subject: 'Check on return-demo-1249'
@@ -95,6 +96,11 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     CREATE TABLE IF NOT EXISTS errand_saves (
       id TEXT PRIMARY KEY REFERENCES errands (id) ON DELETE CASCADE,
       intent TEXT NOT NULL
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS local_drafts (
+      errandId TEXT PRIMARY KEY REFERENCES errands (id) ON DELETE CASCADE,
+      draftRevision INTEGER NOT NULL CHECK (draftRevision > 0),
+      text TEXT NOT NULL
     ) STRICT;
     CREATE TABLE IF NOT EXISTS receipt_checkpoints (
       errandId TEXT NOT NULL REFERENCES errands(id) ON DELETE CASCADE,
@@ -146,6 +152,11 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
   }
   const insert = database.prepare('INSERT OR IGNORE INTO errands VALUES (?, ?, ?)');
   const insertSave = database.prepare('INSERT INTO errand_saves VALUES (?, ?)');
+  const readLocalDraft = database.prepare('SELECT text, draftRevision FROM local_drafts WHERE errandId = ?');
+  const writeLocalDraft = database.prepare(`
+    INSERT INTO local_drafts (errandId, draftRevision, text) VALUES (?, ?, ?)
+    ON CONFLICT (errandId) DO UPDATE SET draftRevision = excluded.draftRevision, text = excluded.text
+  `);
   const seenReceiptCheck = database.prepare('SELECT 1 FROM receipt_checkpoints WHERE errandId = ? AND checkpointId = ?');
   const rememberReceiptCheck = database.prepare('INSERT INTO receipt_checkpoints VALUES (?, ?)');
   const update = database.prepare('UPDATE errands SET record = ?, revision = ? WHERE id = ? AND revision = ?');
@@ -354,6 +365,8 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
     },
     draft(id) {
       const errand = find(id);
+      const saved = !practice && readLocalDraft.get(id);
+      if (saved) return { ...saved };
       const pending = pendingFollowup(errand);
       if (pending) {
         const { recipient, subject, text } = pending;
@@ -363,8 +376,28 @@ export function openDesk({ dataDir, clock = () => new Date(), refundFixture, hou
         text: errand.kind === 'refund'
           ? 'Hello, could you check the status of the refund we discussed? Please let me know when it was issued and any reference I can use to find it. Thank you.'
           : `Hello, could you share an update on this? Thank you.\n\n${errand.goal}`,
+        ...(!practice ? { draftRevision: 0 } : {}),
         ...(household?.outbox && errand.refund && errand.status === 'open' && !errand.queuedFollowup ? followupTerms : {})
       };
+    },
+    saveLocalDraft(id, { text, draftRevision }) {
+      if (practice) throw new DeskError('Local draft saving is available in the private desk.', 404);
+      if (typeof text !== 'string' || !text.trim() || text.length > maximumLocalDraftLength) {
+        throw new DeskError(`Enter a draft of up to ${maximumLocalDraftLength} characters.`);
+      }
+      if (!Number.isSafeInteger(draftRevision) || draftRevision < 0) throw new DeskError('Use a valid draft revision.');
+      return transaction(() => {
+        find(id);
+        const previous = readLocalDraft.get(id);
+        const revision = previous?.draftRevision ?? 0;
+        if (previous?.text === text && (draftRevision === revision || draftRevision === revision - 1)) return { ...previous };
+        if (draftRevision !== revision) {
+          throw new DeskError('The saved draft changed. Reopen it before saving a new copy.', 409, 'local-draft-conflict');
+        }
+        const saved = { text, draftRevision: revision + 1 };
+        writeLocalDraft.run(id, saved.draftRevision, saved.text);
+        return saved;
+      });
     },
     queueFollowup(id, { revision, recipient, subject, text, reconcileOnly = false }) {
       const outbox = household?.outbox.fixture;

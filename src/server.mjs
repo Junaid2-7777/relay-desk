@@ -125,9 +125,12 @@ export function createDeskServer({
         checkPlannerMode(body.plannerMode, false);
         return send(response, 201, desk.save(body));
       }
-      const errand = /^\/api\/errands\/([\w-]+)(\/draft)?$/.exec(pathname);
+      const errand = /^\/api\/errands\/([\w-]+)(?:\/(draft|local-draft))?$/.exec(pathname);
       if (errand && method === 'PUT' && !errand[2]) return send(response, 200, desk.edit(errand[1], await checkedBody(request)));
-      if (errand && method === 'POST' && errand[2]) return send(response, 200, desk.readWithContext(() => desk.draft(errand[1])));
+      if (errand && method === 'POST' && errand[2] === 'draft') return send(response, 200, desk.readWithContext(() => desk.draft(errand[1])));
+      if (errand && method === 'PUT' && errand[2] === 'local-draft') {
+        return send(response, 200, desk.saveLocalDraft(errand[1], await checkedBody(request)));
+      }
       const followup = /^\/api\/errands\/([\w-]+)\/queue-followup$/.exec(pathname);
       if (household && followup && method === 'POST') {
         return send(response, 200, desk.queueFollowup(followup[1], await checkedBody(request)));
