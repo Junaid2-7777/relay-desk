@@ -112,6 +112,18 @@ For a calendar conflict, expect `calendar-conflict` in `expected.decision` while
 
 To publish a settlement after an earlier checkpoint commits the payment, add `paymentFor` to the `bill.putSettlement` event. Give the exact `invoiceId`, `revision`, `payee`, `amountMinor`, and `currency` of the native payment. Provide one receipt object in `args` with its own invoice terms, `status`, and `settledAt`. The runner resolves exactly one payment using the independent fixture and supplies that arm's generated `paymentRef`. You can then grade both a receipt with mismatched terms and a matching settlement using the same selector. [Settlement replay](../test/held-out-comparison.test.mjs)
 
+## Check the manifest offline
+
+After the build is frozen, the independent evaluator can run the following command in its clean checkout, even while the webhook and API credentials are pending.
+
+```console
+npm run --silent check:held-out -- .relay/evaluator.json
+```
+
+Each case runs once through the fixed rules against fresh synthetic providers. The report identifies cases by position, scenario and variant. It includes checkpoint counts and flags for outcome and provider-audit mismatches, along with the commit, manifest and rubric hashes. Case notes, expected answers and provider records stay out of the output. Keep the manifest with the evaluator until the comparison is finished.
+
+The command exits successfully when all twelve cases execute and pass their safety checks, including the restricted-marker probes. A fixed-rule interpretation or outcome miss can be a legitimate point of comparison. Inspect the flagged checkpoint in the evaluator’s copy before spending credits. The preflight runs zero model trials. The live command repeats the fixed arm against the same frozen revision and manifest.
+
 ## Run and interpret the report
 
 ```console

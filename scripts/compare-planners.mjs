@@ -530,13 +530,34 @@ export async function compareHeldOut(document, { planner } = {}) {
   return { cases, ...summarizeHeldOut(cases) };
 }
 
+export async function preflightHeldOut(document) {
+  validateHeldOutManifest(document);
+  const cases = [];
+  for (const [index, testCase] of document.cases.entries()) {
+    const fixed = await runArm(testCase, 'fixed-rule', { heldOut: true });
+    const completed = !fixed.error && fixed.checkpoints.length === testCase.checkpoints.length;
+    const failedChecks = fixed.checkpoints.flatMap((checkpoint, position) => {
+      if (checkpoint.passed && checkpoint.safety.passed) return [];
+      return [{ checkpoint: position + 1, outcomeMatched: checkpoint.passed, auditMatched: checkpoint.safety.passed }];
+    });
+    cases.push({
+      caseNumber: index + 1, scenario: testCase.scenario, variant: testCase.variant,
+      completed, checkpointsCompleted: fixed.checkpoints.length, checkpointsExpected: testCase.checkpoints.length,
+      safetyPassed: fixed.safetyPassed, outcomeMatched: fixed.outcomePassed, failedChecks
+    });
+  }
+  return { ready: cases.every(item => item.completed && item.safetyPassed), cases };
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const started = performance.now();
   const args = process.argv.slice(2);
   const heldOut = args[0] === '--held-out';
-  const [manifestArg, ...extraArgs] = heldOut ? args.slice(1) : args;
-  if (extraArgs.length || (heldOut && !manifestArg)) {
-    throw new Error('Pass an optional authored JSON manifest path, or --held-out followed by an evaluator manifest path.');
+  const preflight = args[0] === '--preflight';
+  const evaluatorMode = heldOut || preflight;
+  const [manifestArg, ...extraArgs] = evaluatorMode ? args.slice(1) : args;
+  if (extraArgs.length || (evaluatorMode && !manifestArg)) {
+    throw new Error('Pass an optional authored JSON manifest path, or --held-out or --preflight followed by an evaluator manifest path.');
   }
   const bytes = await readFile(manifestArg ? resolve(manifestArg) : defaultCases);
   const rubric = await readFile(new URL('docs/evaluation.md', root));
@@ -546,19 +567,29 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     : null;
   const gitRevision = revision.status === 0 ? revision.stdout.trim() : null;
   const gitDirty = tree?.status === 0 ? Boolean(tree.stdout.trim()) : null;
-  const document = JSON.parse(bytes);
+  let document;
+  try {
+    document = JSON.parse(bytes);
+  } catch {
+    throw new Error('The case manifest must contain valid JSON.');
+  }
   const settings = { warm: false, defaultClock: defaultTrialTime, httpTimeoutMs };
   let report;
-  if (heldOut) {
+  if (evaluatorMode) {
     validateHeldOutManifest(document);
     if (gitDirty !== false || gitRevision !== document.frozenRevision) {
       throw new Error('Run held-out trials from a clean checkout of the evaluator manifest’s frozen commit.');
     }
-    const { createN8nPlannerFromEnv } = await import('../src/n8n-planner.mjs');
-    const planner = createN8nPlannerFromEnv();
-    Object.assign(settings, { plannerMode: planner.mode, plannerTimeoutMs: planner.timeoutMs, trialsPerCase: trialCount });
-    report = { frozenRevision: document.frozenRevision, providerVersion: document.providerVersion,
-      ...await compareHeldOut(document, { planner }) };
+    if (preflight) {
+      Object.assign(settings, { plannerMode: 'fixed-rule', modelTrials: 0 });
+      report = await preflightHeldOut(document);
+    } else {
+      const { createN8nPlannerFromEnv } = await import('../src/n8n-planner.mjs');
+      const planner = createN8nPlannerFromEnv();
+      Object.assign(settings, { plannerMode: planner.mode, plannerTimeoutMs: planner.timeoutMs, trialsPerCase: trialCount });
+      report = { frozenRevision: document.frozenRevision, providerVersion: document.providerVersion,
+        ...await compareHeldOut(document, { planner }) };
+    }
   } else {
     const comparison = await comparePlanners(document);
     const outcomesPassed = Object.values(comparison.summary).every(mode => mode.outcomePasses === mode.cases);
@@ -567,16 +598,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     report = { gate: { passed: outcomesPassed && recordedInterpretationPassed, outcomesPassed, recordedInterpretationPassed }, ...comparison };
   }
   console.log(JSON.stringify({
-    evaluation: heldOut ? 'held-out-planner-comparison' : 'authored-offline-planner-rehearsal',
+    evaluation: preflight ? 'offline-evaluator-preflight' : heldOut ? 'held-out-planner-comparison' : 'authored-offline-planner-rehearsal',
     nodeVersion: process.version,
     gitRevision,
     ...(gitDirty === null ? {} : { gitDirty }),
     settings,
-    caseManifest: manifestArg ?? 'fixtures/planner-rehearsal.json',
+    ...(!preflight ? { caseManifest: manifestArg ?? 'fixtures/planner-rehearsal.json' } : {}),
     caseHash: sha256(bytes),
     rubricHash: sha256(rubric),
     durationMs: duration(started),
     ...report
   }, null, 2));
-  if (!report.gate.passed) process.exitCode = 1;
+  if (!(preflight ? report.ready : report.gate.passed)) process.exitCode = 1;
 }

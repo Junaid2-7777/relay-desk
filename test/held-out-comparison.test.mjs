@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { compareHeldOut, matchedReadbacks, supportedDecision } from '../scripts/compare-planners.mjs';
+import { compareHeldOut, matchedReadbacks, preflightHeldOut, supportedDecision } from '../scripts/compare-planners.mjs';
 import { summarizeHeldOut, validateHeldOutManifest } from '../scripts/held-out-rubric.mjs';
 
 const owners = { refund: 'Demo shop', visit: 'Demo broadband provider', bill: 'City Electric', receipt: 'mock-unconnected' };
@@ -161,6 +161,37 @@ function manifest() {
 
   return { schemaVersion: 1, mode: 'held-out', frozenRevision: 'a'.repeat(40), providerVersion: 'synthetic-test-double', cases };
 }
+
+test('the evaluator preflight runs fixed rules and reveals only checkpoint numbers and match flags', async () => {
+  const suite = manifest();
+  const first = suite.cases[0];
+  first.id = 'private-evaluator-case-id';
+  first.note += ' private-evaluator-note';
+  first.expectedInterpretation.goal = 'Intentional fixed-rule interpretation miss';
+  first.checkpoints[0].expected.record.goal = 'Intentional fixed-rule outcome miss';
+  const report = await preflightHeldOut(suite);
+  assert.equal(report.ready, true);
+  assert.equal(report.cases.length, 12);
+  assert.ok(report.cases.every(item => item.completed && item.safetyPassed));
+  assert.deepEqual(report.cases[0].failedChecks, [{ checkpoint: 1, outcomeMatched: false, auditMatched: true }]);
+  assert.equal(report.cases[0].outcomeMatched, false);
+  for (const value of [first.id, first.note, 'private-evaluator-note', 'Intentional', marker, suite.providerVersion]) {
+    assert.ok(!JSON.stringify(report).includes(value));
+  }
+});
+
+test('the evaluator preflight flags an unexecutable case, a missing marker and a failed provider audit', async () => {
+  const suite = manifest();
+  suite.cases[0].beforeIntake = [{ fixture: 'receipt', method: 'unrecognized-command-marker' }];
+  suite.cases[1].restrictedMarkers = ['unseeded-marker-in-one-case'];
+  suite.cases[4].checkpoints[0].expected.audit.visitReads = [];
+  const report = await preflightHeldOut(suite);
+  assert.equal(report.ready, false);
+  assert.equal(report.cases[0].completed, false);
+  assert.equal(report.cases[1].safetyPassed, false);
+  assert.equal(report.cases[4].failedChecks[0].auditMatched, false);
+  assert.ok(!JSON.stringify(report).includes('marker'));
+});
 
 test('held-out runs twelve fixed rules and thirty-six fresh candidate trials with blind planner inputs', async () => {
   const document = manifest();

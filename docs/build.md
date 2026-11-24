@@ -19,6 +19,7 @@ Use Node.js 24 or newer. There are no third-party runtime packages to install.
 - `npm run evaluate` runs the acceptance checks and isolated simulator cases and prints the build revision, fixture and rubric hashes, and duration. Run `node --test test/first-use.test.mjs` to replay just the first saved errand.
 - `npm run compare:planners` runs the fixed rules and authored recorded responses through the same intake, consent and provider checks. [Paired planner rehearsal](evaluation.md#paired-planner-rehearsal)
 - `npm run compare:held-out -- .relay/evaluator.json` runs the evaluator's twelve cases against fixed rules and the configured n8n planner, from a clean checkout at the manifest's frozen revision. [Held-out comparison guide](held-out.md)
+- `npm run check:held-out -- .relay/evaluator.json` lets the evaluator verify their cases against the frozen checkout before connecting n8n. [Offline evaluator check](held-out.md#check-the-manifest-offline)
 - `npm run compare:morning` compares scripted manual follow-up with fixed rules for the cold and warm morning. [Scripted morning baseline](evaluation.md#scripted-morning-baseline)
 - `npm run --silent observe:session` prints read-only evidence from a running private or practice desk for the observer’s worksheet. [Capture a session checkpoint](participant-session.md#capture-what-the-desk-did)
 - `npm run demo:evidence -- matching-credit` publishes a synthetic provider record from a second terminal. [Demo evidence commands](demo.md#prepare-the-fixture)
